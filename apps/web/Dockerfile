@@ -15,6 +15,12 @@ COPY logo.jpg ./logo.jpg
 # Garante que public/logo.jpg exista no build (para favicon e header)
 RUN cp -f /app/logo.jpg /app/apps/web/public/logo.jpg
 
+# Vite embute import.meta.env no build; variáveis de runtime do container não entram no bundle.
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
+ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+ENV VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY}
+
 RUN npm --workspace @lamego/web run build
 
 # ---------- runtime ----------
