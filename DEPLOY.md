@@ -86,6 +86,22 @@ nano .env.production   # preencher SUPABASE_SERVICE_ROLE_KEY e SUPABASE_DB_PASSW
 
 > O `.env.production` é gitignored - **nunca** commit segredos.
 
+### Servidor já existente (rsync) sem pasta `.git`
+
+Se `/opt/lamego` foi copiado sem Git, ligue ao repositório **sem apagar** `.env.production` (arquivo local, fora do Git):
+
+```bash
+cd /opt/lamego
+git init
+git remote add origin https://github.com/Rafael-Rangel/painellamego.git
+git fetch origin main
+git checkout -B main origin/main
+chmod +x scripts/deploy-vps.sh
+cp -f .env.production .env   # se ainda não existir .env
+```
+
+Se o `checkout` reclamar de arquivos locais que conflitam com o repo, faça backup do que for preciso e alinhe manualmente, ou clone em um diretório novo, copie só `.env.production` e troque o nome das pastas.
+
 ## 5. Subir os containers
 
 **Com nginx-proxy na VPS (produção típica atual):**
