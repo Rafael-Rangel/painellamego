@@ -8,6 +8,8 @@
  *   node scripts/test-receipt-openrouter.mjs nota.png --json
  * Catálogo opcional (para testar match com cadastro):
  *   RECEIPT_TEST_CATALOG='{"products":[...],"suppliers":[...]}' node scripts/test-receipt-openrouter.mjs nota.png --json
+ * DANFE vazio (sem itens/fornecedores no prompt — evita match falso):
+ *   node scripts/test-receipt-openrouter.mjs scripts/fixtures/blank-danfe-template.png --empty-catalog --json
  * Requer OPENROUTER_API_KEY no .env (raiz ou apps/api).
  */
 import dotenv from "dotenv";
@@ -58,7 +60,7 @@ async function loadImageArg(arg) {
 }
 
 function argvImagePath() {
-  const skip = new Set(["--json"]);
+  const skip = new Set(["--json", "--empty-catalog"]);
   const args = process.argv.slice(2).filter((a) => !skip.has(a));
   return args[0] || null;
 }
@@ -86,16 +88,18 @@ async function main() {
 
   const arg = argvImagePath();
   const printJson = process.argv.includes("--json");
+  const emptyCatalogFlag = process.argv.includes("--empty-catalog");
   const { imageBuffer, mimeType, label } = await loadImageArg(arg);
   console.log("Fonte da imagem:", label, "| mime:", mimeType);
 
-  const fromEnv = loadCatalogFromEnv();
-  const products = fromEnv?.products?.length
-    ? fromEnv.products
-    : [{ id: "11111111-1111-1111-1111-111111111111", name: "Farinha de trigo", type: "insumo" }];
-  const suppliers = fromEnv?.suppliers?.length
-    ? fromEnv.suppliers
-    : [{ id: "22222222-2222-2222-2222-222222222222", name: "Distribuidora Sul" }];
+  const fromEnv = emptyCatalogFlag ? { products: [], suppliers: [] } : loadCatalogFromEnv();
+  const useDefaultDemoCatalog = fromEnv == null;
+  const products = useDefaultDemoCatalog
+    ? [{ id: "11111111-1111-1111-1111-111111111111", name: "Farinha de trigo", type: "insumo" }]
+    : fromEnv.products;
+  const suppliers = useDefaultDemoCatalog
+    ? [{ id: "22222222-2222-2222-2222-222222222222", name: "Distribuidora Sul" }]
+    : fromEnv.suppliers;
 
   const out = await parseReceiptWithAI({
     imageBuffer,

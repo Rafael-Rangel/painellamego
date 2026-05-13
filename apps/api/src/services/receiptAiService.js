@@ -49,6 +49,7 @@ function similarityScore(a, b) {
 }
 
 function bestMatchByName(name, list, labelKey = "name") {
+  if (name == null || String(name).trim() === "") return { best: null, score: 0 };
   let best = null;
   let bestScore = 0;
   for (const item of list || []) {
