@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, withAuth } from "../api";
-import { mockProducts, mockSuppliers } from "../mocks/mockData";
 
 export function toWeekOfMonth(dateStr) {
   const date = new Date(dateStr);
@@ -71,8 +70,8 @@ export function usePurchaseForm(token, options = {}) {
       api.get("/catalog/products", withAuth(token)),
       api.get("/manager/overview", withAuth(token))
     ]).then(([supRes, prodRes, ovRes]) => {
-      setSuppliers(supRes.data?.length ? supRes.data : mockSuppliers);
-      setProducts(prodRes.data?.length ? prodRes.data : mockProducts);
+      setSuppliers(supRes.data?.length ? supRes.data : []);
+      setProducts(prodRes.data?.length ? prodRes.data : []);
       setOverview(ovRes.data ?? null);
     });
   }, [token]);

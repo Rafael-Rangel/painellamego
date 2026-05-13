@@ -14,7 +14,6 @@ import MultiSelectSearch from "../components/ui/MultiSelectSearch";
 import SingleSelectInput from "../components/ui/SingleSelectInput";
 import TableToolbar from "../components/ui/TableToolbar";
 import { formatCurrency } from "../lib/formatters";
-import { mockProducts, mockStores } from "../mocks/mockData";
 import RankingComparisonTab from "../components/admin/RankingComparisonTab";
 
 /** Limite de linhas na tabela do Mapa de oportunidades (sem controle na UI). */
@@ -115,28 +114,16 @@ export default function AdminPage() {
       setOpportunities(opportunitiesRows);
       setDashboardSummary(summary.data || null);
     } catch {
-      setError("Nao foi possivel carregar todos os dados. Exibindo estado de referencia.");
-      setStores(mockStores);
-      setProducts(mockProducts);
+      setError("Nao foi possivel carregar todos os dados. Tente novamente.");
+      setStores([]);
+      setProducts([]);
       setRanking([]);
       setManagers([]);
       setPeriodData([]);
-      const fallbackFromMock = mockProducts.map((p, idx) => ({
-        store_id: `mock-store-${(idx % 3) + 1}`,
-        store_name: mockStores[idx % mockStores.length]?.name || "Loja",
-        product_id: p.id,
-        product_name: p.name,
-        store_avg_price: 7 + idx,
-        network_min_price: 5 + idx * 0.6,
-        best_store_name: mockStores[(idx + 1) % mockStores.length]?.name || "Loja",
-        best_store_id: null,
-        best_store_price: 5 + idx * 0.6,
-        above_best_percent: Number((((2 + idx * 0.4) / (5 + idx * 0.6)) * 100).toFixed(2))
-      }));
       setProductComparisonRows([]);
-      setCatalogProducts(mockProducts.map((p) => ({ ...p, standard_unit: p.standard_unit || "un" })));
+      setCatalogProducts([]);
       setCategories([]);
-      setOpportunities(fallbackFromMock);
+      setOpportunities([]);
       setDashboardSummary(null);
     } finally {
       setLoading(false);

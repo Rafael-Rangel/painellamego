@@ -13,7 +13,6 @@ import KpiCardCompact from "../components/ui/KpiCardCompact";
 import MultiSelectSearch from "../components/ui/MultiSelectSearch";
 import TableToolbar from "../components/ui/TableToolbar";
 import { formatCurrency, formatDate } from "../lib/formatters";
-import { mockManagerAlerts, mockProducts, mockSuppliers } from "../mocks/mockData";
 
 const CHART_COLORS = ["#4b0c0c", "#cd292d", "#eca02f", "#7a1919", "#d15555", "#3d6b2f", "#2c5282", "#6b4c9a"];
 
@@ -120,15 +119,15 @@ export default function ManagerPage() {
         api.get("/catalog/suppliers", withAuth(token))
       ]);
       setOverview(overviewRes.data || emptyOverview);
-      setAlerts(alertRes.data?.length ? alertRes.data : mockManagerAlerts);
+      setAlerts(alertRes.data?.length ? alertRes.data : []);
       setHistory(historyRes.data || []);
-      setProducts(productsRes.data?.length ? productsRes.data : mockProducts);
-      setSuppliers(suppliersRes.data?.length ? suppliersRes.data : mockSuppliers);
+      setProducts(productsRes.data?.length ? productsRes.data : []);
+      setSuppliers(suppliersRes.data?.length ? suppliersRes.data : []);
     } catch {
       setError("Nao foi possivel carregar os dados. Verifique sua conexao ou tente novamente.");
-      setAlerts(mockManagerAlerts);
-      setProducts(mockProducts);
-      setSuppliers(mockSuppliers);
+      setAlerts([]);
+      setProducts([]);
+      setSuppliers([]);
       setHistory([]);
       setOverview(emptyOverview);
     } finally {
