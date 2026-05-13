@@ -1,9 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+function isOpenRouterUrl(url) {
+  return String(url || "").includes("openrouter.ai");
+}
+
+/** @supabase/postgrest-js usa `res.text()` + JSON.parse, não `json()`. */
+function fakePostgrestEmptyArray() {
+  return {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers(),
+    async text() {
+      return "[]";
+    }
+  };
+}
+
 test("parseReceiptWithAI: PDF usa content type file (não image_url)", async () => {
   const calls = [];
   global.fetch = async (url, init) => {
+    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
     calls.push({ url, body: JSON.parse(init.body) });
     return {
       ok: true,
@@ -60,7 +78,8 @@ test("parseReceiptWithAI: PDF usa content type file (não image_url)", async () 
 
 test("parseReceiptWithAI: JPEG usa image_url", async () => {
   const calls = [];
-  global.fetch = async (_url, init) => {
+  global.fetch = async (url, init) => {
+    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
     calls.push({ body: JSON.parse(init.body) });
     return {
       ok: true,
@@ -107,7 +126,8 @@ test("parseReceiptWithAI: JPEG usa image_url", async () => {
 
 test("parseReceiptWithAI: falha do provider na 1ª chamada faz retry sem response_format", async () => {
   let n = 0;
-  global.fetch = async (_url, init) => {
+  global.fetch = async (url, init) => {
+    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
     n += 1;
     const body = JSON.parse(init.body);
     if (n === 1) {
@@ -172,7 +192,8 @@ test("parseReceiptWithAI: falha do provider na 1ª chamada faz retry sem respons
 
 test("parseReceiptWithAI: esgota modelo principal e usa OPENROUTER_FALLBACK_MODEL", async () => {
   let n = 0;
-  global.fetch = async (_url, init) => {
+  global.fetch = async (url, init) => {
+    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
     n += 1;
     const body = JSON.parse(init.body);
     const model = body.model;

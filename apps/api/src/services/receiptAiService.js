@@ -1,5 +1,15 @@
 import { config } from "../config.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
+import { supabaseAdmin } from "../lib/supabase.js";
+import {
+  AUTO_ALIAS_MIN_SCORE,
+  MIN_PRODUCT_FUZZY,
+  maybeRecordAutoAlias,
+  maybeRecordPendingAlias,
+  preloadSupplierMatchContext,
+  resolveOneProductLabel,
+  touchSupplierAlias
+} from "./productMatchService.js";
 
 function stripCodeFences(text = "") {
   return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
@@ -63,37 +73,6 @@ function bestMatchByName(name, list, labelKey = "name") {
   return { best, score: bestScore };
 }
 
-function productDbNormalizedKey(p) {
-  const raw = p?.normalized_name != null && String(p.normalized_name).trim() !== "" ? String(p.normalized_name).trim() : null;
-  if (raw) return normalizeProductNameKey(raw);
-  return normalizeProductNameKey(p?.name);
-}
-
-/** Igualdade na chave normalizada (nome cadastrado ou coluna normalized_name). */
-function findProductExactNormalized(products, key) {
-  if (!key) return null;
-  for (const p of products || []) {
-    if (productDbNormalizedKey(p) === key) return p;
-  }
-  return null;
-}
-
-/** Até N candidatos por pontuação de similaridade com o texto da nota (para revisão na UI). */
-function topSuggestedProductMatches(name, products, limit = 3, minScore = 0.15) {
-  const label = String(name || "").trim();
-  if (!label) return [];
-  const scored = (products || [])
-    .map((p) => ({ p, score: similarityScore(label, p?.name) }))
-    .filter((x) => x.score >= minScore)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-  return scored.map(({ p, score }) => ({
-    id: p.id,
-    name: p.name,
-    confidence: score
-  }));
-}
-
 /** Conteúdo multimodal conforme OpenRouter: imagens via image_url; PDF via type file + file_data (data URL). */
 function visionPartsForMime(mimeType, dataUrl) {
   if (mimeType === "application/pdf") {
@@ -122,8 +101,7 @@ function truncateCatalogNames(names, maxItems = 120, maxCharsPerName = 100) {
     .slice(0, maxItems);
 }
 
-/** Limiares de fuzzy match cadastro ↔ texto da nota (descrições longas em NFS-e). */
-const MIN_PRODUCT_MATCH = 0.5;
+/** Limiar de fuzzy match fornecedor na nota (supplierName). */
 const MIN_SUPPLIER_MATCH = 0.55;
 
 function openRouterHeaders() {
@@ -229,20 +207,31 @@ async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, mo
   return payload;
 }
 
-function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
+function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx) {
   const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
   const rawItems = parsed?.items || [];
   const singleLine = rawItems.length === 1;
+
+  const aliasByKey = matchCtx?.aliasByKey instanceof Map ? matchCtx.aliasByKey : new Map();
+  const candidateProducts = matchCtx?.candidateProducts?.length ? matchCtx.candidateProducts : products;
+  const resolveCtx = { aliasByKey, candidateProducts };
+
+  const itemMatchMeta = [];
 
   const items = rawItems.map((it) => {
     const rawLabel = String(it?.productName || "").trim();
     const normalizedLabel = String(it?.productNameNormalized || it?.productName || "").trim();
     const matchKey = normalizeProductNameKey(normalizedLabel);
-    const exact = findProductExactNormalized(products, matchKey);
-    const fuzzy = bestMatchByName(rawLabel || normalizedLabel, products, "name");
-    const best = exact || (fuzzy.score >= MIN_PRODUCT_MATCH ? fuzzy.best : null);
-    const matchScore = exact ? 1 : fuzzy.score;
-    const suggestedProductMatches = topSuggestedProductMatches(rawLabel || normalizedLabel, products, 3, 0.12);
+
+    const resolved = resolveOneProductLabel(rawLabel || normalizedLabel, products, resolveCtx);
+    const best = resolved.product;
+    const matchScore = resolved.score;
+    itemMatchMeta.push({
+      matchKind: resolved.matchKind,
+      score: matchScore,
+      rawLabel: rawLabel || normalizedLabel,
+      matchKey
+    });
 
     let qty = it?.quantity == null ? null : Number(it.quantity);
     const unitPrice = it?.unitPrice == null ? null : Number(it.unitPrice);
@@ -252,7 +241,7 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
     const unitRaw = String(it?.unitUsed || "").toLowerCase();
     const unitUsed = ["kg", "un", "cx", "l", "g", "ml"].includes(unitRaw) ? (unitRaw === "l" ? "L" : unitRaw) : "un";
     const missing = [];
-    if (!best || matchScore < MIN_PRODUCT_MATCH) missing.push("produto");
+    if (!best || matchScore < MIN_PRODUCT_FUZZY) missing.push("produto");
     if (!Number.isFinite(qty) || qty <= 0) missing.push("quantidade");
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) missing.push("valor unitário");
     return {
@@ -264,7 +253,7 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
       unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : null,
       lineType: best?.type === "venda" ? "venda" : "insumo",
       missing,
-      suggestedProductMatches
+      suggestedProductMatches: resolved.suggestedProductMatches
     };
   });
 
@@ -284,7 +273,8 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
       ? { id: supplierMatch.best.id, name: supplierMatch.best.name, confidence: supplierMatch.score }
       : null,
     items,
-    missingGlobal
+    missingGlobal,
+    _itemMatchMeta: itemMatchMeta
   };
 }
 
@@ -292,7 +282,8 @@ export async function parseReceiptWithAI({
   imageBuffer,
   mimeType,
   products = [],
-  suppliers = []
+  suppliers = [],
+  supplierIdHint = null
 }) {
   if (!config.openRouterApiKey) {
     throw new Error("OPENROUTER_API_KEY não configurada.");
@@ -343,7 +334,53 @@ export async function parseReceiptWithAI({
       const payload = await fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, model });
       const content = payload?.choices?.[0]?.message?.content || "{}";
       const parsed = parseJsonFromModelContent(content);
-      return mapAiParsedToReceiptOutput(parsed, products, suppliers);
+
+      const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
+      const supplierIdForLearn = supplierIdHint || supplierMatch.best?.id || null;
+      let matchCtx = { aliasByKey: new Map(), candidateProducts: products };
+      if (supplierIdForLearn) {
+        try {
+          matchCtx = await preloadSupplierMatchContext(supabaseAdmin, supplierIdForLearn, products);
+        } catch {
+          matchCtx = { aliasByKey: new Map(), candidateProducts: products };
+        }
+      }
+
+      const mapped = mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx);
+
+      if (supplierIdForLearn && mapped._itemMatchMeta?.length) {
+        const tasks = [];
+        for (let i = 0; i < mapped._itemMatchMeta.length; i += 1) {
+          const m = mapped._itemMatchMeta[i];
+          const row = mapped.items[i];
+          if (m.matchKind === "alias" && m.matchKey) {
+            tasks.push(touchSupplierAlias(supabaseAdmin, supplierIdForLearn, m.matchKey).catch(() => {}));
+          } else if (m.matchKind === "fuzzy" && row?.productId) {
+            if (m.score >= AUTO_ALIAS_MIN_SCORE) {
+              tasks.push(
+                maybeRecordAutoAlias(supabaseAdmin, {
+                  supplierId: supplierIdForLearn,
+                  rawLabel: m.rawLabel,
+                  productId: row.productId,
+                  score: m.score
+                }).catch(() => {})
+              );
+            } else if (m.score >= MIN_PRODUCT_FUZZY) {
+              tasks.push(
+                maybeRecordPendingAlias(supabaseAdmin, {
+                  supplierId: supplierIdForLearn,
+                  rawLabel: m.rawLabel,
+                  productId: row.productId,
+                  score: m.score
+                }).catch(() => {})
+              );
+            }
+          }
+        }
+        await Promise.all(tasks);
+      }
+      delete mapped._itemMatchMeta;
+      return mapped;
     } catch (e) {
       errors.push(String(e?.message || e));
     }

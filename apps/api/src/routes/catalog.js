@@ -5,6 +5,17 @@ import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
+import {
+  AUTO_ALIAS_MIN_SCORE,
+  MIN_PRODUCT_FUZZY,
+  maybeRecordAutoAlias,
+  maybeRecordPendingAlias,
+  preloadSupplierMatchContext,
+  resolveOneProductLabel,
+  touchSupplierAlias,
+  upsertSupplierProductAlias,
+  deleteSupplierProductAlias
+} from "../services/productMatchService.js";
 
 const router = Router();
 const missingStoreIdColumn = (msg = "") =>
@@ -56,7 +67,8 @@ router.get("/products", requireAuth, async (_req, res) => {
 
 const productQuickSchema = z.object({
   name: z.string().min(2).max(400),
-  type: z.enum(["insumo", "venda"]).optional()
+  type: z.enum(["insumo", "venda"]).optional(),
+  supplierId: z.string().uuid().optional()
 });
 
 /** Gerente ou admin: cria produto mínimo em "Outros" ou devolve existente (dedupe por nome normalizado). */
@@ -68,6 +80,42 @@ router.post("/products/quick", requireAuth, async (req, res) => {
   const keyStrong = normalizeProductNameKey(displayName);
   const keyLegacy = displayName.toLowerCase();
   const lineType = parsed.data.type ?? "insumo";
+  const supplierIdQuick = parsed.data.supplierId || null;
+
+  if (supplierIdQuick) {
+    try {
+      const { data: allProducts, error: pAllErr } = await supabaseAdmin.from("products").select("*").eq("is_active", true);
+      if (!pAllErr && allProducts?.length) {
+        const ctx = await preloadSupplierMatchContext(supabaseAdmin, supplierIdQuick, allProducts);
+        const resMatch = resolveOneProductLabel(displayName, allProducts, ctx);
+        if (resMatch.product) {
+          if (resMatch.matchKind === "alias") {
+            await touchSupplierAlias(supabaseAdmin, supplierIdQuick, keyStrong).catch(() => {});
+          } else if (resMatch.matchKind === "fuzzy") {
+            const sc = Number(resMatch.score || 0);
+            if (sc >= AUTO_ALIAS_MIN_SCORE) {
+              await maybeRecordAutoAlias(supabaseAdmin, {
+                supplierId: supplierIdQuick,
+                rawLabel: displayName,
+                productId: resMatch.product.id,
+                score: sc
+              }).catch(() => {});
+            } else if (sc >= MIN_PRODUCT_FUZZY) {
+              await maybeRecordPendingAlias(supabaseAdmin, {
+                supplierId: supplierIdQuick,
+                rawLabel: displayName,
+                productId: resMatch.product.id,
+                score: sc
+              }).catch(() => {});
+            }
+          }
+          return res.status(200).json({ ...resMatch.product, reused: true, resolvedVia: resMatch.matchKind });
+        }
+      }
+    } catch {
+      /* continua criação em Outros */
+    }
+  }
 
   const { data: byStrong, error: e1 } = await supabaseAdmin
     .from("products")
@@ -317,6 +365,70 @@ router.post("/suppliers", requireAuth, async (req, res) => {
     payload: { supplierId: data.id }
   });
   return res.status(201).json(data);
+});
+
+const supplierAliasBodySchema = z.object({
+  supplierId: z.string().uuid(),
+  labelRaw: z.string().min(2).max(400),
+  productId: z.string().uuid()
+});
+
+/** Lista mapeamentos texto (por fornecedor) → produto canónico (admin). */
+router.get("/supplier-product-aliases", requireAuth, requireAdmin, async (req, res) => {
+  let q = supabaseAdmin
+    .from("supplier_product_aliases")
+    .select("id,supplier_id,label_normalized,label_raw,product_id,source,confidence,use_count,last_seen_at,created_at,updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(500);
+  if (req.query.supplierId) q = q.eq("supplier_id", String(req.query.supplierId));
+  if (req.query.source) q = q.eq("source", String(req.query.source));
+  const { data: rows, error } = await q;
+  if (error) return res.status(400).json({ message: error.message });
+  const supplierIds = [...new Set((rows || []).map((r) => r.supplier_id).filter(Boolean))];
+  const productIds = [...new Set((rows || []).map((r) => r.product_id).filter(Boolean))];
+  const [supRes, prodRes] = await Promise.all([
+    supplierIds.length ? supabaseAdmin.from("suppliers").select("id,name").in("id", supplierIds) : Promise.resolve({ data: [] }),
+    productIds.length ? supabaseAdmin.from("products").select("id,name").in("id", productIds) : Promise.resolve({ data: [] })
+  ]);
+  const supMap = new Map((supRes.data || []).map((s) => [s.id, s.name]));
+  const prodMap = new Map((prodRes.data || []).map((p) => [p.id, p.name]));
+  const enriched = (rows || []).map((r) => ({
+    ...r,
+    supplier_name: supMap.get(r.supplier_id) ?? null,
+    product_name: prodMap.get(r.product_id) ?? null
+  }));
+  return res.json(enriched);
+});
+
+/** Cria ou atualiza mapeamento (aprendizagem administrada). */
+router.post("/supplier-product-aliases", requireAuth, requireAdmin, async (req, res) => {
+  const parsed = supplierAliasBodySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+  const labelNormalized = normalizeProductNameKey(parsed.data.labelRaw);
+  if (!labelNormalized) return res.status(400).json({ message: "Texto do rótulo inválido após normalização." });
+  const up = await upsertSupplierProductAlias(supabaseAdmin, {
+    supplierId: parsed.data.supplierId,
+    labelNormalized,
+    labelRaw: parsed.data.labelRaw,
+    productId: parsed.data.productId,
+    source: "admin",
+    confidence: 1
+  });
+  if (!up.ok) return res.status(400).json({ message: up.error || "Falha ao gravar mapeamento." });
+  await logAudit({
+    userId: req.user.id,
+    action: "upsert",
+    resource: "supplier_product_alias",
+    payload: { supplierId: parsed.data.supplierId, labelNormalized, productId: parsed.data.productId }
+  });
+  return res.status(201).json({ ok: true, id: up.id });
+});
+
+router.delete("/supplier-product-aliases/:id", requireAuth, requireAdmin, async (req, res) => {
+  const del = await deleteSupplierProductAlias(supabaseAdmin, req.params.id);
+  if (!del.ok) return res.status(400).json({ message: del.error || "Falha ao remover." });
+  await logAudit({ userId: req.user.id, action: "delete", resource: "supplier_product_alias", payload: { id: req.params.id } });
+  return res.status(204).send();
 });
 
 export default router;

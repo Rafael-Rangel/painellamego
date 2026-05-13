@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FaBalanceScale, FaChartBar, FaChartLine, FaCog, FaLightbulb, FaStore, FaTrash } from "react-icons/fa";
+import { FaBalanceScale, FaChartBar, FaChartLine, FaCog, FaLightbulb, FaLink, FaStore, FaTrash } from "react-icons/fa";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import AppShell from "../components/AppShell";
 import { api, withAuth } from "../api";
@@ -57,6 +57,10 @@ export default function AdminPage() {
   const [productComparisonRows, setProductComparisonRows] = useState([]);
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [suppliersAll, setSuppliersAll] = useState([]);
+  const [supplierAliases, setSupplierAliases] = useState([]);
+  const [supplierAliasesPending, setSupplierAliasesPending] = useState([]);
+  const [aliasForm, setAliasForm] = useState({ supplierId: "", labelRaw: "", productId: "" });
   const [periodData, setPeriodData] = useState([]);
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
@@ -89,7 +93,8 @@ export default function AdminPage() {
     setLoading(true);
     setError("");
     try {
-      const [s, r, o, p, m, period, comparison, summary, catalogProductsRes, categoriesRes] = await Promise.all([
+      const [s, r, o, p, m, period, comparison, summary, catalogProductsRes, categoriesRes, catalogSuppliersRes, supplierAliasesRes, supplierAliasesPendingRes] =
+        await Promise.all([
         api.get("/catalog/stores", withAuth(token)),
         api.get("/dashboards/stores", withAuth(token)),
         api.get("/admin/comparisons/opportunities", withAuth(token)),
@@ -99,7 +104,10 @@ export default function AdminPage() {
         api.get("/admin/products/comparison", withAuth(token)),
         api.get(`/admin/dashboard/summary?${dashboardFilterQuery}`, withAuth(token)),
         api.get("/catalog/products", withAuth(token)),
-        api.get("/catalog/categories", withAuth(token))
+        api.get("/catalog/categories", withAuth(token)),
+        api.get("/catalog/suppliers", withAuth(token)),
+        api.get("/catalog/supplier-product-aliases", withAuth(token)),
+        api.get("/catalog/supplier-product-aliases?source=auto_pending", withAuth(token))
       ]);
       setStores(s.data || []);
       setRanking(r.data || []);
@@ -110,6 +118,9 @@ export default function AdminPage() {
       setProductComparisonRows(comparisonRows);
       setCatalogProducts(catalogProductsRes.data || []);
       setCategories(categoriesRes.data || []);
+      setSuppliersAll(catalogSuppliersRes.data || []);
+      setSupplierAliases(supplierAliasesRes.data || []);
+      setSupplierAliasesPending(supplierAliasesPendingRes.data || []);
       const opportunitiesRows = (o.data || []).length ? o.data : deriveOpportunitiesFromComparison(comparisonRows);
       setOpportunities(opportunitiesRows);
       setDashboardSummary(summary.data || null);
@@ -123,6 +134,9 @@ export default function AdminPage() {
       setProductComparisonRows([]);
       setCatalogProducts([]);
       setCategories([]);
+      setSuppliersAll([]);
+      setSupplierAliases([]);
+      setSupplierAliasesPending([]);
       setOpportunities([]);
       setDashboardSummary(null);
     } finally {
@@ -168,6 +182,7 @@ export default function AdminPage() {
     { key: "products", label: "Análise", icon: <FaChartLine />, onClick: () => setTab("products") },
     { key: "ranking", label: "Comparação", icon: <FaBalanceScale />, onClick: () => setTab("ranking") },
     { key: "products-admin", label: "Produtos (Admin)", icon: <FaCog />, onClick: () => setTab("products-admin") },
+    { key: "supplier-aliases", label: "NF → produto (fornecedor)", icon: <FaLink />, onClick: () => setTab("supplier-aliases") },
     { key: "settings", label: "Configuracoes", icon: <FaCog />, onClick: () => setTab("dashboard") }
   ];
 
@@ -195,6 +210,54 @@ export default function AdminPage() {
     await api.delete(`/catalog/products/${id}`, withAuth(token));
     setToast("Produto removido.");
     if (editingProductId === id) resetProductForm();
+    await loadAll();
+    setTimeout(() => setToast(""), 2200);
+  }
+
+  async function saveSupplierAlias(e) {
+    e.preventDefault();
+    if (!aliasForm.supplierId || !aliasForm.labelRaw.trim() || !aliasForm.productId) return;
+    await api.post(
+      "/catalog/supplier-product-aliases",
+      {
+        supplierId: aliasForm.supplierId,
+        labelRaw: aliasForm.labelRaw.trim(),
+        productId: aliasForm.productId
+      },
+      withAuth(token)
+    );
+    setToast("Mapeamento gravado.");
+    setAliasForm({ supplierId: "", labelRaw: "", productId: "" });
+    await loadAll();
+    setTimeout(() => setToast(""), 2200);
+  }
+
+  async function removeSupplierAliasRow(id) {
+    if (!window.confirm("Remover este mapeamento?")) return;
+    await api.delete(`/catalog/supplier-product-aliases/${id}`, withAuth(token));
+    setToast("Mapeamento removido.");
+    await loadAll();
+    setTimeout(() => setToast(""), 2200);
+  }
+
+  async function approvePendingAlias(row) {
+    const raw =
+      (row.label_raw && String(row.label_raw).trim()) || (row.label_normalized && String(row.label_normalized).trim());
+    if (!raw || !row.supplier_id || !row.product_id) return;
+    await api.post(
+      "/catalog/supplier-product-aliases",
+      { supplierId: row.supplier_id, labelRaw: raw, productId: row.product_id },
+      withAuth(token)
+    );
+    setToast("Sugestão aprovada: mapeamento confirmado como admin.");
+    await loadAll();
+    setTimeout(() => setToast(""), 2200);
+  }
+
+  async function rejectPendingAlias(row) {
+    if (!window.confirm("Rejeitar esta sugestão e remover o registo pendente?")) return;
+    await api.delete(`/catalog/supplier-product-aliases/${row.id}`, withAuth(token));
+    setToast("Sugestão rejeitada.");
     await loadAll();
     setTimeout(() => setToast(""), 2200);
   }
@@ -869,6 +932,122 @@ export default function AdminPage() {
                 keyField="id"
                 loading={loading}
                 emptyMessage="Nenhum produto cadastrado."
+              />
+            </DataCard>
+          </section>
+        </div>
+      ) : null}
+
+      {tab === "supplier-aliases" ? (
+        <div className="grid">
+          <section className="span-12">
+            <DataCard
+              title="Pendências de revisão (match médio)"
+              subtitle="Sugestões gravadas automaticamente quando o texto da nota ou o registo rápido casou com um produto por fuzzy intermédio. Aprovar confirma o mapeamento; rejeitar remove só esta sugestão."
+            >
+              <CompactTable
+                columns={[
+                  { id: "supplier_name", label: "Fornecedor" },
+                  { id: "label_raw", label: "Texto", render: (r) => r.label_raw || r.label_normalized || "—" },
+                  { id: "product_name", label: "Produto sugerido" },
+                  {
+                    id: "confidence",
+                    label: "Confiança",
+                    render: (r) => (r.confidence != null ? `${(Number(r.confidence) * 100).toFixed(0)}%` : "—")
+                  },
+                  {
+                    id: "actions",
+                    label: "",
+                    render: (r) => (
+                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                        <button type="button" className="btn btn-primary" onClick={() => approvePendingAlias(r)}>
+                          Aprovar
+                        </button>
+                        <button type="button" className="btn btn-ghost" onClick={() => rejectPendingAlias(r)}>
+                          Rejeitar
+                        </button>
+                      </div>
+                    )
+                  }
+                ]}
+                rows={supplierAliasesPending}
+                keyField="id"
+                loading={loading}
+                emptyMessage="Nenhuma pendência. Sugestões médias aparecem após leitura de NF ou uso do registo rápido com fornecedor escolhido."
+              />
+            </DataCard>
+          </section>
+          <section className="span-12">
+            <DataCard
+              title="Mapeamento nota → produto (por fornecedor)"
+              subtitle="Quando o texto da NF ou da digitação bater com o rótulo normalizado, o sistema usa o produto canónico. Útil para variações como “CONTRA FILE” vs “Contrafilé”. A IA e o registo rápido usam isto automaticamente se o fornecedor já estiver escolhido na compra."
+            >
+              <form className="grid" onSubmit={saveSupplierAlias}>
+                <div className="field span-4">
+                  <SingleSelectInput
+                    label="Fornecedor"
+                    placeholder="Selecione..."
+                    options={(suppliersAll || []).map((x) => ({ value: x.id, label: x.name }))}
+                    value={aliasForm.supplierId}
+                    onChange={(next) => setAliasForm((f) => ({ ...f, supplierId: next }))}
+                  />
+                </div>
+                <div className="field span-4">
+                  <SingleSelectInput
+                    label="Produto canónico"
+                    placeholder="Selecione..."
+                    options={(catalogProducts || []).map((x) => ({ value: x.id, label: x.name }))}
+                    value={aliasForm.productId}
+                    onChange={(next) => setAliasForm((f) => ({ ...f, productId: next }))}
+                  />
+                </div>
+                <div className="field span-4">
+                  <label>Texto da nota (como aparece)</label>
+                  <input
+                    value={aliasForm.labelRaw}
+                    onChange={(e) => setAliasForm((f) => ({ ...f, labelRaw: e.target.value }))}
+                    placeholder="Ex.: CONTRA FILE RESF KG"
+                    required
+                  />
+                </div>
+                <div className="field span-12">
+                  <button className="btn btn-primary" type="submit">
+                    Guardar mapeamento
+                  </button>
+                </div>
+              </form>
+            </DataCard>
+          </section>
+          <section className="span-12">
+            <DataCard title="Mapeamentos existentes (últimos 500)">
+              <CompactTable
+                columns={[
+                  { id: "supplier_name", label: "Fornecedor" },
+                  { id: "label_normalized", label: "Chave normalizada" },
+                  { id: "label_raw", label: "Texto original", render: (r) => r.label_raw || "—" },
+                  { id: "product_name", label: "Produto" },
+                  {
+                    id: "source",
+                    label: "Origem",
+                    render: (r) => (
+                      <span className={r.source === "admin" ? "badge badge-success" : "badge badge-info"}>{r.source || "—"}</span>
+                    )
+                  },
+                  { id: "use_count", label: "Usos" },
+                  {
+                    id: "actions",
+                    label: "",
+                    render: (r) => (
+                      <button type="button" className="btn btn-ghost" title="Remover" onClick={() => removeSupplierAliasRow(r.id)}>
+                        <FaTrash />
+                      </button>
+                    )
+                  }
+                ]}
+                rows={supplierAliases}
+                keyField="id"
+                loading={loading}
+                emptyMessage="Nenhum mapeamento. Crie pelo formulário acima ou deixe o sistema gravar aliases automáticos (fuzzy alto) ao ler notas."
               />
             </DataCard>
           </section>

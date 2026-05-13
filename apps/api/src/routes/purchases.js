@@ -62,12 +62,15 @@ router.post(
       items: [],
       missingGlobal: []
     };
+    const supplierIdHint = req.body?.supplierId ? String(req.body.supplierId).trim() : "";
+    const supplierIdForParse = supplierIdHint && /^[0-9a-f-]{36}$/i.test(supplierIdHint) ? supplierIdHint : null;
     for (const file of receiptFiles) {
       const parsed = await parseReceiptWithAI({
         imageBuffer: file.buffer,
         mimeType: file.mimetype,
         products: products || [],
-        suppliers: suppliers || []
+        suppliers: suppliers || [],
+        supplierIdHint: supplierIdForParse
       });
       if (!aggregate.invoiceNumber && parsed.invoiceNumber) aggregate.invoiceNumber = parsed.invoiceNumber;
       if (!aggregate.purchaseDate && parsed.purchaseDate) aggregate.purchaseDate = parsed.purchaseDate;

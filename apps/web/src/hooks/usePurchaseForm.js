@@ -204,7 +204,15 @@ export function usePurchaseForm(token, options = {}) {
       const lineType = lineTypeOpt === "venda" ? "venda" : "insumo";
       setProductCreating(true);
       try {
-        const { data } = await api.post("/catalog/products/quick", { name: trimmed, type: lineType }, withAuth(token));
+        const { data } = await api.post(
+          "/catalog/products/quick",
+          {
+            name: trimmed,
+            type: lineType,
+            ...(supplierId ? { supplierId } : {})
+          },
+          withAuth(token)
+        );
         setProducts((prev) =>
           [...prev.filter((p) => p.id !== data.id), data].sort((a, b) =>
             String(a.name).localeCompare(String(b.name), "pt-BR")
@@ -224,7 +232,7 @@ export function usePurchaseForm(token, options = {}) {
         setProductCreating(false);
       }
     },
-    [token]
+    [token, supplierId]
   );
 
   const createSupplier = useCallback(
@@ -288,7 +296,11 @@ export function usePurchaseForm(token, options = {}) {
       try {
         const { data } = await api.post(
           "/catalog/products/quick",
-          { name: label, type: row.lineType === "venda" ? "venda" : "insumo" },
+          {
+            name: label,
+            type: row.lineType === "venda" ? "venda" : "insumo",
+            ...(supplierId ? { supplierId } : {})
+          },
           withAuth(token)
         );
         workItems[i] = { ...row, productId: data.id, aiRawProductName: undefined };
@@ -342,6 +354,7 @@ export function usePurchaseForm(token, options = {}) {
       try {
         const form = new FormData();
         for (const file of receipts) form.append("receipts", file);
+        if (supplierId) form.append("supplierId", supplierId);
         const { data } = await api.post("/purchases/receipt-ai-parse", form, {
           headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
         });
@@ -405,7 +418,7 @@ export function usePurchaseForm(token, options = {}) {
         setAiLoading(false);
       }
     },
-    [token, receipts, recordAiHighlights]
+    [token, receipts, recordAiHighlights, supplierId]
   );
 
   return {
