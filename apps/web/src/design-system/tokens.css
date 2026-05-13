@@ -1,0 +1,65 @@
+:root {
+  --brand-primary: #3d0a0a;
+  --brand-accent: #c0392b;
+  --brand-highlight: #f0a500;
+  --brand-white: #ffffff;
+
+  --neutral-0: #ffffff;
+  --neutral-50: #f8f9fb;
+  --neutral-100: #f2f4f7;
+  --neutral-200: #e4e7ec;
+  --neutral-300: #d0d5dd;
+  --neutral-500: #667085;
+  --neutral-700: #344054;
+  --neutral-900: #101828;
+
+  --success-100: #dcfce7;
+  --success-700: #15803d;
+  --warning-100: #fef3c7;
+  --warning-700: #b45309;
+  --error-100: #fee2e2;
+  --error-700: #b91c1c;
+  --info-100: #e0f2fe;
+  --info-700: #0369a1;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --shadow-card: 0 8px 24px rgb(16 24 40 / 0.08);
+  --shadow-dropdown: 0 10px 20px rgb(16 24 40 / 0.1);
+  --shadow-modal: 0 18px 42px rgb(16 24 40 / 0.2);
+
+  --font-xs: 12px;
+  --font-sm: 13px;
+  --font-md: 14px;
+  --font-lg: 16px;
+  --font-xl: 20px;
+  --font-2xl: 24px;
+  --font-3xl: 30px;
+
+  --z-base: 1;
+  --z-dropdown: 10;
+  --z-sticky: 30;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* Motion — transições sutis e profissionais */
+  --motion-duration-instant: 0.12s;
+  --motion-duration-fast: 0.2s;
+  --motion-duration-base: 0.38s;
+  --motion-duration-slow: 0.55s;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+  --motion-ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --motion-stagger-step: 0.04s;
+}

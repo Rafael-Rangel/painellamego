@@ -1,0 +1,20 @@
+# Use quando a VPS já tiver outro proxy em 80/443 (ex.: nginx).
+# Não altera o outro projeto: só publica web/api em localhost e desativa o Caddy deste stack.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.coexist.yml up -d --build
+#
+# Depois, aponte painellamego.com.br no proxy existente para 127.0.0.1:18080 e /api para 127.0.0.1:13333
+# (modelo em ops/deploy/painellamego.nginx.conf.example).
+
+services:
+  caddy:
+    profiles:
+      - edge-caddy
+
+  web:
+    ports:
+      - "127.0.0.1:18080:80"
+
+  api:
+    ports:
+      - "127.0.0.1:13333:3333"

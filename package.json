@@ -1,0 +1,30 @@
+{
+  "name": "lamego-compras-interno",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm --workspace @lamego/api run dev",
+    "dev:web": "npm --workspace @lamego/web run dev",
+    "build": "npm-run-all build:shared build:api build:web",
+    "build:shared": "npm --workspace @lamego/shared run build",
+    "build:api": "npm --workspace @lamego/api run build",
+    "build:web": "npm --workspace @lamego/web run build",
+    "test": "npm --workspace @lamego/api run test",
+    "db:reset": "supabase db reset",
+    "db:push": "supabase db push",
+    "db:link": "supabase link --project-ref hfxqvitixkrqjggkbbej",
+    "supabase:bootstrap": "node scripts/setup-supabase.mjs"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "supabase": "2.98.2"
+  },
+  "dependencies": {
+    "pg": "^8.20.0"
+  }
+}

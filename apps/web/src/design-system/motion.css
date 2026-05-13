@@ -1,0 +1,269 @@
+/* Camada de microinterações e transições de página (carregar após styles.css) */
+
+@keyframes app-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes login-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+@keyframes modal-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Conteúdo principal: entrada ao mudar de rota (AppShell) */
+.app-main-section {
+  min-width: 0;
+  animation: app-page-enter var(--motion-duration-base) var(--motion-ease-out) both;
+}
+
+/* Login (sem AppShell) */
+.login-card {
+  animation: login-card-enter var(--motion-duration-slow) var(--motion-ease-out) both;
+}
+
+/* Cards e painéis */
+.card,
+.data-card {
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-out),
+    box-shadow var(--motion-duration-base) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.card:hover,
+.data-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 44px rgb(16 24 40 / 0.11);
+}
+
+.chart {
+  transition: box-shadow var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.chart:hover {
+  box-shadow: 0 12px 28px rgb(16 24 40 / 0.08);
+}
+
+/* KPI / stats */
+.stat,
+.stat-compact {
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.stat:hover,
+.stat-compact:hover {
+  transform: translateY(-1px);
+}
+
+/* Botões */
+.btn {
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-in-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-in-out),
+    color var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  transition-duration: var(--motion-duration-instant);
+}
+
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgb(192 57 43 / 0.35);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgb(61 10 10 / 0.28);
+}
+
+/* Abas */
+.tab-btn {
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-in-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-in-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.tab-btn:hover:not(.active) {
+  color: var(--brand-primary);
+  background: rgb(255 255 255 / 0.65);
+}
+
+/* Navegação lateral */
+.nav,
+.nav.nav-btn {
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.nav:hover {
+  transform: translateX(2px);
+}
+
+.nav.active {
+  transition-duration: var(--motion-duration-fast);
+}
+
+/* Campos */
+.field input,
+.field select,
+.topbar-search input {
+  transition:
+    border-color var(--motion-duration-fast) var(--motion-ease-in-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-in-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.field input:hover,
+.field select:hover,
+.topbar-search input:hover {
+  border-color: rgb(234 215 179 / 0.95);
+}
+
+.field input:focus,
+.field select:focus,
+.topbar-search input:focus {
+  box-shadow: 0 0 0 3px rgb(240 165 0 / 0.18);
+}
+
+/* Tabelas */
+tbody tr {
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-in-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+
+/* Toast */
+.toast {
+  animation: toast-enter var(--motion-duration-base) var(--motion-ease-out) both;
+}
+
+/* Modal */
+.modal-overlay {
+  animation: modal-backdrop-enter var(--motion-duration-fast) var(--motion-ease-out) both;
+}
+
+.modal {
+  animation: modal-panel-enter var(--motion-duration-base) var(--motion-ease-spring) both;
+}
+
+/* Topbar */
+.topbar {
+  transition: border-color var(--motion-duration-fast) ease, background-color var(--motion-duration-fast) ease;
+}
+
+.brand img {
+  transition: box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.brand:hover img {
+  box-shadow: 0 8px 20px rgb(16 24 40 / 0.14);
+}
+
+/* Wizard / purchase */
+.wizard-panel,
+.purchase-wizard {
+  transition: opacity var(--motion-duration-fast) ease;
+}
+
+.wizard-step-num {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-spring), background-color var(--motion-duration-fast) ease;
+}
+
+/* Stepper onboarding */
+.step {
+  transition:
+    background-color var(--motion-duration-fast) ease,
+    border-color var(--motion-duration-fast) ease,
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.step:hover:not(.active) {
+  transform: translateY(-1px);
+}
+
+/* Links em texto */
+a:not(.nav):not(.btn) {
+  transition: color var(--motion-duration-fast) ease, opacity var(--motion-duration-fast) ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .app-main-section,
+  .login-card,
+  .toast,
+  .modal-overlay,
+  .modal {
+    animation: none !important;
+  }
+
+  .card:hover,
+  .data-card:hover,
+  .stat:hover,
+  .stat-compact:hover,
+  .nav:hover,
+  tbody tr:hover {
+    transform: none !important;
+  }
+}

@@ -1,0 +1,219 @@
+import { Router } from "express";
+import multer from "multer";
+import { z } from "zod";
+import { purchaseItemSchema } from "@lamego/shared";
+import { supabaseAdmin } from "../lib/supabase.js";
+import { checkStoreScope, requireAuth, resolveStoreScope } from "../middleware/auth.js";
+import { logAudit } from "../services/auditService.js";
+import { createPriceAlertsForStore, recalculateProductSnapshot } from "../services/comparisonService.js";
+import { getManagerStoreIds } from "../services/scopeService.js";
+import { parseReceiptWithAI } from "../services/receiptAiService.js";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 7 * 1024 * 1024 } });
+const router = Router();
+const allowedMimeTypes = new Set(["image/jpeg", "image/png", "application/pdf"]);
+const missingStoreIdColumn = (msg = "") =>
+  String(msg).toLowerCase().includes("store_id") && String(msg).toLowerCase().includes("suppliers");
+
+function gatherReceiptFiles(filesObj = {}) {
+  const many = Array.isArray(filesObj.receipts) ? filesObj.receipts : [];
+  const single = Array.isArray(filesObj.receipt) ? filesObj.receipt : [];
+  return [...many, ...single];
+}
+
+router.post(
+  "/receipt-ai-parse",
+  requireAuth,
+  upload.fields([
+    { name: "receipt", maxCount: 1 },
+    { name: "receipts", maxCount: 12 }
+  ]),
+  async (req, res) => {
+  const receiptFiles = gatherReceiptFiles(req.files || {});
+  if (!receiptFiles.length) return res.status(400).json({ message: "Arquivo da nota é obrigatório." });
+  for (const file of receiptFiles) {
+    if (!allowedMimeTypes.has(file.mimetype)) {
+      return res.status(400).json({ message: "Tipo de arquivo não permitido. Use JPG, PNG ou PDF." });
+    }
+  }
+
+  let suppliersQuery = supabaseAdmin.from("suppliers").select("id,name");
+  if (req.user.role !== "admin") {
+    const storeIds = await getManagerStoreIds(req.user);
+    if (storeIds.length) suppliersQuery = suppliersQuery.in("store_id", storeIds);
+  }
+  let { data: suppliers, error: suppliersError } = await suppliersQuery;
+  if (suppliersError && missingStoreIdColumn(suppliersError.message)) {
+    const fallbackSuppliers = await supabaseAdmin.from("suppliers").select("id,name");
+    suppliers = fallbackSuppliers.data || [];
+  } else if (!suppliers?.length) {
+    const fallbackSuppliers = await supabaseAdmin.from("suppliers").select("id,name");
+    suppliers = fallbackSuppliers.data || [];
+  }
+
+  const { data: products, error: productsError } = await supabaseAdmin.from("products").select("id,name,type");
+  if (productsError) return res.status(400).json({ message: productsError.message });
+
+    try {
+    const aggregate = {
+      invoiceNumber: null,
+      purchaseDate: null,
+      supplierSuggestion: null,
+      items: [],
+      missingGlobal: []
+    };
+    for (const file of receiptFiles) {
+      const parsed = await parseReceiptWithAI({
+        imageBuffer: file.buffer,
+        mimeType: file.mimetype,
+        products: products || [],
+        suppliers: suppliers || []
+      });
+      if (!aggregate.invoiceNumber && parsed.invoiceNumber) aggregate.invoiceNumber = parsed.invoiceNumber;
+      if (!aggregate.purchaseDate && parsed.purchaseDate) aggregate.purchaseDate = parsed.purchaseDate;
+      if (!aggregate.supplierSuggestion && parsed.supplierSuggestion) aggregate.supplierSuggestion = parsed.supplierSuggestion;
+      aggregate.items.push(...(parsed.items || []));
+      aggregate.missingGlobal.push(...(parsed.missingGlobal || []));
+    }
+    return res.json(aggregate);
+  } catch (err) {
+    return res.status(400).json({ message: err.message || "Falha ao analisar nota com IA." });
+  }
+});
+
+router.post(
+  "/",
+  requireAuth,
+  checkStoreScope,
+  resolveStoreScope,
+  upload.fields([
+    { name: "receipt", maxCount: 1 },
+    { name: "receipts", maxCount: 12 }
+  ]),
+  async (req, res) => {
+  const schema = z.object({
+    storeId: z.string().uuid().optional(),
+    invoiceNumber: z.string().min(1),
+    items: z.string().min(2)
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+
+  let items = [];
+  try {
+    items = JSON.parse(parsed.data.items);
+  } catch {
+    return res.status(400).json({ message: "Formato inválido para itens da compra." });
+  }
+  if (!Array.isArray(items) || !items.length) {
+    return res.status(400).json({ message: "Itens da compra são obrigatórios." });
+  }
+
+  const itemsParsed = z.array(purchaseItemSchema).safeParse(items);
+  if (!itemsParsed.success) {
+    return res.status(400).json({ message: "Dados dos itens inválidos.", details: itemsParsed.error.flatten() });
+  }
+  items = itemsParsed.data;
+
+  const receiptFiles = gatherReceiptFiles(req.files || {});
+  if (!receiptFiles.length) {
+    return res.status(400).json({ message: "Arquivo da nota fiscal é obrigatório." });
+  }
+  for (const file of receiptFiles) {
+    if (!allowedMimeTypes.has(file.mimetype)) {
+      return res.status(400).json({ message: "Tipo de arquivo não permitido. Use JPG, PNG ou PDF." });
+    }
+  }
+
+  let storeId = req.storeScopeId;
+  if (req.user.role !== "admin") {
+    const storeIds = await getManagerStoreIds(req.user);
+    storeId = storeIds[0] || req.user.storeId;
+  }
+  if (!storeId) return res.status(400).json({ message: "Loja não encontrada no escopo do usuário." });
+
+  const { data: purchase, error: purchaseError } = await supabaseAdmin
+    .from("purchases")
+    .insert({
+      store_id: storeId,
+      invoice_number: parsed.data.invoiceNumber,
+      created_by: req.user.id
+    })
+    .select("*")
+    .single();
+  if (purchaseError) return res.status(400).json({ message: purchaseError.message });
+
+  const payloadItems = items.map((item) => ({
+    purchase_id: purchase.id,
+    store_id: storeId,
+    product_id: item.productId,
+    supplier_id: item.supplierId,
+    unit_price: item.unitPrice,
+    unit_used: item.unitUsed,
+    quantity: item.quantity,
+    purchase_date: item.purchaseDate,
+    week_of_month: item.weekOfMonth,
+    line_type: item.lineType
+  }));
+
+  const { error: itemsError } = await supabaseAdmin.from("purchase_items").insert(payloadItems);
+  if (itemsError) return res.status(400).json({ message: itemsError.message });
+
+  for (const file of receiptFiles) {
+    const filePath = `${purchase.id}/${Date.now()}-${file.originalname}`;
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("fiscal-receipts")
+      .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: false });
+    if (uploadError) return res.status(400).json({ message: uploadError.message });
+    await supabaseAdmin.from("fiscal_receipts").insert({
+      purchase_id: purchase.id,
+      storage_path: filePath,
+      original_name: file.originalname,
+      mime_type: file.mimetype
+    });
+  }
+
+  for (const item of payloadItems) {
+    await recalculateProductSnapshot(item.product_id);
+    await createPriceAlertsForStore(item.store_id, item.product_id, Number(item.unit_price));
+  }
+
+  await logAudit({
+    userId: req.user.id,
+    action: "create",
+    resource: "purchase",
+    payload: { purchaseId: purchase.id, storeId, items: payloadItems.length }
+  });
+
+  return res.status(201).json({ purchaseId: purchase.id, message: "Compra registrada com sucesso." });
+});
+
+router.get("/store/:storeId", requireAuth, checkStoreScope, resolveStoreScope, async (req, res) => {
+  const storeId = req.storeScopeId;
+  if (!storeId) return res.status(400).json({ message: "Loja não encontrada no escopo do usuário." });
+  const { data, error } = await supabaseAdmin
+    .from("purchases")
+    .select("*, purchase_items(*, products(name), suppliers(name)), fiscal_receipts(*)")
+    .eq("store_id", storeId)
+    .order("created_at", { ascending: false });
+  if (error) return res.status(400).json({ message: error.message });
+  return res.json(data);
+});
+
+router.get("/me", requireAuth, async (req, res) => {
+  if (req.user.role === "admin") {
+    return res.status(400).json({ message: "Use /purchases/store/:storeId para admin." });
+  }
+  const storeIds = await getManagerStoreIds(req.user);
+  if (!storeIds.length) return res.json([]);
+
+  const { data, error } = await supabaseAdmin
+    .from("purchases")
+    .select("*, purchase_items(*, products(name), suppliers(name)), fiscal_receipts(*)")
+    .in("store_id", storeIds)
+    .order("created_at", { ascending: false });
+  if (error) return res.status(400).json({ message: error.message });
+  return res.json(data);
+});
+
+export default router;

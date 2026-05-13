@@ -1,0 +1,95 @@
+name: lamego
+
+x-restart-policy: &restart_policy
+  restart: unless-stopped
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    <<: *restart_policy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/caddy-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    <<: *restart_policy
+    expose:
+      - "80"
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    <<: *restart_policy
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3333
+      TRUST_PROXY: "1"
+      APP_ORIGIN: https://painellamego.com.br
+    expose:
+      - "3333"
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3333/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  backup:
+    build:
+      context: ./ops/backup
+      dockerfile: Dockerfile
+    <<: *restart_policy
+    env_file:
+      - .env.production
+    environment:
+      TZ: America/Sao_Paulo
+      PGHOST: db.hfxqvitixkrqjggkbbej.supabase.co
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGDATABASE: postgres
+      PGPASSWORD: ${SUPABASE_DB_PASSWORD}
+      BACKUP_RETENTION_DAYS: "28"
+      BACKUP_CRON: "0 3 * * 0"
+      RUN_ON_START: "false"
+    volumes:
+      - ./ops/backup/backups:/backups
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+    driver: bridge

@@ -1,0 +1,15 @@
+node_modules
+dist
+creedneciais.md
+*.local.md
+.env
+.env.local
+.env.production
+coverage
+infra/supabase/.temp
+supabase/.temp
+supabase/.branches
+apps/api/uploads
+ops/backup/backups
+caddy_data
+caddy_config

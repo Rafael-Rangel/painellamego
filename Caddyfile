@@ -1,0 +1,38 @@
+{
+    email admin@painellamego.com.br
+}
+
+painellamego.com.br, www.painellamego.com.br {
+    encode zstd gzip
+
+    # Headers de segurança
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-Content-Type-Options "nosniff"
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        -Server
+    }
+
+    # Redireciona www -> apex
+    @www host www.painellamego.com.br
+    redir @www https://painellamego.com.br{uri} permanent
+
+    # Healthcheck público (apenas do edge)
+    handle_path /caddy-health {
+        respond "ok" 200
+    }
+
+    # API: /api/* -> container api:3333 (sem o prefixo)
+    handle_path /api/* {
+        reverse_proxy api:3333 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    # SPA: todo o resto -> container web:80
+    handle {
+        reverse_proxy web:80
+    }
+}
