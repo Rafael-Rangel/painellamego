@@ -13,6 +13,11 @@ COMPOSE=(
 
 cd "${LAMEGO_DIR}"
 
+# Git 2.35+ com repo owned por outro utilizador (ex.: ubuntu) precisa disto quando o script corre como root.
+if [[ -d .git ]] && ! git config --global --get-all safe.directory 2>/dev/null | grep -qxF "${LAMEGO_DIR}"; then
+  git config --global --add safe.directory "${LAMEGO_DIR}"
+fi
+
 if [[ ! -f .env.production ]]; then
   echo "Erro: ${LAMEGO_DIR}/.env.production não existe. Copie de .env.production.example e preencha os segredos." >&2
   exit 1
