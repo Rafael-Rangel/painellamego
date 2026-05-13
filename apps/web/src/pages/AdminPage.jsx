@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FaBalanceScale, FaChartBar, FaChartLine, FaCog, FaEdit, FaLightbulb, FaLink, FaStore, FaTrash, FaUserCog } from "react-icons/fa";
+import { FaBalanceScale, FaChartBar, FaChartLine, FaCog, FaEdit, FaLightbulb, FaLink, FaTrash, FaUserCog } from "react-icons/fa";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import AppShell from "../components/AppShell";
 import { api, withAuth } from "../api";
@@ -408,12 +408,11 @@ export default function AdminPage() {
 
   const links = [
     { key: "dashboard", label: "Dashboard da Rede", icon: <FaChartBar />, onClick: () => setTab("dashboard") },
-    { key: "stores", label: "Lojas & Gerentes", icon: <FaStore />, onClick: () => setTab("stores") },
     { key: "opportunities", label: "Oportunidades", icon: <FaLightbulb />, onClick: () => setTab("opportunities") },
     { key: "products", label: "Análise", icon: <FaChartLine />, onClick: () => setTab("products") },
     { key: "ranking", label: "Comparação", icon: <FaBalanceScale />, onClick: () => setTab("ranking") },
     { key: "products-admin", label: "Produtos", icon: <FaCog />, onClick: () => setTab("products-admin") },
-    { key: "supplier-aliases", label: "NF → produto (fornecedor)", icon: <FaLink />, onClick: () => setTab("supplier-aliases") },
+    { key: "supplier-aliases", label: "Mapeamento NF", icon: <FaLink />, onClick: () => setTab("supplier-aliases") },
     { key: "settings", label: "Configuracoes", icon: <FaUserCog />, onClick: () => setTab("settings") }
   ];
 
@@ -671,12 +670,18 @@ export default function AdminPage() {
   );
 
   return (
-    <AppShell title="Painel do Administrador" subtitle="Visao consolidada da rede e gestao de gerentes" links={links} activeLinkKey={tab}>
+    <AppShell
+      title="Painel do Administrador"
+      subtitle="Visao consolidada da rede e gestao de gerentes"
+      links={links}
+      activeLinkKey={tab}
+      sidebarNavClass="sidebar-nav--compact"
+    >
 
       {loading ? <p className="empty">Carregando...</p> : null}
       {error ? <p className="field-error">{error}</p> : null}
 
-      {tab !== "opportunities" && tab !== "ranking" && tab !== "settings" && tab !== "stores" ? (
+      {tab !== "opportunities" && tab !== "ranking" && tab !== "settings" ? (
         <div className="admin-filters-wrap">
           <div className="opportunity-filters">{filtersControls}</div>
         </div>
@@ -832,107 +837,18 @@ export default function AdminPage() {
         </div>
       ) : null}
 
-      {tab === "stores" ? (
-        <div className="grid">
-          <DataCard
-            title="Lojas da rede"
-            subtitle="CRUD completo: cada loja pode estar ligada a um único gerente."
-            actions={
-              <button type="button" className="btn btn-secondary" onClick={openStoreEditorCreate}>
-                Nova loja
-              </button>
-            }
-          >
-            <CompactTable
-              columns={[
-                { id: "store_number", label: "Nº", render: (s) => s.store_number },
-                { id: "name", label: "Nome" },
-                { id: "location", label: "Local" },
-                { id: "cnpj", label: "CNPJ", render: (s) => s.cnpj },
-                { id: "manager_name", label: "Resp. loja", render: (s) => s.manager_name || "—" },
-                {
-                  id: "actions",
-                  label: "",
-                  render: (s) => (
-                    <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                      <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openStoreEditorEdit(s)}>
-                        <FaEdit />
-                      </button>
-                      <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteStoreRow(s.id)}>
-                        <FaTrash />
-                      </button>
-                    </div>
-                  )
-                }
-              ]}
-              rows={stores}
-              keyField="id"
-              loading={loading}
-              emptyMessage="Nenhuma loja. Crie uma aqui ou ao convidar um gerente."
-            />
-          </DataCard>
-
-          <DataCard
-            title="Gerentes"
-            subtitle="Editar e-mail, senha, nome e lojas vinculadas. Convite por e-mail continua disponível."
-            actions={
-              <button type="button" className="btn btn-primary" onClick={() => setShowInviteModal(true)}>
-                Convidar gerente
-              </button>
-            }
-          >
-            <CompactTable
-              columns={[
-                {
-                  id: "stores",
-                  label: "Loja",
-                  render: (r) =>
-                    r.stores?.length ? (
-                      <div className="table-chip-list">
-                        {r.stores.map((s) => (
-                          <span key={s.id || s.name} className="badge badge-info">
-                            {s.name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      "-"
-                    )
-                },
-                { id: "managerName", label: "Gerente", render: (r) => <span className="price-store">{r.managerName || "-"}</span> },
-                { id: "email", label: "Email", render: (r) => <span className="table-email">{r.email}</span> },
-                { id: "status", label: "Status", render: (r) => <span className={r.status === "ativo" ? "badge badge-info" : "badge badge-danger"}>{r.status}</span> },
-                {
-                  id: "actions",
-                  label: "Ações",
-                  render: (r) => (
-                    <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center" }}>
-                      <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openManagerEditor(r)}>
-                        <FaEdit />
-                      </button>
-                      <button type="button" className="btn btn-ghost" onClick={() => resendInvite(r.id)}>
-                        Reenviar convite
-                      </button>
-                      <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteManagerRow(r.id)}>
-                        <FaTrash />
-                      </button>
-                    </div>
-                  )
-                }
-              ]}
-              rows={managers}
-              keyField="id"
-              loading={loading}
-              emptyMessage="Nenhum gerente cadastrado."
-            />
-          </DataCard>
-        </div>
-      ) : null}
-
       {tab === "settings" ? (
         <div className="grid">
           <section className="span-12">
-            <DataCard title="Minha conta" subtitle="Altere o seu e-mail, nome de exibição ou senha de acesso (Supabase Auth).">
+            <p className="subtitle" style={{ marginBottom: "1rem" }}>
+              Conta do administrador, lojas da rede e gerentes (e-mail, senha, vínculos). Cada loja pode ter apenas um gerente.
+            </p>
+          </section>
+          <section className="span-12">
+            <DataCard title="Minha conta" subtitle="E-mail, nome de exibição e senha (Supabase Auth).">
+              <p className="field-helper" style={{ marginTop: 0 }}>
+                ID utilizador: <code>{user?.id || "—"}</code>
+              </p>
               <form className="grid" onSubmit={saveAdminSettings}>
                 <div className="field span-6">
                   <label>E-mail</label>
@@ -964,10 +880,125 @@ export default function AdminPage() {
                 </div>
                 <div className="field span-12">
                   <button type="submit" className="btn btn-primary" disabled={adminSettingsSaving}>
-                    {adminSettingsSaving ? "A guardar…" : "Guardar alterações"}
+                    {adminSettingsSaving ? "A guardar…" : "Guardar alterações da conta"}
                   </button>
                 </div>
               </form>
+            </DataCard>
+          </section>
+
+          <section className="span-12">
+            <DataCard
+              title="Lojas da rede"
+              subtitle="Criar, editar ou remover lojas (CNPJ, nome, local, nº, contacto, horário)."
+              actions={
+                <button type="button" className="btn btn-secondary" onClick={openStoreEditorCreate}>
+                  Nova loja
+                </button>
+              }
+            >
+              <CompactTable
+                columns={[
+                  {
+                    id: "sid",
+                    label: "ID",
+                    render: (s) => (
+                      <code style={{ fontSize: "0.72rem", wordBreak: "break-all" }} title={s.id}>
+                        {s.id ? `${String(s.id).slice(0, 8)}…` : "—"}
+                      </code>
+                    )
+                  },
+                  { id: "store_number", label: "Nº", render: (s) => s.store_number },
+                  { id: "name", label: "Nome" },
+                  { id: "location", label: "Local" },
+                  { id: "cnpj", label: "CNPJ", render: (s) => s.cnpj },
+                  { id: "manager_name", label: "Resp. loja", render: (s) => s.manager_name || "—" },
+                  {
+                    id: "actions",
+                    label: "",
+                    render: (s) => (
+                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                        <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openStoreEditorEdit(s)}>
+                          <FaEdit />
+                        </button>
+                        <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteStoreRow(s.id)}>
+                          <FaTrash />
+                        </button>
+                      </div>
+                    )
+                  }
+                ]}
+                rows={stores}
+                keyField="id"
+                loading={loading}
+                emptyMessage="Nenhuma loja. Crie uma aqui ou ao convidar um gerente."
+              />
+            </DataCard>
+          </section>
+
+          <section className="span-12">
+            <DataCard
+              title="Gerentes"
+              subtitle="Editar e-mail, senha, nome e lojas. Convite por e-mail, reenvio e remoção (Auth)."
+              actions={
+                <button type="button" className="btn btn-primary" onClick={() => setShowInviteModal(true)}>
+                  Convidar gerente
+                </button>
+              }
+            >
+              <CompactTable
+                columns={[
+                  {
+                    id: "authId",
+                    label: "ID",
+                    render: (r) => (
+                      <code style={{ fontSize: "0.72rem", wordBreak: "break-all" }} title={r.id}>
+                        {r.id ? `${String(r.id).slice(0, 8)}…` : "—"}
+                      </code>
+                    )
+                  },
+                  {
+                    id: "stores",
+                    label: "Loja",
+                    render: (r) =>
+                      r.stores?.length ? (
+                        <div className="table-chip-list">
+                          {r.stores.map((s) => (
+                            <span key={s.id || s.name} className="badge badge-info">
+                              {s.name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        "-"
+                      )
+                  },
+                  { id: "managerName", label: "Gerente", render: (r) => <span className="price-store">{r.managerName || "-"}</span> },
+                  { id: "email", label: "Email", render: (r) => <span className="table-email">{r.email}</span> },
+                  { id: "status", label: "Status", render: (r) => <span className={r.status === "ativo" ? "badge badge-info" : "badge badge-danger"}>{r.status}</span> },
+                  {
+                    id: "actions",
+                    label: "Ações",
+                    render: (r) => (
+                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center" }}>
+                        <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openManagerEditor(r)}>
+                          <FaEdit />
+                        </button>
+                        <button type="button" className="btn btn-ghost" onClick={() => resendInvite(r.id)}>
+                          Reenviar convite
+                        </button>
+                        <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteManagerRow(r.id)}>
+                          <FaTrash />
+                        </button>
+                      </div>
+                    )
+                  }
+                ]}
+                rows={managers}
+                keyField="id"
+                loading={loading}
+                emptyMessage="Nenhum gerente cadastrado."
+              />
             </DataCard>
           </section>
         </div>
@@ -1175,7 +1206,7 @@ export default function AdminPage() {
       {tab === "products-admin" ? (
         <div className="grid">
           <section className="span-12">
-            <DataCard title="Gestão de produtos (lista única da rede)" subtitle="Administrador mantém o catálogo completo. Produtos criados por gerentes (criação rápida) surgem em “Outros” e aparecem como origem “Gerente” na tabela.">
+            <DataCard title="Produtos" subtitle="Catálogo global da rede. Na tabela, origem “Rede” ou “Gerente”.">
               <form className="grid" onSubmit={saveProduct}>
                 <div className="field span-4">
                   <label>Nome</label>
@@ -1214,7 +1245,7 @@ export default function AdminPage() {
             </DataCard>
           </section>
           <section className="span-12">
-            <DataCard title="Lista global de produtos">
+            <DataCard title="Itens cadastrados">
               <CompactTable
                 columns={[
                   { id: "name", label: "Nome", render: (r) => <span className="badge badge-info">{r.name}</span> },
@@ -1227,7 +1258,7 @@ export default function AdminPage() {
                           Gerente
                         </span>
                       ) : (
-                        <span className="badge badge-success">Admin</span>
+                        <span className="badge badge-success">Rede</span>
                       )
                   },
                   { id: "category", label: "Categoria" },
@@ -1274,8 +1305,8 @@ export default function AdminPage() {
         <div className="grid">
           <section className="span-12">
             <DataCard
-              title="Pendências de revisão (match médio)"
-              subtitle="Sugestões gravadas automaticamente quando o texto da nota ou o registo rápido casou com um produto por fuzzy intermédio. Aprovar confirma o mapeamento; rejeitar remove só esta sugestão."
+              title="Pendências (match médio)"
+              subtitle="Sugestões automáticas por texto da nota ou registo rápido. Aprovar confirma; rejeitar remove só esta linha."
             >
               <CompactTable
                 columns={[
@@ -1311,8 +1342,8 @@ export default function AdminPage() {
           </section>
           <section className="span-12">
             <DataCard
-              title="Mapeamento nota → produto (por fornecedor)"
-              subtitle="Quando o texto da NF ou da digitação bater com o rótulo normalizado, o sistema usa o produto canónico. Útil para variações como “CONTRA FILE” vs “Contrafilé”. A IA e o registo rápido usam isto automaticamente se o fornecedor já estiver escolhido na compra."
+              title="Mapeamento NF (fornecedor)"
+              subtitle="Texto da nota ou digitação associado ao produto certo por fornecedor. Usado pela IA e pelo registo rápido."
             >
               <form className="grid" onSubmit={saveSupplierAlias}>
                 <div className="field span-4">
@@ -1362,7 +1393,9 @@ export default function AdminPage() {
                     id: "source",
                     label: "Origem",
                     render: (r) => (
-                      <span className={r.source === "admin" ? "badge badge-success" : "badge badge-info"}>{r.source || "—"}</span>
+                      <span className={r.source === "admin" ? "badge badge-success" : "badge badge-info"}>
+                        {r.source === "admin" ? "Rede" : r.source === "manager" ? "Gerente" : r.source || "—"}
+                      </span>
                     )
                   },
                   { id: "use_count", label: "Usos" },
@@ -1477,6 +1510,11 @@ export default function AdminPage() {
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal" style={{ maxWidth: "28rem" }}>
             <h3>{storeEditor.mode === "create" ? "Nova loja" : "Editar loja"}</h3>
+            {storeEditor.mode === "edit" && storeEditor.id ? (
+              <p className="field-helper" style={{ marginTop: 0 }}>
+                ID da loja: <code style={{ wordBreak: "break-all" }}>{storeEditor.id}</code>
+              </p>
+            ) : null}
             <form onSubmit={saveStoreEditor}>
               <div className="field">
                 <label>CNPJ (14 dígitos)</label>
@@ -1533,6 +1571,9 @@ export default function AdminPage() {
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal" style={{ maxWidth: "32rem" }}>
             <h3>Editar gerente</h3>
+            <p className="field-helper" style={{ marginTop: 0 }}>
+              ID Auth (Supabase): <code style={{ wordBreak: "break-all" }}>{managerEditor.id}</code>
+            </p>
             <form onSubmit={saveManagerEditor}>
               <div className="field">
                 <label>E-mail</label>

@@ -12,7 +12,9 @@ export default function AppShell({
   links = [],
   activeLinkKey = "",
   storeBadge,
-  sidebarTitle = "Admin tools"
+  sidebarTitle = "Admin tools",
+  /** Classe extra no `<nav>` do menu (ex.: tipografia mais compacta no admin). */
+  sidebarNavClass = ""
 }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -95,7 +97,7 @@ export default function AppShell({
               <FaTimes />
             </button>
           </div>
-          <nav>
+          <nav className={sidebarNavClass || undefined}>
             {links.map((link) =>
               link.onClick ? (
                 <button
