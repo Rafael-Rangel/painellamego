@@ -57,6 +57,13 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error("FAIL:", e.message);
+  const msg = String(e.message || "");
+  if (/insufficient credits/i.test(msg)) {
+    console.error("PARCIAL_OK: autenticação e modelo foram aceitos pela OpenRouter.");
+    console.error("  Falta saldo na conta: https://openrouter.ai/settings/credits");
+    console.error("  Depois disso, rode de novo: npm run test:openrouter");
+    process.exit(3);
+  }
+  console.error("FAIL:", msg);
   process.exit(1);
 });
