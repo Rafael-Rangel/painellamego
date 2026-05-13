@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { config } from "../config.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
@@ -68,7 +69,8 @@ router.post("/invite-manager", requireAuth, requireAdmin, async (req, res) => {
       store_ids: parsed.data.storeIds,
       manager_name: parsed.data.managerName,
       display_name: parsed.data.managerName
-    }
+    },
+    redirectTo: config.authInviteRedirectUrl
   });
   if (error) return res.status(400).json({ message: error.message });
 
@@ -263,7 +265,8 @@ router.post("/admin/managers/:id/resend-invite", requireAuth, requireAdmin, asyn
   if (error || !user?.user?.email) return res.status(404).json({ message: "Gerente não encontrado." });
 
   const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(user.user.email, {
-    data: user.user.user_metadata || {}
+    data: user.user.user_metadata || {},
+    redirectTo: config.authInviteRedirectUrl
   });
   if (inviteError) {
     const msg = inviteError.message || "";

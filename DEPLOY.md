@@ -217,7 +217,22 @@ npm run db:push
 
 Não é necessário restartar containers para schema changes.
 
-## 11. Tarefas pendentes (sem urgência)
+## 11. Auth no Supabase (convites e links sem localhost)
+
+Os e-mails de **convite de gerente** e fluxos de Auth usam URLs geradas pelo projeto Supabase. Sem isto, o link pode apontar para `http://localhost:...`.
+
+1. No [Dashboard do Supabase](https://supabase.com/dashboard) do projeto: **Authentication → URL Configuration**.
+2. **Site URL:** `https://painellamego.com.br` (sem barra final desnecessária; o domínio público do painel).
+3. **Redirect URLs:** inclua pelo menos:
+   - `https://painellamego.com.br/reset-password` (convite reenviado + “definir senha” após o link do e-mail)
+   - `https://painellamego.com.br/login`
+   - Opcional: `https://painellamego.com.br/**` se o painel permitir wildcard.
+
+A API envia `redirectTo` nos convites com base em **`APP_ORIGIN`** (ver `.env.production` e `docker-compose.yml` no serviço `api`). Em produção deve ser `https://painellamego.com.br`.
+
+Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
+
+## 12. Tarefas pendentes (sem urgência)
 
 - Configurar **SMTP** no Supabase Auth (Project Settings > Auth > Email) para que o "Esqueci minha senha" entregue e-mails reais.
 - Trocar as senhas seed (`Adm!nLamego2026#`, `Gerente@2026!`) pelo Dashboard do Supabase em produção.

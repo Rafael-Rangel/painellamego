@@ -12,6 +12,10 @@ function parseOrigins(raw) {
 }
 
 const appOriginRaw = process.env.APP_ORIGIN ?? "http://localhost:5173";
+const primaryAppOrigin = parseOrigins(appOriginRaw)[0] ?? "http://localhost:5173";
+
+/** URL após clicar no link do e-mail de convite (deve estar na allowlist do Supabase Auth). */
+const authInviteRedirectUrl = `${primaryAppOrigin.replace(/\/$/, "")}/reset-password`;
 
 export const config = {
   port: Number(process.env.PORT ?? 3333),
@@ -25,6 +29,7 @@ export const config = {
   jwtIssuer: process.env.JWT_ISSUER ?? "",
   appOrigin: appOriginRaw,
   appOrigins: parseOrigins(appOriginRaw),
+  authInviteRedirectUrl,
   trustProxy: Number(process.env.TRUST_PROXY ?? 1),
   openRouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
   /** Visão + JSON; override com OPENROUTER_MODEL. Lista: https://openrouter.ai/models */
