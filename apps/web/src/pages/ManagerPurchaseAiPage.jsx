@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaArrowLeft, FaPlus, FaRobot, FaStore, FaTrash } from "react-icons/fa";
+import { FaArrowLeft, FaPlus, FaRobot, FaStore, FaTimes, FaTrash } from "react-icons/fa";
 import AppShell from "../components/AppShell";
 import ReceiptAiDropzoneCard from "../components/purchase/ReceiptAiDropzoneCard";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
@@ -30,6 +30,10 @@ export default function ManagerPurchaseAiPage() {
     setInvoiceNumber,
     receipts,
     setReceipts,
+    receiptExtras,
+    setReceiptExtras,
+    appendReceiptExtras,
+    removeReceiptExtraAt,
     items,
     draftItem,
     setDraftItem,
@@ -55,8 +59,19 @@ export default function ManagerPurchaseAiPage() {
     (files) => {
       lastAnalyzedSigRef.current = "";
       setReceipts(files);
+      setReceiptExtras([]);
     },
-    [setReceipts]
+    [setReceipts, setReceiptExtras]
+  );
+
+  const handleOptionalReceiptChange = useCallback(
+    (e) => {
+      const list = Array.from(e.target.files || []).filter(Boolean);
+      e.target.value = "";
+      if (!list.length) return;
+      appendReceiptExtras(list);
+    },
+    [appendReceiptExtras]
   );
 
   useEffect(() => {
@@ -121,6 +136,42 @@ export default function ManagerPurchaseAiPage() {
             fileNames={fileNames}
             onFilesChange={handleDropzoneFiles}
           />
+
+          <div className="card purchase-ai-optional-receipt">
+            <label className="purchase-ai-optional-label" htmlFor="purchase-ai-extra-receipt">
+              Anexo adicional (opcional)
+            </label>
+            <p className="field-helper purchase-ai-optional-hint">
+              Outros PDFs ou imagens que devam ficar no registro (ex.: verso, complemento). Não voltam a disparar a leitura por IA — para
+              analisar vários ficheiros de uma vez, use &quot;Selecionar arquivo(s)&quot; no cartão acima na mesma seleção.
+            </p>
+            <input
+              id="purchase-ai-extra-receipt"
+              type="file"
+              className="purchase-ai-input"
+              accept=".jpg,.jpeg,.png,.pdf"
+              multiple
+              disabled={!token || aiLoading}
+              onChange={handleOptionalReceiptChange}
+            />
+            {receiptExtras.length > 0 ? (
+              <ul className="purchase-ai-extra-list" aria-label="Anexos extras">
+                {receiptExtras.map((f, i) => (
+                  <li key={`${f.name}-${f.size}-${f.lastModified}-${i}`}>
+                    <span className="purchase-ai-extra-name">{f.name}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon"
+                      title="Remover anexo"
+                      onClick={() => removeReceiptExtraAt(i)}
+                    >
+                      <FaTimes aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
 
           <div className={`purchase-ai-form-wrap ${aiLoading ? "purchase-ai-form-busy" : ""}`} aria-busy={aiLoading}>
             <section className="card purchase-ai-section">
@@ -426,7 +477,9 @@ export default function ManagerPurchaseAiPage() {
                 Registrar compra
               </button>
               <p className="purchase-ai-footer-hint">
-                {aiLoading ? "Aguarde a análise da IA…" : "Confira fornecedor, itens e anexos antes de confirmar."}
+                {aiLoading
+                  ? "Aguarde a análise da IA…"
+                  : `É obrigatório pelo menos um ficheiro no cartão de análise acima. Anexos adicionais são opcionais. Total a enviar: ${receipts.length + receiptExtras.length} ficheiro(s). Confira fornecedor e itens antes de confirmar.`}
               </p>
             </footer>
           </div>

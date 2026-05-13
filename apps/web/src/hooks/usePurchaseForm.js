@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, withAuth } from "../api";
 
+function receiptFileKey(f) {
+  return `${f?.name || ""}:${f?.size}:${f?.lastModified}`;
+}
+
 export function toWeekOfMonth(dateStr) {
   const date = new Date(dateStr);
   return Math.ceil(date.getDate() / 7);
@@ -70,6 +74,8 @@ export function usePurchaseForm(token, options = {}) {
   const [supplierId, setSupplierId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [receipts, setReceipts] = useState([]);
+  /** Anexos adicionais só no envio final (não disparam nova leitura por IA). Usado na página Compra com IA. */
+  const [receiptExtras, setReceiptExtras] = useState([]);
   const [items, setItems] = useState([]);
   const [draftItem, setDraftItem] = useState({
     productId: "",
@@ -163,6 +169,30 @@ export function usePurchaseForm(token, options = {}) {
     [recordAiHighlights]
   );
 
+  const appendReceiptExtras = useCallback(
+    (fileList) => {
+      const added = Array.from(fileList || []).filter(Boolean);
+      if (!added.length) return;
+      setReceiptExtras((prev) => {
+        const keys = new Set([...receipts, ...prev].map(receiptFileKey));
+        const next = [...prev];
+        for (const f of added) {
+          const k = receiptFileKey(f);
+          if (!keys.has(k)) {
+            keys.add(k);
+            next.push(f);
+          }
+        }
+        return next;
+      });
+    },
+    [receipts]
+  );
+
+  const removeReceiptExtraAt = useCallback((index) => {
+    setReceiptExtras((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const createProduct = useCallback(
     async (name, lineTypeOpt) => {
       const trimmed = String(name || "").trim();
@@ -240,6 +270,11 @@ export function usePurchaseForm(token, options = {}) {
   );
 
   const confirmPurchase = useCallback(async () => {
+    if (!receipts.length) {
+      setToast("É obrigatório anexar pelo menos um arquivo da nota fiscal.");
+      setTimeout(() => setToast(""), 4500);
+      return;
+    }
     const workItems = [...items];
     for (let i = 0; i < workItems.length; i += 1) {
       const row = workItems[i];
@@ -284,7 +319,7 @@ export function usePurchaseForm(token, options = {}) {
     const form = new FormData();
     form.append("invoiceNumber", invoiceNumber || `NF-${Date.now()}`);
     form.append("items", JSON.stringify(payload));
-    for (const file of receipts) form.append("receipts", file);
+    for (const file of [...receipts, ...receiptExtras]) form.append("receipts", file);
     await api.post("/purchases", form, {
       headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
     });
@@ -292,10 +327,11 @@ export function usePurchaseForm(token, options = {}) {
     setItems([]);
     setInvoiceNumber("");
     setReceipts([]);
+    setReceiptExtras([]);
     setAiHighlightKeys(new Set());
     onAfterConfirm?.();
     setTimeout(() => setToast(""), 2600);
-  }, [token, items, supplierId, date, invoiceNumber, receipts, onAfterConfirm]);
+  }, [token, items, supplierId, date, invoiceNumber, receipts, receiptExtras, onAfterConfirm]);
 
   const parseReceiptsByAI = useCallback(
     async (opts = {}) => {
@@ -384,6 +420,10 @@ export function usePurchaseForm(token, options = {}) {
     setInvoiceNumber,
     receipts,
     setReceipts,
+    receiptExtras,
+    setReceiptExtras,
+    appendReceiptExtras,
+    removeReceiptExtraAt,
     items,
     setItems,
     draftItem,

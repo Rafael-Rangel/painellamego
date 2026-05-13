@@ -45,7 +45,8 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
         <div>
           <h3 className="purchase-ai-upload-title">Analisar com IA</h3>
           <p className="purchase-ai-upload-lead">
-            Arraste imagens ou PDF da nota para a área abaixo, ou use o botão para selecionar. A leitura inicia automaticamente após o envio.
+            Envie <strong>pelo menos um</strong> arquivo da nota (obrigatório). Pode selecionar vários de uma vez na área
+            principal. A leitura por IA inicia automaticamente após o envio.
           </p>
         </div>
       </div>

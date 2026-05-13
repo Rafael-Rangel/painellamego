@@ -158,7 +158,7 @@ export default function ManagerPurchasePage() {
                   <span className="field-helper">A IA tenta preencher a partir da nota; pode editar.</span>
                 </div>
                 <div className="field field-wizard">
-                  <label>Fotos / PDF da nota (obrigatório)</label>
+                  <label>Fotos / PDF da nota (obrigatório — mínimo 1 arquivo)</label>
                   <input
                     className="wizard-file"
                     type="file"
@@ -169,7 +169,7 @@ export default function ManagerPurchasePage() {
                   <span className="field-helper">
                     {receipts.length
                       ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
-                      : "Selecione uma ou várias imagens/PDF da nota"}
+                      : "Selecione uma ou várias imagens/PDF da nota. Sem anexo não é possível confirmar o lançamento."}
                   </span>
                 </div>
                 <div className="field field-wizard wizard-ai-actions">
@@ -361,7 +361,7 @@ export default function ManagerPurchasePage() {
                   <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="Ex.: 12345" />
                 </div>
                 <div className="field field-wizard">
-                  <label>Arquivo da nota (obrigatório)</label>
+                  <label>Arquivo da nota (obrigatório — mínimo 1 arquivo)</label>
                   <input
                     className="wizard-file"
                     type="file"
@@ -372,7 +372,7 @@ export default function ManagerPurchasePage() {
                   <span className="field-helper">
                     {receipts.length
                       ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
-                      : "JPG, PNG ou PDF até 7 MB por arquivo"}
+                      : "JPG, PNG ou PDF até 7 MB por arquivo. Mínimo 1 arquivo obrigatório para confirmar."}
                   </span>
                 </div>
               </div>

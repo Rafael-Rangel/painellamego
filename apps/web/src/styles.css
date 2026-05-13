@@ -2359,6 +2359,53 @@ tbody tr:last-child td {
   gap: var(--space-4);
 }
 
+.purchase-ai-optional-receipt {
+  padding: var(--space-3);
+  border: 1px dashed var(--neutral-300);
+  background: var(--neutral-50, #fafafa);
+}
+
+.purchase-ai-optional-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--brand-primary);
+  margin-bottom: 0.25rem;
+}
+
+.purchase-ai-optional-hint {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-sm);
+}
+
+.purchase-ai-extra-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.purchase-ai-extra-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0.35rem 0.5rem;
+  background: #fff;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--font-sm);
+}
+
+.purchase-ai-extra-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .purchase-ai-upload-card {
   overflow: hidden;
   border: 1px solid var(--neutral-200);
