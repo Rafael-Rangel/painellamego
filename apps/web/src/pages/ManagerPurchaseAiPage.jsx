@@ -226,6 +226,35 @@ export default function ManagerPurchaseAiPage() {
                               Na nota: {row.aiRawProductName}
                             </p>
                           ) : null}
+                          <div className="purchase-ai-product-line-type">
+                            <span className="purchase-ai-mini-label">Insumo ou venda (esta linha)</span>
+                            <div className="purchase-line-type-options" role="radiogroup" aria-label={`Insumo ou venda linha ${idx + 1}`}>
+                              <label className="purchase-line-type-option">
+                                <input
+                                  type="radio"
+                                  name={`line-type-${idx}`}
+                                  checked={row.lineType === "insumo"}
+                                  onChange={() => {
+                                    clearItemRowAiHighlight(idx);
+                                    updateItem(idx, { lineType: "insumo" });
+                                  }}
+                                />
+                                <span>Insumo</span>
+                              </label>
+                              <label className="purchase-line-type-option">
+                                <input
+                                  type="radio"
+                                  name={`line-type-${idx}`}
+                                  checked={row.lineType === "venda"}
+                                  onChange={() => {
+                                    clearItemRowAiHighlight(idx);
+                                    updateItem(idx, { lineType: "venda" });
+                                  }}
+                                />
+                                <span>Venda</span>
+                              </label>
+                            </div>
+                          </div>
                         </div>
                         <div className="field purchase-ai-field">
                           <label>Quantidade</label>
@@ -273,35 +302,6 @@ export default function ManagerPurchaseAiPage() {
                             }}
                           />
                         </div>
-                        <div className="field purchase-ai-field purchase-ai-line-type">
-                          <span className="purchase-ai-mini-label">Tipo</span>
-                          <div className="purchase-line-type-options" role="radiogroup" aria-label={`Insumo ou venda linha ${idx + 1}`}>
-                            <label className="purchase-line-type-option">
-                              <input
-                                type="radio"
-                                name={`line-type-${idx}`}
-                                checked={row.lineType === "insumo"}
-                                onChange={() => {
-                                  clearItemRowAiHighlight(idx);
-                                  updateItem(idx, { lineType: "insumo" });
-                                }}
-                              />
-                              <span>Insumo</span>
-                            </label>
-                            <label className="purchase-line-type-option">
-                              <input
-                                type="radio"
-                                name={`line-type-${idx}`}
-                                checked={row.lineType === "venda"}
-                                onChange={() => {
-                                  clearItemRowAiHighlight(idx);
-                                  updateItem(idx, { lineType: "venda" });
-                                }}
-                              />
-                              <span>Venda</span>
-                            </label>
-                          </div>
-                        </div>
                         <div className="purchase-ai-item-actions">
                           <button type="button" className="btn btn-ghost btn-icon" title="Remover linha" onClick={() => removeItem(idx)}>
                             <FaTrash />
@@ -337,6 +337,29 @@ export default function ManagerPurchaseAiPage() {
                         setDraftItem({ ...draftItem, productId: data.id, lineType: suggestion });
                       }}
                     />
+                    <div className="purchase-ai-product-line-type">
+                      <span className="purchase-ai-mini-label">Insumo ou venda (esta linha)</span>
+                      <div className="purchase-line-type-options" role="radiogroup" aria-label="Insumo ou venda (novo item)">
+                        <label className="purchase-line-type-option">
+                          <input
+                            type="radio"
+                            name="draft-ai-line-type"
+                            checked={draftItem.lineType === "insumo"}
+                            onChange={() => setDraftItem({ ...draftItem, lineType: "insumo" })}
+                          />
+                          <span>Insumo</span>
+                        </label>
+                        <label className="purchase-line-type-option">
+                          <input
+                            type="radio"
+                            name="draft-ai-line-type"
+                            checked={draftItem.lineType === "venda"}
+                            onChange={() => setDraftItem({ ...draftItem, lineType: "venda" })}
+                          />
+                          <span>Venda</span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                   <div className="field purchase-ai-field">
                     <label>Qtd</label>

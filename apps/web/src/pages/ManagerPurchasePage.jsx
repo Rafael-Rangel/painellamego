@@ -43,6 +43,7 @@ export default function ManagerPurchasePage() {
     aiMissing,
     total,
     addItem,
+    updateItem,
     confirmPurchase,
     parseReceiptsByAI,
     createSupplier,
@@ -211,7 +212,7 @@ export default function ManagerPurchasePage() {
               <p className="wizard-panel-desc">Busque o produto, informe quantidade e valor. Marque se a linha é insumo ou venda.</p>
 
               <div className="grid wizard-item-grid">
-                <div className="span-5 wizard-product-col">
+                <div className="span-5 wizard-product-col wizard-product-card">
                   <SingleSelectSearch
                     label="Produto"
                     placeholder="Digite para buscar ou adicionar…"
@@ -232,6 +233,30 @@ export default function ManagerPurchasePage() {
                       setDraftItem({ ...draftItem, productId: data.id, lineType: suggestion });
                     }}
                   />
+                  <div className="purchase-line-type-block purchase-line-type-block--nested">
+                    <span className="purchase-line-type-label">Esta linha é insumo ou venda?</span>
+                    <div className="purchase-line-type-options" role="radiogroup" aria-label="Insumo ou venda (nova linha)">
+                      <label className="purchase-line-type-option">
+                        <input
+                          type="radio"
+                          name="draft-line-type"
+                          checked={draftItem.lineType === "insumo"}
+                          onChange={() => setDraftItem({ ...draftItem, lineType: "insumo" })}
+                        />
+                        <span>Insumo</span>
+                      </label>
+                      <label className="purchase-line-type-option">
+                        <input
+                          type="radio"
+                          name="draft-line-type"
+                          checked={draftItem.lineType === "venda"}
+                          onChange={() => setDraftItem({ ...draftItem, lineType: "venda" })}
+                        />
+                        <span>Venda</span>
+                      </label>
+                    </div>
+                    <p className="field-helper">Cada item da nota pode ser diferente; o cadastro do produto só sugere o padrão.</p>
+                  </div>
                 </div>
                 <div className="field span-2 field-wizard">
                   <label>Quantidade</label>
@@ -270,41 +295,38 @@ export default function ManagerPurchasePage() {
                 </div>
               </div>
 
-              <div className="purchase-line-type-block">
-                <span className="purchase-line-type-label">Esta linha é insumo ou venda?</span>
-                <div className="purchase-line-type-options" role="radiogroup" aria-label="Insumo ou venda">
-                  <label className="purchase-line-type-option">
-                    <input
-                      type="radio"
-                      name="draft-line-type"
-                      checked={draftItem.lineType === "insumo"}
-                      onChange={() => setDraftItem({ ...draftItem, lineType: "insumo" })}
-                    />
-                    <span>Insumo (produção / uso interno)</span>
-                  </label>
-                  <label className="purchase-line-type-option">
-                    <input
-                      type="radio"
-                      name="draft-line-type"
-                      checked={draftItem.lineType === "venda"}
-                      onChange={() => setDraftItem({ ...draftItem, lineType: "venda" })}
-                    />
-                    <span>Venda (revenda)</span>
-                  </label>
-                </div>
-                <p className="field-helper">O sistema sugere conforme o cadastro do produto; você pode alterar antes de adicionar.</p>
-              </div>
-
               <CompactTable
                 columns={[
                   { id: "productId", label: "Produto", render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "—" },
                   {
                     id: "lineType",
-                    label: "Tipo",
-                    render: (item) => (
-                      <span className={item.lineType === "venda" ? "badge badge-warning" : "badge badge-info"}>
-                        {item.lineType === "venda" ? "Venda" : "Insumo"}
-                      </span>
+                    label: "Insumo / venda",
+                    render: (item, idx) => (
+                      <div
+                        className="purchase-line-type-options purchase-line-type-options--compact"
+                        role="radiogroup"
+                        aria-label={`Tipo do item ${idx + 1}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <label className="purchase-line-type-option">
+                          <input
+                            type="radio"
+                            name={`wizard-item-line-${idx}`}
+                            checked={item.lineType !== "venda"}
+                            onChange={() => updateItem(idx, { lineType: "insumo" })}
+                          />
+                          <span>Insumo</span>
+                        </label>
+                        <label className="purchase-line-type-option">
+                          <input
+                            type="radio"
+                            name={`wizard-item-line-${idx}`}
+                            checked={item.lineType === "venda"}
+                            onChange={() => updateItem(idx, { lineType: "venda" })}
+                          />
+                          <span>Venda</span>
+                        </label>
+                      </div>
                     )
                   },
                   { id: "quantity", label: "Qtd" },
