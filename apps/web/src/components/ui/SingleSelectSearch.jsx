@@ -18,6 +18,8 @@ export default function SingleSelectSearch({
   /** async (trimmedQuery) => void — o pai cria o registo e atualiza options/value. */
   onCreateOption,
   createBusy = false,
+  /** Texto do botão “Adicionar …” (ex.: fornecedor, produto). */
+  createEntityLabel = "fornecedor",
   minCreateLength = 2,
   inputClassName = ""
 }) {
@@ -106,7 +108,7 @@ export default function SingleSelectSearch({
                   }
                 }}
               >
-                {createBusy ? "A guardar…" : `+ Adicionar fornecedor “${trimmedQ}”`}
+                {createBusy ? "A guardar…" : `+ Adicionar ${createEntityLabel} “${trimmedQ}”`}
               </button>
             ) : trimmedQ.length > 0 && trimmedQ.length < minCreateLength ? (
               <p className="empty" style={{ margin: 0, padding: "0.6rem 0.7rem" }}>

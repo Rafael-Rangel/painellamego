@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 
 function stripCodeFences(text = "") {
   return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
@@ -60,6 +61,37 @@ function bestMatchByName(name, list, labelKey = "name") {
     }
   }
   return { best, score: bestScore };
+}
+
+function productDbNormalizedKey(p) {
+  const raw = p?.normalized_name != null && String(p.normalized_name).trim() !== "" ? String(p.normalized_name).trim() : null;
+  if (raw) return normalizeProductNameKey(raw);
+  return normalizeProductNameKey(p?.name);
+}
+
+/** Igualdade na chave normalizada (nome cadastrado ou coluna normalized_name). */
+function findProductExactNormalized(products, key) {
+  if (!key) return null;
+  for (const p of products || []) {
+    if (productDbNormalizedKey(p) === key) return p;
+  }
+  return null;
+}
+
+/** Até N candidatos por pontuação de similaridade com o texto da nota (para revisão na UI). */
+function topSuggestedProductMatches(name, products, limit = 3, minScore = 0.15) {
+  const label = String(name || "").trim();
+  if (!label) return [];
+  const scored = (products || [])
+    .map((p) => ({ p, score: similarityScore(label, p?.name) }))
+    .filter((x) => x.score >= minScore)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  return scored.map(({ p, score }) => ({
+    id: p.id,
+    name: p.name,
+    confidence: score
+  }));
 }
 
 /** Conteúdo multimodal conforme OpenRouter: imagens via image_url; PDF via type file + file_data (data URL). */
@@ -203,7 +235,15 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
   const singleLine = rawItems.length === 1;
 
   const items = rawItems.map((it) => {
-    const productMatch = bestMatchByName(it?.productName, products, "name");
+    const rawLabel = String(it?.productName || "").trim();
+    const normalizedLabel = String(it?.productNameNormalized || it?.productName || "").trim();
+    const matchKey = normalizeProductNameKey(normalizedLabel);
+    const exact = findProductExactNormalized(products, matchKey);
+    const fuzzy = bestMatchByName(rawLabel || normalizedLabel, products, "name");
+    const best = exact || (fuzzy.score >= MIN_PRODUCT_MATCH ? fuzzy.best : null);
+    const matchScore = exact ? 1 : fuzzy.score;
+    const suggestedProductMatches = topSuggestedProductMatches(rawLabel || normalizedLabel, products, 3, 0.12);
+
     let qty = it?.quantity == null ? null : Number(it.quantity);
     const unitPrice = it?.unitPrice == null ? null : Number(it.unitPrice);
     if ((!Number.isFinite(qty) || qty <= 0) && singleLine && Number.isFinite(unitPrice) && unitPrice > 0) {
@@ -212,18 +252,19 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
     const unitRaw = String(it?.unitUsed || "").toLowerCase();
     const unitUsed = ["kg", "un", "cx", "l", "g", "ml"].includes(unitRaw) ? (unitRaw === "l" ? "L" : unitRaw) : "un";
     const missing = [];
-    if (!productMatch.best || productMatch.score < MIN_PRODUCT_MATCH) missing.push("produto");
+    if (!best || matchScore < MIN_PRODUCT_MATCH) missing.push("produto");
     if (!Number.isFinite(qty) || qty <= 0) missing.push("quantidade");
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) missing.push("valor unitário");
     return {
       rawProductName: it?.productName || null,
-      productId: productMatch.best?.id || null,
-      productName: productMatch.best?.name || null,
+      productId: best?.id || null,
+      productName: best?.name || null,
       quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
       unitUsed,
       unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : null,
-      lineType: productMatch.best?.type === "venda" ? "venda" : "insumo",
-      missing
+      lineType: best?.type === "venda" ? "venda" : "insumo",
+      missing,
+      suggestedProductMatches
     };
   });
 
@@ -275,6 +316,7 @@ export async function parseReceiptWithAI({
     '  "items": [',
     "    {",
     '      "productName": "string",',
+    '      "productNameNormalized": "string|null",',
     '      "quantity": number|null,',
     '      "unitUsed": "kg|un|cx|L|g|ml|outro|null",',
     '      "unitPrice": number|null',
@@ -283,8 +325,11 @@ export async function parseReceiptWithAI({
     "}",
     "Não invente valores.",
     "Se não achar algum campo, use null.",
+    "Itens — productName: use o texto literal da nota quando não houver correspondência clara com o catálogo.",
+    "Itens — productNameNormalized: opcional; se preencher, deve ser uma forma limpa do nome (sem acentos desnecessários, espaços únicos) para casar com produtos cadastrados; pode repetir productName se já estiver limpo.",
+    "Se um item da nota for claramente o mesmo produto que um nome da lista de produtos cadastrados, copie EXATAMENTE esse nome da lista em productName (e o mesmo em productNameNormalized).",
     "Em nota de serviço com um único valor, pode haver um item com productName = descrição do serviço e unitPrice = valor do serviço; quantity pode ser null ou 1.",
-    `Produtos cadastrados: ${JSON.stringify(productNames)}`,
+    `Produtos cadastrados (reutilize um destes nomes quando for o mesmo produto): ${JSON.stringify(productNames)}`,
     `Fornecedores cadastrados: ${JSON.stringify(supplierNames)}`
   ].join("\n");
 

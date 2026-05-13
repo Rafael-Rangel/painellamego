@@ -46,7 +46,9 @@ export default function ManagerPurchaseAiPage() {
     clearAiHighlight,
     clearItemRowAiHighlight,
     createSupplier,
-    supplierCreating
+    supplierCreating,
+    createProduct,
+    productCreating
   } = usePurchaseForm(token, { recordAiHighlights: true, onAfterConfirm });
 
   const handleDropzoneFiles = useCallback(
@@ -91,7 +93,10 @@ export default function ManagerPurchaseAiPage() {
     Boolean(supplierId) &&
     receipts.length > 0 &&
     items.length > 0 &&
-    items.every((it) => it.productId && it.quantity && Number(it.quantity) > 0 && it.unitPrice && Number(it.unitPrice) > 0);
+    items.every((it) => {
+      const hasProduct = Boolean(it.productId) || String(it.aiRawProductName || "").trim().length >= 2;
+      return hasProduct && it.quantity && Number(it.quantity) > 0 && it.unitPrice && Number(it.unitPrice) > 0;
+    });
 
   const aiClass = (key) => (aiHighlightKeys?.has(key) ? "field-ai-suggested" : "");
 
@@ -192,7 +197,7 @@ export default function ManagerPurchaseAiPage() {
                         <div className="purchase-ai-item-product">
                           <SingleSelectSearch
                             label="Produto"
-                            placeholder="Buscar produto…"
+                            placeholder="Buscar ou adicionar produto…"
                             options={products.map((p) => ({ value: p.id, label: p.name }))}
                             value={row.productId}
                             onChange={(id) => {
@@ -200,6 +205,19 @@ export default function ManagerPurchaseAiPage() {
                               const product = products.find((p) => p.id === id);
                               const suggestion = product?.type === "venda" ? "venda" : "insumo";
                               updateItem(idx, { productId: id, lineType: suggestion, aiRawProductName: undefined });
+                            }}
+                            allowCreate
+                            createEntityLabel="produto"
+                            createBusy={productCreating}
+                            onCreateOption={async (q) => {
+                              const data = await createProduct(q, row.lineType);
+                              if (!data) return;
+                              const suggestion = data.type === "venda" ? "venda" : "insumo";
+                              updateItem(idx, {
+                                productId: data.id,
+                                lineType: suggestion,
+                                aiRawProductName: undefined
+                              });
                             }}
                             inputClassName="purchase-ai-input"
                           />
@@ -301,13 +319,22 @@ export default function ManagerPurchaseAiPage() {
                   <div className="purchase-ai-item-product">
                     <SingleSelectSearch
                       label="Produto"
-                      placeholder="Buscar…"
+                      placeholder="Buscar ou adicionar…"
                       options={products.map((p) => ({ value: p.id, label: p.name }))}
                       value={draftItem.productId}
                       onChange={(id) => {
                         const product = products.find((p) => p.id === id);
                         const suggestion = product?.type === "venda" ? "venda" : "insumo";
                         setDraftItem({ ...draftItem, productId: id, lineType: suggestion });
+                      }}
+                      allowCreate
+                      createEntityLabel="produto"
+                      createBusy={productCreating}
+                      onCreateOption={async (q) => {
+                        const data = await createProduct(q, draftItem.lineType);
+                        if (!data) return;
+                        const suggestion = data.type === "venda" ? "venda" : "insumo";
+                        setDraftItem({ ...draftItem, productId: data.id, lineType: suggestion });
                       }}
                     />
                   </div>

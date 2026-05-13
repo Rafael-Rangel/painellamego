@@ -46,7 +46,9 @@ export default function ManagerPurchasePage() {
     confirmPurchase,
     parseReceiptsByAI,
     createSupplier,
-    supplierCreating
+    supplierCreating,
+    createProduct,
+    productCreating
   } = usePurchaseForm(token, { recordAiHighlights: false, onAfterConfirm });
 
   const handleParseAi = useCallback(() => {
@@ -212,13 +214,22 @@ export default function ManagerPurchasePage() {
                 <div className="span-5 wizard-product-col">
                   <SingleSelectSearch
                     label="Produto"
-                    placeholder="Digite para buscar..."
+                    placeholder="Digite para buscar ou adicionar…"
                     options={products.map((product) => ({ value: product.id, label: product.name }))}
                     value={draftItem.productId}
                     onChange={(id) => {
                       const product = products.find((p) => p.id === id);
                       const suggestion = product?.type === "venda" ? "venda" : "insumo";
                       setDraftItem({ ...draftItem, productId: id, lineType: suggestion });
+                    }}
+                    allowCreate
+                    createEntityLabel="produto"
+                    createBusy={productCreating}
+                    onCreateOption={async (q) => {
+                      const data = await createProduct(q, draftItem.lineType);
+                      if (!data) return;
+                      const suggestion = data.type === "venda" ? "venda" : "insumo";
+                      setDraftItem({ ...draftItem, productId: data.id, lineType: suggestion });
                     }}
                   />
                 </div>
@@ -390,8 +401,8 @@ export default function ManagerPurchasePage() {
               <h4 className="wizard-review-sub">Itens</h4>
               <ul className="purchase-review-list">
                 {items.map((item, idx) => (
-                  <li key={`${item.productId}-${idx}`}>
-                    <strong>{products.find((p) => p.id === item.productId)?.name || item.productId}</strong>
+                  <li key={`${item.productId || "pending"}-${idx}`}>
+                    <strong>{products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || item.productId || "—"}</strong>
                     <span className="wizard-review-meta">
                       {item.lineType === "venda" ? "Venda" : "Insumo"} · {item.quantity} {item.unitUsed} × {formatCurrency(item.unitPrice)}
                     </span>

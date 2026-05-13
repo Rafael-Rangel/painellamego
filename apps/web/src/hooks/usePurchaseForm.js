@@ -83,6 +83,7 @@ export function usePurchaseForm(token, options = {}) {
   const [aiMissing, setAiMissing] = useState([]);
   const [aiHighlightKeys, setAiHighlightKeys] = useState(() => new Set());
   const [supplierCreating, setSupplierCreating] = useState(false);
+  const [productCreating, setProductCreating] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -162,6 +163,40 @@ export function usePurchaseForm(token, options = {}) {
     [recordAiHighlights]
   );
 
+  const createProduct = useCallback(
+    async (name, lineTypeOpt) => {
+      const trimmed = String(name || "").trim();
+      if (trimmed.length < 2) {
+        setToast("O nome do produto deve ter pelo menos 2 caracteres.");
+        setTimeout(() => setToast(""), 3200);
+        return null;
+      }
+      const lineType = lineTypeOpt === "venda" ? "venda" : "insumo";
+      setProductCreating(true);
+      try {
+        const { data } = await api.post("/catalog/products/quick", { name: trimmed, type: lineType }, withAuth(token));
+        setProducts((prev) =>
+          [...prev.filter((p) => p.id !== data.id), data].sort((a, b) =>
+            String(a.name).localeCompare(String(b.name), "pt-BR")
+          )
+        );
+        setToast(data.reused ? `Produto já existia: “${data.name}”.` : `Produto “${data.name}” adicionado.`);
+        setTimeout(() => setToast(""), 2800);
+        return data;
+      } catch (err) {
+        const d = err?.response?.data;
+        let msg = "Não foi possível criar o produto.";
+        if (typeof d?.message === "string") msg = d.message;
+        setToast(msg);
+        setTimeout(() => setToast(""), 4200);
+        return null;
+      } finally {
+        setProductCreating(false);
+      }
+    },
+    [token]
+  );
+
   const createSupplier = useCallback(
     async (name) => {
       const trimmed = String(name || "").trim();
@@ -205,7 +240,38 @@ export function usePurchaseForm(token, options = {}) {
   );
 
   const confirmPurchase = useCallback(async () => {
-    const payload = items.map((item) => ({
+    const workItems = [...items];
+    for (let i = 0; i < workItems.length; i += 1) {
+      const row = workItems[i];
+      if (row.productId) continue;
+      const label = String(row.aiRawProductName || "").trim();
+      if (!label) {
+        setToast("Cada linha precisa de um produto do catálogo ou do texto da nota para criar o item automaticamente.");
+        setTimeout(() => setToast(""), 4500);
+        return;
+      }
+      try {
+        const { data } = await api.post(
+          "/catalog/products/quick",
+          { name: label, type: row.lineType === "venda" ? "venda" : "insumo" },
+          withAuth(token)
+        );
+        workItems[i] = { ...row, productId: data.id, aiRawProductName: undefined };
+        setProducts((prev) =>
+          [...prev.filter((p) => p.id !== data.id), data].sort((a, b) =>
+            String(a.name).localeCompare(String(b.name), "pt-BR")
+          )
+        );
+      } catch (err) {
+        const msg = err?.response?.data?.message || "Não foi possível criar produto a partir da linha.";
+        setToast(msg);
+        setTimeout(() => setToast(""), 4500);
+        return;
+      }
+    }
+    setItems(workItems);
+
+    const payload = workItems.map((item) => ({
       productId: item.productId,
       supplierId,
       unitPrice: Number(item.unitPrice),
@@ -336,6 +402,8 @@ export function usePurchaseForm(token, options = {}) {
     clearAiHighlight,
     clearItemRowAiHighlight,
     createSupplier,
-    supplierCreating
+    supplierCreating,
+    createProduct,
+    productCreating
   };
 }

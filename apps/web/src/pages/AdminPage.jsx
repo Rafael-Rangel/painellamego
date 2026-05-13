@@ -780,7 +780,7 @@ export default function AdminPage() {
       {tab === "products-admin" ? (
         <div className="grid">
           <section className="span-12">
-            <DataCard title="Gestão de produtos (lista única da rede)" subtitle="Somente administrador cria, edita e remove produtos">
+            <DataCard title="Gestão de produtos (lista única da rede)" subtitle="Administrador mantém o catálogo completo. Produtos criados por gerentes (criação rápida) surgem em “Outros” e aparecem como origem “Gerente” na tabela.">
               <form className="grid" onSubmit={saveProduct}>
                 <div className="field span-4">
                   <label>Nome</label>
@@ -823,6 +823,18 @@ export default function AdminPage() {
               <CompactTable
                 columns={[
                   { id: "name", label: "Nome", render: (r) => <span className="badge badge-info">{r.name}</span> },
+                  {
+                    id: "created_by",
+                    label: "Origem",
+                    render: (r) =>
+                      r.created_by === "manager" ? (
+                        <span className="badge badge-warning" title="Criado pelo fluxo rápido na compra">
+                          Gerente
+                        </span>
+                      ) : (
+                        <span className="badge badge-success">Admin</span>
+                      )
+                  },
                   { id: "category", label: "Categoria" },
                   { id: "type", label: "Tipo", render: (r) => <span className={r.type === "venda" ? "badge badge-warning" : "badge badge-success"}>{r.type}</span> },
                   { id: "standard_unit", label: "Unidade" },

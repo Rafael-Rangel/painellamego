@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { normalizeProductNameKey, QUICK_PRODUCT_CATEGORY } from "../lib/productNameNormalize.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
@@ -53,6 +54,86 @@ router.get("/products", requireAuth, async (_req, res) => {
   return res.json(data);
 });
 
+const productQuickSchema = z.object({
+  name: z.string().min(2).max(400),
+  type: z.enum(["insumo", "venda"]).optional()
+});
+
+/** Gerente ou admin: cria produto mínimo em "Outros" ou devolve existente (dedupe por nome normalizado). */
+router.post("/products/quick", requireAuth, async (req, res) => {
+  const parsed = productQuickSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+
+  const displayName = String(parsed.data.name).trim().replace(/\s+/g, " ");
+  const keyStrong = normalizeProductNameKey(displayName);
+  const keyLegacy = displayName.toLowerCase();
+  const lineType = parsed.data.type ?? "insumo";
+
+  const { data: byStrong, error: e1 } = await supabaseAdmin
+    .from("products")
+    .select("*")
+    .eq("category", QUICK_PRODUCT_CATEGORY)
+    .eq("normalized_name", keyStrong)
+    .maybeSingle();
+  if (e1) return res.status(400).json({ message: e1.message });
+  if (byStrong) return res.status(200).json({ ...byStrong, reused: true });
+
+  const { data: byLegacy, error: e2 } = await supabaseAdmin
+    .from("products")
+    .select("*")
+    .eq("category", QUICK_PRODUCT_CATEGORY)
+    .eq("normalized_name", keyLegacy)
+    .maybeSingle();
+  if (e2) return res.status(400).json({ message: e2.message });
+  if (byLegacy) return res.status(200).json({ ...byLegacy, reused: true });
+
+  const { data: outrosRows, error: e3 } = await supabaseAdmin
+    .from("products")
+    .select("*")
+    .eq("category", QUICK_PRODUCT_CATEGORY)
+    .limit(3000);
+  if (e3) return res.status(400).json({ message: e3.message });
+  const sameKey = (outrosRows || []).find((p) => normalizeProductNameKey(p.name) === keyStrong);
+  if (sameKey) return res.status(200).json({ ...sameKey, reused: true });
+
+  await ensureCategoryExists(QUICK_PRODUCT_CATEGORY);
+  const catCode = toCategoryCode(QUICK_PRODUCT_CATEGORY);
+  const { data: catRow } = await supabaseAdmin.from("categories").select("id").eq("code", catCode).maybeSingle();
+
+  const insertPayload = {
+    name: displayName,
+    normalized_name: keyStrong,
+    category: QUICK_PRODUCT_CATEGORY,
+    type: lineType,
+    standard_unit: "un",
+    is_active: true,
+    created_by: req.user?.role === "admin" ? "admin" : "manager"
+  };
+  if (catRow?.id) insertPayload.category_id = catRow.id;
+
+  const { data: created, error: insErr } = await supabaseAdmin.from("products").insert(insertPayload).select("*").single();
+  if (insErr) {
+    const msg = String(insErr.message || "");
+    if (msg.toLowerCase().includes("unique") || insErr.code === "23505") {
+      const { data: again } = await supabaseAdmin
+        .from("products")
+        .select("*")
+        .eq("category", QUICK_PRODUCT_CATEGORY)
+        .eq("normalized_name", keyStrong)
+        .maybeSingle();
+      if (again) return res.status(200).json({ ...again, reused: true });
+    }
+    return res.status(400).json({ message: insErr.message });
+  }
+  await logAudit({
+    userId: req.user.id,
+    action: "create",
+    resource: "product_quick",
+    payload: { productId: created.id }
+  });
+  return res.status(201).json({ ...created, reused: false });
+});
+
 router.get("/categories", requireAuth, async (_req, res) => {
   const { data, error } = await supabaseAdmin
     .from("categories")
@@ -69,10 +150,11 @@ router.post("/products", requireAuth, requireAdmin, async (req, res) => {
 
   const payload = {
     name: parsed.data.name,
-    normalized_name: parsed.data.name.trim().toLowerCase(),
+    normalized_name: normalizeProductNameKey(parsed.data.name),
     category: parsed.data.category,
     type: parsed.data.type,
-    standard_unit: parsed.data.standardUnit
+    standard_unit: parsed.data.standardUnit,
+    created_by: "admin"
   };
   await ensureCategoryExists(parsed.data.category);
   const { data, error } = await supabaseAdmin.from("products").insert(payload).select("*").single();
@@ -87,13 +169,11 @@ router.put("/products/:id", requireAuth, requireAdmin, async (req, res) => {
 
   const payload = {
     name: parsed.data.name,
-    normalized_name: parsed.data.name.trim().toLowerCase(),
+    normalized_name: normalizeProductNameKey(parsed.data.name),
     category: parsed.data.category,
     type: parsed.data.type,
     standard_unit: parsed.data.standardUnit
   };
-  await ensureCategoryExists(parsed.data.category);
-  const { data, error } = await supabaseAdmin.from("products").update(payload).eq("id", req.params.id).select("*").single();
   if (error) return res.status(400).json({ message: error.message });
   await logAudit({ userId: req.user.id, action: "update", resource: "product", payload: { productId: data.id } });
   return res.json(data);
