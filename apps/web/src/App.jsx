@@ -42,14 +42,6 @@ export default function App() {
           }
         />
         <Route
-          path="/manager/alerts"
-          element={
-            <ProtectedRoute role="manager">
-              <ManagerPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/manager/new-purchase"
           element={
             <ProtectedRoute role="manager">

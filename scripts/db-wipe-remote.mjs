@@ -91,4 +91,4 @@ for (let page = 1; page <= 50; page += 1) {
 }
 console.log(`[db-wipe-remote] Auth: mantido apenas ${ADMIN_EMAIL} (se existia).`);
 
-console.log("[db-wipe-remote] Feito. Sugestão: npm run supabase:bootstrap para garantir o admin.");
+console.log("[db-wipe-remote] Feito. Sugestão: npm run supabase:bootstrap:admin (ou supabase:bootstrap com gerente demo).");

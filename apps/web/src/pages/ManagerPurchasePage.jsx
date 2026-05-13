@@ -10,9 +10,9 @@ import { formatCurrency } from "../lib/formatters";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
 
 const STEPS = [
-  { n: 1, title: "Dados da compra", hint: "Data, fornecedor, nº NF, anexo e IA" },
+  { n: 1, title: "Dados da compra", hint: "Data, fornecedor e anexo da nota" },
   { n: 2, title: "Itens da nota", hint: "Produtos, valores e insumo ou venda" },
-  { n: 3, title: "Nota fiscal", hint: "Número NF, arquivo e leitura por IA" },
+  { n: 3, title: "Nota fiscal", hint: "Número NF e arquivos" },
   { n: 4, title: "Conferir e enviar", hint: "Revise tudo antes de salvar" }
 ];
 
@@ -39,28 +39,15 @@ export default function ManagerPurchasePage() {
     draftItem,
     setDraftItem,
     toast,
-    aiLoading,
-    aiMissing,
     total,
     addItem,
     updateItem,
     confirmPurchase,
-    parseReceiptsByAI,
     createSupplier,
     supplierCreating,
     createProduct,
     productCreating
   } = usePurchaseForm(token, { recordAiHighlights: false, onAfterConfirm });
-
-  const handleParseAi = useCallback(() => {
-    parseReceiptsByAI({
-      onSuccess: (data, { autoItems }) => {
-        const canReviewItems = autoItems.length > 0 && Boolean(data?.purchaseDate);
-        if (canReviewItems) setStep(2);
-        else setStep(1);
-      }
-    });
-  }, [parseReceiptsByAI]);
 
   const links = useMemo(() => buildManagerSidebarLinks(navigate), [navigate]);
 
@@ -127,7 +114,7 @@ export default function ManagerPurchasePage() {
                 <button type="button" className="btn btn-link" style={{ padding: 0, verticalAlign: "baseline" }} onClick={() => navigate("/manager/new-purchase/ai")}>
                   Compra com IA
                 </button>
-                . Aqui pode continuar por etapas: anexe a nota e use &quot;Ler nota com IA&quot; nesta página, ou preencha à mão.
+                . Nesta página o fluxo é manual por etapas: preencha os campos e anexe a nota antes de confirmar.
               </p>
               <div className="wizard-fields">
                 <div className="field field-wizard">
@@ -155,7 +142,7 @@ export default function ManagerPurchasePage() {
                     placeholder="Ex.: 12345 ou chave resumida"
                     autoComplete="off"
                   />
-                  <span className="field-helper">A IA tenta preencher a partir da nota; pode editar.</span>
+                  <span className="field-helper">A IA na página Compra com IA pode sugerir este número; aqui pode editar à mão.</span>
                 </div>
                 <div className="field field-wizard">
                   <label>Fotos / PDF da nota (obrigatório — mínimo 1 arquivo)</label>
@@ -183,23 +170,9 @@ export default function ManagerPurchasePage() {
                       <FaRobot style={{ marginRight: "0.35rem" }} />
                       Analisar com IA
                     </button>
-                    <button className="btn btn-secondary" type="button" onClick={handleParseAi} disabled={!receipts.length || aiLoading}>
-                      <FaRobot style={{ marginRight: "0.35rem" }} />
-                      {aiLoading ? "Lendo nota..." : "Ler nota com IA (aqui)"}
-                    </button>
                   </div>
                 </div>
               </div>
-              {aiMissing.length ? (
-                <div className="card" style={{ marginTop: "0.75rem", borderTop: 0 }}>
-                  <h4 style={{ marginBottom: "0.5rem" }}>Ajustes sugeridos (revise o formulário acima e nas etapas seguintes)</h4>
-                  <ul style={{ margin: 0, paddingLeft: "1rem" }}>
-                    {aiMissing.map((msg, idx) => (
-                      <li key={`${msg}-${idx}`}>{msg}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
             </div>
           ) : null}
 

@@ -281,31 +281,6 @@ router.get("/admin/dashboard/summary", requireAuth, requireAdmin, async (req, re
   });
 });
 
-router.get("/alerts/me", requireAuth, async (req, res) => {
-  let query = supabaseAdmin
-    .from("alerts")
-    .select("id, store_id, product_id, type, message, created_at, read_at, products(name)")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (req.user.role !== "admin") {
-    const storeIds = await getManagerStoreIds(req.user);
-    if (!storeIds.length) return res.json([]);
-    query = query.in("store_id", storeIds);
-  }
-  const { data, error } = await query;
-  if (error) return res.status(400).json({ message: error.message });
-
-  const seen = new Set();
-  const deduped = [];
-  for (const row of data || []) {
-    const key = `${row.product_id || "none"}-${row.type}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(row);
-  }
-  return res.json(deduped.slice(0, 40));
-});
-
 router.get("/admin/comparisons/opportunities", requireAuth, requireAdmin, async (_req, res) => {
   const { data, error } = await supabaseAdmin
     .from("v_admin_price_opportunities")

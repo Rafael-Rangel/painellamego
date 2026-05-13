@@ -194,22 +194,6 @@ async function seedBusinessData() {
   }
 
   await client.query(`
-    insert into public.alerts (store_id, product_id, type, message, created_at)
-    select
-      pi.store_id,
-      pi.product_id,
-      case when random() > 0.5 then 'above_average' else 'cheaper_supplier_exists' end,
-      case when random() > 0.5
-        then 'Sua loja está pagando acima da média da rede.'
-        else 'Existe fornecedor mais barato em outra unidade.'
-      end,
-      now() - ((random() * 30)::int || ' days')::interval
-    from public.purchase_items pi
-    order by random()
-    limit 80;
-  `);
-
-  await client.query(`
     insert into public.price_snapshots (product_id, min_price, max_price, avg_price, updated_at)
     select
       product_id,

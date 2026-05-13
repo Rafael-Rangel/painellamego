@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { FaBars, FaBell, FaMoon, FaSun, FaTimes } from "react-icons/fa";
+import { FaBars, FaMoon, FaSun, FaTimes } from "react-icons/fa";
 import { useAuth } from "../auth/AuthProvider";
 
 const logoUrl = import.meta.env.VITE_BRAND_LOGO_URL ?? "/logo.jpg";
@@ -75,9 +75,6 @@ export default function AppShell({
           >
             {theme === "dark" ? <FaSun /> : <FaMoon />}
           </button>
-          <span className="badge badge-info topbar-notify" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
-            <FaBell /> 3
-          </span>
           <span className="topbar-pill">{storeLabel}</span>
           <span className="topbar-user">{user?.email}</span>
           <button className="btn btn-secondary" onClick={handleSignOut}>

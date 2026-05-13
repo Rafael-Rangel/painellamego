@@ -37,34 +37,12 @@ function monthLabel(ym) {
   return new Date(Number(y, 10), m - 1, 1).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
 }
 
-const ALERT_TYPE_LABELS = {
-  above_average: "Acima da média",
-  cheaper_supplier_exists: "Melhor preço em outra unidade"
-};
-
-function productNameFromAlert(a) {
-  const p = a?.products;
-  if (p) return Array.isArray(p) ? p[0]?.name || "—" : p?.name || "—";
-  return a?.product_name || "—";
-}
-
-function nextStepSuggestion(a) {
-  if (a.type === "above_average") {
-    return "Negocie com o fornecedor ou peça à central uma cotação comparando com outras padarias.";
-  }
-  if (a.type === "cheaper_supplier_exists") {
-    return "Confira o fornecedor usado na loja com menor preço e avalie mudar a compra para a mesma referência.";
-  }
-  return "Revise o lançamento e fale com a equipe de compras da rede.";
-}
-
 export default function ManagerPage() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [tab, setTab] = useState("overview");
   const [overview, setOverview] = useState(null);
-  const [alerts, setAlerts] = useState([]);
   const [history, setHistory] = useState([]);
   const [products, setProducts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -111,21 +89,18 @@ export default function ManagerPage() {
     setLoading(true);
     setError("");
     try {
-      const [overviewRes, alertRes, historyRes, productsRes, suppliersRes] = await Promise.all([
+      const [overviewRes, historyRes, productsRes, suppliersRes] = await Promise.all([
         api.get(`/manager/overview?${managerDashboardQuery}`, withAuth(token)),
-        api.get("/alerts/me", withAuth(token)),
         api.get("/purchases/me", withAuth(token)),
         api.get("/catalog/products", withAuth(token)),
         api.get("/catalog/suppliers", withAuth(token))
       ]);
       setOverview(overviewRes.data || emptyOverview);
-      setAlerts(alertRes.data?.length ? alertRes.data : []);
       setHistory(historyRes.data || []);
       setProducts(productsRes.data?.length ? productsRes.data : []);
       setSuppliers(suppliersRes.data?.length ? suppliersRes.data : []);
     } catch {
       setError("Nao foi possivel carregar os dados. Verifique sua conexao ou tente novamente.");
-      setAlerts([]);
       setProducts([]);
       setSuppliers([]);
       setHistory([]);
@@ -140,7 +115,6 @@ export default function ManagerPage() {
   }, [token, managerDashboardQuery]);
 
   useEffect(() => {
-    if (location.pathname === "/manager/alerts") return setTab("alerts");
     if (location.pathname !== "/manager") return;
     const qTab = new URLSearchParams(location.search).get("tab");
     if (qTab === "history" || qTab === "catalog") return setTab(qTab);
@@ -392,7 +366,6 @@ export default function ManagerPage() {
                 value={o.efficiencyScore != null ? Number(o.efficiencyScore).toFixed(1) : "—"}
                 hint={o.storeName || "Sua loja"}
               />
-              <KpiCardCompact label="Alertas ativos" value={alerts.length} />
               <KpiCardCompact
                 label="Loja"
                 value={o.storeCode != null ? o.storeCode : user?.storeId ? "—" : "nao definida"}
@@ -441,34 +414,6 @@ export default function ManagerPage() {
             <ChartCard title="Top produtos" subtitle="Maior volume de gasto" height={280}>
               {hasProductData ? <Bar data={barProductData} options={barCategoryHOptions} /> : <p className="empty">Sem produtos.</p>}
             </ChartCard>
-          </section>
-
-          <section className="span-12">
-            <DataCard
-              title="Alertas para a sua loja"
-              subtitle="Produto, valores em reais e o que fazer — sem siglas técnicas"
-            >
-              <CompactTable
-                columns={[
-                  {
-                    id: "type",
-                    label: "Situação",
-                    render: (a) => (
-                      <span className={a.type === "above_average" ? "badge badge-danger" : "badge badge-warning"}>
-                        {ALERT_TYPE_LABELS[a.type] || a.type}
-                      </span>
-                    )
-                  },
-                  { id: "product", label: "Produto", render: (a) => productNameFromAlert(a) },
-                  { id: "message", label: "Detalhe" },
-                  { id: "action", label: "Próximo passo", render: (a) => nextStepSuggestion(a) }
-                ]}
-                rows={alerts.slice(0, 12)}
-                keyField="id"
-                loading={loading}
-                emptyMessage="Sem alertas no momento."
-              />
-            </DataCard>
           </section>
 
           <section className="span-12">
@@ -589,31 +534,6 @@ export default function ManagerPage() {
             keyField="id"
             loading={loading}
             emptyMessage="Nenhuma compra encontrada."
-          />
-        </DataCard>
-      ) : null}
-
-      {tab === "alerts" ? (
-        <DataCard title="Alertas de preço" subtitle="Leitura clara: produto, situação e sugestão prática">
-          <CompactTable
-            columns={[
-              {
-                id: "type",
-                label: "Situação",
-                render: (alert) => (
-                  <span className={alert.type === "above_average" ? "badge badge-danger" : "badge badge-warning"}>
-                    {ALERT_TYPE_LABELS[alert.type] || alert.type}
-                  </span>
-                )
-              },
-              { id: "product", label: "Produto", render: (a) => productNameFromAlert(a) },
-              { id: "message", label: "Detalhe" },
-              { id: "action", label: "Próximo passo", render: (a) => nextStepSuggestion(a) }
-            ]}
-            rows={alerts}
-            keyField="id"
-            loading={loading}
-            emptyMessage="Nenhum alerta ativo."
           />
         </DataCard>
       ) : null}

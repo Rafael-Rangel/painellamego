@@ -5,7 +5,7 @@ import { purchaseItemSchema } from "@lamego/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { checkStoreScope, requireAuth, resolveStoreScope } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
-import { createPriceAlertsForStore, recalculateProductSnapshot } from "../services/comparisonService.js";
+import { recalculateProductSnapshot } from "../services/comparisonService.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
 import { parseReceiptWithAI } from "../services/receiptAiService.js";
 
@@ -179,7 +179,6 @@ router.post(
 
   for (const item of payloadItems) {
     await recalculateProductSnapshot(item.product_id);
-    await createPriceAlertsForStore(item.store_id, item.product_id, Number(item.unit_price));
   }
 
   await logAudit({

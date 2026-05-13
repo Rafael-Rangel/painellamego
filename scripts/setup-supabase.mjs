@@ -9,6 +9,7 @@
  *  - .env (na raiz) com SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY válidos
  *
  * Uso: npm run supabase:bootstrap
+ *       npm run supabase:bootstrap:admin  (só admin; útil após db:wipe-remote)
  */
 import { createClient } from "@supabase/supabase-js";
 import { config as loadEnv } from "dotenv";
@@ -17,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const adminOnly = process.argv.includes("--admin-only");
 
 loadEnv({ path: path.resolve(__dirname, "../.env") });
 loadEnv({ path: path.resolve(__dirname, "../apps/api/.env"), override: false });
@@ -128,6 +130,13 @@ async function run() {
   console.log(`[bootstrap] Conectando em ${SUPABASE_URL}`);
 
   await upsertUser(ADMIN_USER);
+
+  if (adminOnly) {
+    console.log("\n[bootstrap] Concluído (apenas admin). Credenciais:");
+    console.log(`  ADMIN -> ${ADMIN_USER.email} / ${ADMIN_USER.password}`);
+    console.log("\nLojas e gerentes: crie pelo painel admin após o primeiro login.");
+    return;
+  }
 
   const store = await ensureDefaultCentroStore();
   const user = await upsertUser({
