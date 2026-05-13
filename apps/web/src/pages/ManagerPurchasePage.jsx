@@ -134,52 +134,6 @@ export default function ManagerPurchasePage() {
     }
   }
 
-  async function parseReceiptByAI() {
-    if (!receipt) return;
-    setAiLoading(true);
-    setAiMissing([]);
-    try {
-      const form = new FormData();
-      form.append("receipt", receipt);
-      const { data } = await api.post("/purchases/receipt-ai-parse", form, {
-        headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
-      });
-
-      if (data?.invoiceNumber && !invoiceNumber) setInvoiceNumber(data.invoiceNumber);
-      if (data?.purchaseDate) setDate(String(data.purchaseDate).slice(0, 10));
-      if (data?.supplierSuggestion?.id && !supplierId) setSupplierId(data.supplierSuggestion.id);
-
-      const autoItems = (data?.items || [])
-        .filter((it) => it.productId && it.quantity && it.unitPrice)
-        .map((it) => ({
-          productId: it.productId,
-          quantity: String(it.quantity),
-          unitUsed: it.unitUsed || "un",
-          unitPrice: String(it.unitPrice),
-          lineType: it.lineType === "venda" ? "venda" : "insumo"
-        }));
-      if (autoItems.length) setItems((prev) => [...prev, ...autoItems]);
-
-      const missingRows = [];
-      for (const [idx, it] of (data?.items || []).entries()) {
-        if (it.missing?.length) {
-          missingRows.push(`Item ${idx + 1} (${it.rawProductName || "produto"}): falta ${it.missing.join(", ")}`);
-        }
-      }
-      for (const g of data?.missingGlobal || []) missingRows.push(`Nota: falta ${g}`);
-      setAiMissing(missingRows);
-
-      if (!missingRows.length) {
-        setToast("IA preencheu os dados da nota automaticamente.");
-        setTimeout(() => setToast(""), 2200);
-      }
-    } catch (err) {
-      setAiMissing([err?.response?.data?.message || "Não foi possível ler a nota com IA."]);
-    } finally {
-      setAiLoading(false);
-    }
-  }
-
   const links = useMemo(() => buildManagerSidebarLinks(navigate), [navigate]);
 
   const canGoNext =

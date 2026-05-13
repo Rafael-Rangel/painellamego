@@ -75,6 +75,7 @@ router.post(
       aggregate.items.push(...(parsed.items || []));
       aggregate.missingGlobal.push(...(parsed.missingGlobal || []));
     }
+    aggregate.missingGlobal = [...new Set(aggregate.missingGlobal)];
     return res.json(aggregate);
   } catch (err) {
     return res.status(400).json({ message: err.message || "Falha ao analisar nota com IA." });

@@ -38,6 +38,81 @@ function bestMatchByName(name, list, labelKey = "name") {
   return { best, score: bestScore };
 }
 
+/** Conteúdo multimodal conforme OpenRouter: imagens via image_url; PDF via type file + file_data (data URL). */
+function visionPartsForMime(mimeType, dataUrl) {
+  if (mimeType === "application/pdf") {
+    return [
+      {
+        type: "file",
+        file: {
+          filename: "nota-fiscal.pdf",
+          file_data: dataUrl
+        }
+      }
+    ];
+  }
+  return [
+    {
+      type: "image_url",
+      image_url: { url: dataUrl }
+    }
+  ];
+}
+
+function openRouterHeaders() {
+  const h = {
+    Authorization: `Bearer ${config.openRouterApiKey}`,
+    "Content-Type": "application/json"
+  };
+  if (config.openRouterHttpReferer) {
+    h["HTTP-Referer"] = config.openRouterHttpReferer;
+  }
+  if (config.openRouterAppTitle) {
+    h["X-Title"] = config.openRouterAppTitle;
+  }
+  return h;
+}
+
+async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject }) {
+  const userContent = [{ type: "text", text: prompt }, ...visionPartsForMime(mimeType, dataUrl)];
+
+  const body = {
+    model: config.openRouterModel,
+    temperature: 0.1,
+    messages: [
+      {
+        role: "user",
+        content: userContent
+      }
+    ]
+  };
+
+  if (useJsonObject) {
+    body.response_format = { type: "json_object" };
+  }
+
+  if (mimeType === "application/pdf") {
+    body.plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
+  }
+
+  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: openRouterHeaders(),
+    body: JSON.stringify(body)
+  });
+
+  const payload = await resp.json();
+  if (!resp.ok) {
+    const msg = payload?.error?.message || JSON.stringify(payload?.error || payload);
+    const err = new Error(msg);
+    err.status = resp.status;
+    err.payload = payload;
+    throw err;
+  }
+
+  return payload;
+}
+
 export async function parseReceiptWithAI({
   imageBuffer,
   mimeType,
@@ -49,6 +124,7 @@ export async function parseReceiptWithAI({
   }
 
   const base64 = imageBuffer.toString("base64");
+  const dataUrl = `data:${mimeType};base64,${base64}`;
   const productNames = (products || []).map((p) => p.name).filter(Boolean).slice(0, 500);
   const supplierNames = (suppliers || []).map((s) => s.name).filter(Boolean).slice(0, 500);
 
@@ -74,34 +150,21 @@ export async function parseReceiptWithAI({
     `Fornecedores cadastrados: ${JSON.stringify(supplierNames)}`
   ].join("\n");
 
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.openRouterApiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: config.openRouterModel,
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${base64}` }
-            }
-          ]
-        }
-      ]
-    })
-  });
-
-  const payload = await resp.json();
-  if (!resp.ok) {
-    throw new Error(payload?.error?.message || "Falha ao chamar OpenRouter.");
+  let payload;
+  try {
+    payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: true });
+  } catch (firstErr) {
+    const m = String(firstErr?.message || "").toLowerCase();
+    const retry =
+      m.includes("response_format") ||
+      m.includes("json_object") ||
+      m.includes("structured") ||
+      firstErr?.status === 400;
+    if (retry) {
+      payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: false });
+    } else {
+      throw firstErr;
+    }
   }
 
   const content = payload?.choices?.[0]?.message?.content || "{}";

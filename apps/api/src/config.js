@@ -27,7 +27,11 @@ export const config = {
   appOrigins: parseOrigins(appOriginRaw),
   trustProxy: Number(process.env.TRUST_PROXY ?? 1),
   openRouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
-  openRouterModel: process.env.OPENROUTER_MODEL ?? "google/gemini-1.5-pro"
+  /** Visão + JSON; override com OPENROUTER_MODEL. Lista: https://openrouter.ai/models */
+  openRouterModel: process.env.OPENROUTER_MODEL ?? "google/gemini-2.0-flash-001",
+  /** OpenRouter recomenda para rankings / depuração (opcional) */
+  openRouterHttpReferer: process.env.OPENROUTER_HTTP_REFERER ?? process.env.APP_ORIGIN ?? "",
+  openRouterAppTitle: process.env.OPENROUTER_APP_TITLE ?? "Lamego Compras"
 };
 
 export function ensureRequiredConfig() {

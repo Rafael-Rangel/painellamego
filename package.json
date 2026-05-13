@@ -15,6 +15,7 @@
     "build:api": "npm --workspace @lamego/api run build",
     "build:web": "npm --workspace @lamego/web run build",
     "test": "npm --workspace @lamego/api run test",
+    "test:openrouter": "node scripts/test-receipt-openrouter.mjs",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
     "db:link": "supabase link --project-ref hfxqvitixkrqjggkbbej",
