@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 /**
  * Teste de integração: OpenRouter + parseReceiptWithAI (imagem mínima).
- * Uso na raiz do repo: node scripts/test-receipt-openrouter.mjs
+ * Uso na raiz do repo:
+ *   node scripts/test-receipt-openrouter.mjs
+ *   node scripts/test-receipt-openrouter.mjs https://exemplo.com/nota.jpg
+ *   node scripts/test-receipt-openrouter.mjs /caminho/local/nota.png
  * Requer OPENROUTER_API_KEY no .env (raiz ou apps/api).
  */
 import dotenv from "dotenv";
 import { Buffer } from "node:buffer";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,11 +25,44 @@ const tinyJpeg = Buffer.from(
   "base64"
 );
 
+function mimeFromPath(p) {
+  const ext = path.extname(p).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".pdf") return "application/pdf";
+  return "image/jpeg";
+}
+
+async function loadImageArg(arg) {
+  if (!arg) {
+    return { imageBuffer: tinyJpeg, mimeType: "image/jpeg", label: "JPEG 1×1 (fixture)" };
+  }
+  if (/^https?:\/\//i.test(arg)) {
+    const res = await fetch(arg, { redirect: "follow" });
+    if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar ${arg}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const ct = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const mime =
+      ct && ct !== "application/octet-stream"
+        ? ct
+        : mimeFromPath(new URL(arg).pathname || "") || "image/jpeg";
+    return { imageBuffer: buf, mimeType: mime, label: `URL (${buf.length} bytes)` };
+  }
+  const abs = path.isAbsolute(arg) ? arg : path.join(process.cwd(), arg);
+  if (!fs.existsSync(abs)) throw new Error(`Ficheiro não encontrado: ${abs}`);
+  const buf = fs.readFileSync(abs);
+  return { imageBuffer: buf, mimeType: mimeFromPath(abs), label: `ficheiro ${path.basename(abs)} (${buf.length} bytes)` };
+}
+
 async function main() {
   if (!process.env.OPENROUTER_API_KEY) {
     console.error("SKIP: defina OPENROUTER_API_KEY no .env para rodar este teste.");
     process.exit(2);
   }
+
+  const arg = process.argv[2];
+  const { imageBuffer, mimeType, label } = await loadImageArg(arg);
+  console.log("Fonte da imagem:", label, "| mime:", mimeType);
 
   const products = [
     { id: "11111111-1111-1111-1111-111111111111", name: "Farinha de trigo", type: "insumo" }
@@ -33,8 +70,8 @@ async function main() {
   const suppliers = [{ id: "22222222-2222-2222-2222-222222222222", name: "Distribuidora Sul" }];
 
   const out = await parseReceiptWithAI({
-    imageBuffer: tinyJpeg,
-    mimeType: "image/jpeg",
+    imageBuffer,
+    mimeType,
     products,
     suppliers
   });

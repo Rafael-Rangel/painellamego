@@ -4,6 +4,29 @@ function stripCodeFences(text = "") {
   return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
 }
 
+/** Tenta obter um objeto JSON da resposta em texto livre (markdown, texto extra, etc.). */
+function parseJsonFromModelContent(content) {
+  const raw = String(content ?? "").trim();
+  if (!raw) throw new Error("A IA retornou resposta vazia.");
+  const stripped = stripCodeFences(raw);
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    /* ignore */
+  }
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    const slice = stripped.slice(start, end + 1);
+    try {
+      return JSON.parse(slice);
+    } catch {
+      /* ignore */
+    }
+  }
+  throw new Error("A IA retornou resposta em formato inválido.");
+}
+
 function normalizeText(s) {
   return String(s || "")
     .toLowerCase()
@@ -59,6 +82,13 @@ function visionPartsForMime(mimeType, dataUrl) {
   ];
 }
 
+function truncateCatalogNames(names, maxItems = 120, maxCharsPerName = 100) {
+  return (names || [])
+    .map((n) => String(n || "").trim().slice(0, maxCharsPerName))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
 function openRouterHeaders() {
   const h = {
     Authorization: `Bearer ${config.openRouterApiKey}`,
@@ -73,12 +103,14 @@ function openRouterHeaders() {
   return h;
 }
 
-async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject }) {
-  const userContent = [{ type: "text", text: prompt }, ...visionPartsForMime(mimeType, dataUrl)];
+async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pdfPlugin }) {
+  // Mídia antes do texto: melhora compatibilidade com modelos de visão no OpenRouter.
+  const userContent = [...visionPartsForMime(mimeType, dataUrl), { type: "text", text: prompt }];
 
   const body = {
     model: config.openRouterModel,
     temperature: 0.1,
+    max_tokens: 8192,
     messages: [
       {
         role: "user",
@@ -91,7 +123,8 @@ async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject }) 
     body.response_format = { type: "json_object" };
   }
 
-  if (mimeType === "application/pdf") {
+  const usePdfPlugin = pdfPlugin !== false && mimeType === "application/pdf";
+  if (usePdfPlugin) {
     body.plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
   }
 
@@ -125,8 +158,8 @@ export async function parseReceiptWithAI({
 
   const base64 = imageBuffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
-  const productNames = (products || []).map((p) => p.name).filter(Boolean).slice(0, 500);
-  const supplierNames = (suppliers || []).map((s) => s.name).filter(Boolean).slice(0, 500);
+  const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean));
+  const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean));
 
   const prompt = [
     "Extraia dados desta nota fiscal brasileira e retorne SOMENTE JSON válido.",
@@ -154,26 +187,38 @@ export async function parseReceiptWithAI({
   try {
     payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: true });
   } catch (firstErr) {
-    const m = String(firstErr?.message || "").toLowerCase();
-    const retry =
-      m.includes("response_format") ||
-      m.includes("json_object") ||
-      m.includes("structured") ||
-      firstErr?.status === 400;
-    if (retry) {
+    try {
+      // Muitos erros do downstream (ex.: "Provider returned error") somem sem response_format + json_object.
       payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: false });
-    } else {
-      throw firstErr;
+    } catch (secondErr) {
+      if (mimeType === "application/pdf") {
+        try {
+          payload = await callOpenRouterChat({
+            prompt,
+            dataUrl,
+            mimeType,
+            useJsonObject: false,
+            pdfPlugin: false
+          });
+        } catch (thirdErr) {
+          const hint = [firstErr, secondErr, thirdErr]
+            .map((e) => String(e?.message || e))
+            .filter(Boolean)
+            .join(" | ");
+          throw new Error(`OpenRouter: ${hint}`);
+        }
+      } else {
+        const hint = [firstErr, secondErr]
+          .map((e) => String(e?.message || e))
+          .filter(Boolean)
+          .join(" | ");
+        throw new Error(`OpenRouter: ${hint}`);
+      }
     }
   }
 
   const content = payload?.choices?.[0]?.message?.content || "{}";
-  let parsed;
-  try {
-    parsed = JSON.parse(stripCodeFences(content));
-  } catch {
-    throw new Error("A IA retornou resposta em formato inválido.");
-  }
+  const parsed = parseJsonFromModelContent(content);
 
   const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
   const items = (parsed?.items || []).map((it) => {

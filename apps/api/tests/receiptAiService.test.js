@@ -47,8 +47,8 @@ test("parseReceiptWithAI: PDF usa content type file (não image_url)", async () 
 
   assert.equal(calls.length, 1);
   const content = calls[0].body.messages[0].content;
-  const filePart = content.find((c) => c.type === "file");
-  assert.ok(filePart, "deve enviar PDF como type=file");
+  assert.equal(content[0].type, "file", "PDF deve vir antes do texto");
+  const filePart = content[0];
   assert.ok(String(filePart.file?.file_data || "").startsWith("data:application/pdf;base64,"));
   assert.ok(Array.isArray(calls[0].body.plugins));
   assert.equal(out.invoiceNumber, "123");
@@ -98,8 +98,74 @@ test("parseReceiptWithAI: JPEG usa image_url", async () => {
   const content = calls[0].body.messages[0].content;
   const img = content.find((c) => c.type === "image_url");
   assert.ok(img);
+  assert.equal(content[0].type, "image_url", "imagem deve vir antes do texto");
   assert.ok(String(img.image_url?.url || "").startsWith("data:image/jpeg;base64,"));
   assert.ok(!calls[0].body.plugins);
+
+  delete global.fetch;
+});
+
+test("parseReceiptWithAI: falha do provider na 1ª chamada faz retry sem response_format", async () => {
+  let n = 0;
+  global.fetch = async (_url, init) => {
+    n += 1;
+    const body = JSON.parse(init.body);
+    if (n === 1) {
+      assert.ok(body.response_format?.type === "json_object");
+      return {
+        ok: false,
+        status: 502,
+        async json() {
+          return { error: { message: "Provider returned error" } };
+        }
+      };
+    }
+    assert.ok(!body.response_format, "2ª tentativa não deve forçar json_object");
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [
+            {
+              message: {
+                content:
+                  "```json\n" +
+                  JSON.stringify({
+                    invoiceNumber: "999",
+                    purchaseDate: "2026-01-15",
+                    supplierName: "Fornecedor X",
+                    items: [
+                      {
+                        productName: "Produto Y",
+                        quantity: 1,
+                        unitUsed: "un",
+                        unitPrice: 5
+                      }
+                    ]
+                  }) +
+                  "\n```"
+              }
+            }
+          ]
+        };
+      }
+    };
+  };
+
+  process.env.OPENROUTER_API_KEY = "test-key";
+  process.env.OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
+
+  const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
+  const jpegBuf = Buffer.from("ff", "hex");
+  const out = await parseReceiptWithAI({
+    imageBuffer: jpegBuf,
+    mimeType: "image/jpeg",
+    products: [{ id: "p1", name: "Produto Y", type: "insumo" }],
+    suppliers: [{ id: "s1", name: "Fornecedor X" }]
+  });
+
+  assert.equal(n, 2);
+  assert.equal(out.invoiceNumber, "999");
 
   delete global.fetch;
 });
