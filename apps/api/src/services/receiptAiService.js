@@ -266,6 +266,7 @@ export async function parseReceiptWithAI({
     "Extraia dados desta nota fiscal brasileira e retorne SOMENTE JSON válido.",
     "Em NFS-e (serviço), supplierName deve ser o EMITENTE / PRESTADOR do serviço (quem emitiu a nota), não o tomador.",
     "purchaseDate: use a data de emissão ou competência impressa na nota; converta DD/MM/AAAA para YYYY-MM-DD copiando o ANO exatamente como impresso (confunda 3 com 6: 2026 ≠ 2023).",
+    "Em cupons e notas brasileiras o formato de data costuma ser DIA/MÊS/ANO (DD/MM/AAAA): o primeiro grupo é o dia, o segundo é o mês (ex.: 10/11/2018 → 2018-11-10, não outubro).",
     "Campos do JSON:",
     "{",
     '  "invoiceNumber": "string|null",',

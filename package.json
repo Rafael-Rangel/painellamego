@@ -17,6 +17,7 @@
     "test": "npm --workspace @lamego/api run test",
     "test:openrouter": "node scripts/test-receipt-openrouter.mjs",
     "test:openrouter:blank-danfe": "node scripts/test-receipt-openrouter.mjs scripts/fixtures/blank-danfe-template.png --empty-catalog --json",
+    "test:openrouter:cupom-padaria": "RECEIPT_TEST_CATALOG=\"$(cat scripts/fixtures/cupom-padaria-catalog.json)\" node scripts/test-receipt-openrouter.mjs scripts/fixtures/cupom-padaria-pao-vovo.png --json",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
     "db:link": "supabase link --project-ref hfxqvitixkrqjggkbbej",

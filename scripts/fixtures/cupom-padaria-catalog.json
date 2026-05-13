@@ -1,0 +1,11 @@
+{
+  "suppliers": [
+    { "id": "60194960-0001-0000-0000-000000000001", "name": "PADARIA E RESTAURANTE PÃO DA VOVÓ LTDA EPP" },
+    { "id": "60194960-0001-0000-0000-000000000002", "name": "PÃO DA VOVÓ" }
+  ],
+  "products": [
+    { "id": "p-sopas", "name": "SOPAS", "type": "insumo" },
+    { "id": "p-bolo", "name": "BOLO DE CENOURA", "type": "insumo" },
+    { "id": "p-expresso", "name": "EXPRESSO MEDIO COM LEITE", "type": "insumo" }
+  ]
+}
