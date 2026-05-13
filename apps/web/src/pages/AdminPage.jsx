@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FaBalanceScale, FaChartBar, FaChartLine, FaCog, FaLightbulb, FaLink, FaStore, FaTrash } from "react-icons/fa";
+import { FaBalanceScale, FaChartBar, FaChartLine, FaCog, FaEdit, FaLightbulb, FaLink, FaStore, FaTrash, FaUserCog } from "react-icons/fa";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import AppShell from "../components/AppShell";
 import { api, withAuth } from "../api";
@@ -14,6 +14,7 @@ import MultiSelectSearch from "../components/ui/MultiSelectSearch";
 import SingleSelectInput from "../components/ui/SingleSelectInput";
 import TableToolbar from "../components/ui/TableToolbar";
 import { formatCurrency } from "../lib/formatters";
+import { supabase } from "../supabase";
 import RankingComparisonTab from "../components/admin/RankingComparisonTab";
 
 /** Limite de linhas na tabela do Mapa de oportunidades (sem controle na UI). */
@@ -43,7 +44,7 @@ function deriveOpportunitiesFromComparison(rows = []) {
 }
 
 export default function AdminPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [tab, setTab] = useState("dashboard");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -65,6 +66,19 @@ export default function AdminPage() {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [selectedStoreIds, setSelectedStoreIds] = useState([]);
+  const [inviteNewStoreOpen, setInviteNewStoreOpen] = useState(false);
+  const [quickStore, setQuickStore] = useState({
+    cnpj: "",
+    name: "",
+    location: "",
+    storeNumber: "",
+    managerName: ""
+  });
+  const [quickStoreSaving, setQuickStoreSaving] = useState(false);
+  const [storeEditor, setStoreEditor] = useState(null);
+  const [managerEditor, setManagerEditor] = useState(null);
+  const [adminSettings, setAdminSettings] = useState({ email: "", displayName: "", password: "" });
+  const [adminSettingsSaving, setAdminSettingsSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
   const [supplierRowsLimit, setSupplierRowsLimit] = useState(10);
@@ -149,20 +163,229 @@ export default function AdminPage() {
     loadAll();
   }, [token, monthsFilter, dashboardFilterQuery]);
 
+  useEffect(() => {
+    if (tab !== "settings" || !user) return;
+    setAdminSettings({
+      email: user.email || "",
+      displayName: user.displayName || "",
+      password: ""
+    });
+  }, [tab, user?.email, user?.displayName]);
+
   async function inviteManager(e) {
     e.preventDefault();
-    await api.post(
-      "/auth/invite-manager",
-      { managerName: inviteName, email: inviteEmail, storeIds: selectedStoreIds },
-      withAuth(token)
-    );
-    setToast("Convite enviado com sucesso.");
-    setInviteName("");
-    setInviteEmail("");
-    setSelectedStoreIds([]);
-    setShowInviteModal(false);
-    await loadAll();
-    setTimeout(() => setToast(""), 2500);
+    try {
+      await api.post(
+        "/auth/invite-manager",
+        { managerName: inviteName, email: inviteEmail, storeIds: selectedStoreIds },
+        withAuth(token)
+      );
+      setToast("Convite enviado com sucesso.");
+      setInviteName("");
+      setInviteEmail("");
+      setSelectedStoreIds([]);
+      setInviteNewStoreOpen(false);
+      setQuickStore({ cnpj: "", name: "", location: "", storeNumber: "", managerName: "" });
+      setShowInviteModal(false);
+      await loadAll();
+      setTimeout(() => setToast(""), 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.response?.data?.formErrors?.email?.[0] || "Falha ao enviar convite.";
+      setToast(typeof msg === "string" ? msg : "Falha ao enviar convite.");
+      setTimeout(() => setToast(""), 4000);
+    }
+  }
+
+  async function saveQuickStoreInInvite() {
+    const digits = String(quickStore.cnpj || "").replace(/\D/g, "");
+    const sn = parseInt(String(quickStore.storeNumber).replace(/\D/g, ""), 10);
+    if (digits.length < 14 || !quickStore.name.trim() || !quickStore.location.trim() || !Number.isFinite(sn) || sn < 1) {
+      setToast("Preencha CNPJ (14 dígitos), nome, localização e número da loja.");
+      setTimeout(() => setToast(""), 3000);
+      return;
+    }
+    setQuickStoreSaving(true);
+    try {
+      const { data } = await api.post(
+        "/catalog/stores",
+        {
+          cnpj: digits,
+          name: quickStore.name.trim(),
+          location: quickStore.location.trim(),
+          storeNumber: sn,
+          managerName: (quickStore.managerName.trim() || inviteName.trim() || "Responsável pela loja").slice(0, 120)
+        },
+        withAuth(token)
+      );
+      await loadAll();
+      if (data?.id) setSelectedStoreIds((prev) => (prev.includes(data.id) ? prev : [...prev, data.id]));
+      setQuickStore({ cnpj: "", name: "", location: "", storeNumber: "", managerName: "" });
+      setToast("Loja criada e selecionada para o convite.");
+      setTimeout(() => setToast(""), 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Não foi possível criar a loja.";
+      setToast(typeof msg === "string" ? msg : "Não foi possível criar a loja.");
+      setTimeout(() => setToast(""), 4000);
+    } finally {
+      setQuickStoreSaving(false);
+    }
+  }
+
+  async function saveStoreEditor(e) {
+    e.preventDefault();
+    if (!storeEditor) return;
+    const digits = String(storeEditor.cnpj || "").replace(/\D/g, "");
+    const sn = Number(storeEditor.storeNumber);
+    if (digits.length < 14 || !storeEditor.name?.trim() || !storeEditor.location?.trim() || !Number.isFinite(sn)) return;
+    try {
+      const body = {
+        cnpj: digits,
+        name: storeEditor.name.trim(),
+        location: storeEditor.location.trim(),
+        storeNumber: sn,
+        managerName: (storeEditor.managerName || "").trim() || "—",
+        phone: storeEditor.phone?.trim() || null,
+        openingHours: storeEditor.openingHours?.trim() || null,
+        onboardingNotes: storeEditor.onboardingNotes?.trim() || null
+      };
+      if (storeEditor.mode === "create") {
+        await api.post("/catalog/stores", body, withAuth(token));
+        setToast("Loja criada.");
+      } else {
+        await api.put(`/catalog/stores/${storeEditor.id}`, body, withAuth(token));
+        setToast("Loja atualizada.");
+      }
+      setStoreEditor(null);
+      await loadAll();
+      setTimeout(() => setToast(""), 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Erro ao guardar loja.";
+      setToast(typeof msg === "string" ? msg : "Erro ao guardar loja.");
+      setTimeout(() => setToast(""), 4000);
+    }
+  }
+
+  async function deleteStoreRow(storeId) {
+    if (!window.confirm("Remover esta loja do sistema? (Só funciona se não houver dados dependentes.)")) return;
+    try {
+      await api.delete(`/catalog/stores/${storeId}`, withAuth(token));
+      setSelectedStoreIds((prev) => prev.filter((id) => id !== storeId));
+      setToast("Loja removida.");
+      await loadAll();
+      setTimeout(() => setToast(""), 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Não foi possível remover (verifique compras ou vínculos).";
+      setToast(typeof msg === "string" ? msg : "Não foi possível remover.");
+      setTimeout(() => setToast(""), 4000);
+    }
+  }
+
+  function openStoreEditorCreate() {
+    setStoreEditor({
+      mode: "create",
+      cnpj: "",
+      name: "",
+      location: "",
+      storeNumber: "",
+      managerName: "",
+      phone: "",
+      openingHours: "",
+      onboardingNotes: ""
+    });
+  }
+
+  function openStoreEditorEdit(s) {
+    setStoreEditor({
+      mode: "edit",
+      id: s.id,
+      cnpj: s.cnpj || "",
+      name: s.name || "",
+      location: s.location || "",
+      storeNumber: s.store_number ?? "",
+      managerName: s.manager_name || "",
+      phone: s.phone || "",
+      openingHours: s.opening_hours || "",
+      onboardingNotes: s.onboarding_notes || ""
+    });
+  }
+
+  function openManagerEditor(m) {
+    const ids = m.storeIds?.length ? m.storeIds : (m.stores || []).map((s) => s.id).filter(Boolean);
+    setManagerEditor({
+      id: m.id,
+      email: m.email || "",
+      managerName: m.managerName || "",
+      storeIds: ids,
+      password: ""
+    });
+  }
+
+  async function saveManagerEditor(e) {
+    e.preventDefault();
+    if (!managerEditor) return;
+    if (!managerEditor.storeIds.length) {
+      setToast("Selecione pelo menos uma loja.");
+      setTimeout(() => setToast(""), 2500);
+      return;
+    }
+    try {
+      const payload = {
+        managerName: managerEditor.managerName.trim(),
+        storeIds: managerEditor.storeIds,
+        email: managerEditor.email.trim() || undefined,
+        password: managerEditor.password.trim().length >= 8 ? managerEditor.password.trim() : undefined
+      };
+      await api.put(`/auth/admin/managers/${managerEditor.id}`, payload, withAuth(token));
+      setManagerEditor(null);
+      setToast("Gerente atualizado.");
+      await loadAll();
+      setTimeout(() => setToast(""), 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Erro ao atualizar gerente.";
+      setToast(typeof msg === "string" ? msg : "Erro ao atualizar gerente.");
+      setTimeout(() => setToast(""), 4000);
+    }
+  }
+
+  async function deleteManagerRow(managerId) {
+    if (!window.confirm("Remover este gerente (Auth) e vínculos com lojas?")) return;
+    try {
+      await api.delete(`/auth/admin/managers/${managerId}`, withAuth(token));
+      setToast("Gerente removido.");
+      await loadAll();
+      setTimeout(() => setToast(""), 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Erro ao remover.";
+      setToast(typeof msg === "string" ? msg : "Erro ao remover.");
+      setTimeout(() => setToast(""), 4000);
+    }
+  }
+
+  async function saveAdminSettings(e) {
+    e.preventDefault();
+    const body = {};
+    if (adminSettings.email.trim() && adminSettings.email.trim() !== user?.email) body.email = adminSettings.email.trim();
+    if (adminSettings.password.trim().length >= 8) body.password = adminSettings.password.trim();
+    if (adminSettings.displayName.trim()) body.displayName = adminSettings.displayName.trim();
+    if (!Object.keys(body).length) {
+      setToast("Altere e-mail, nome ou senha (mín. 8 caracteres) antes de guardar.");
+      setTimeout(() => setToast(""), 3000);
+      return;
+    }
+    setAdminSettingsSaving(true);
+    try {
+      await api.patch("/auth/admin/me", body, withAuth(token));
+      setToast("Conta atualizada. A atualizar sessão…");
+      await supabase.auth.refreshSession();
+      setAdminSettings((f) => ({ ...f, password: "" }));
+      setTimeout(() => setToast(""), 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Erro ao atualizar conta.";
+      setToast(typeof msg === "string" ? msg : "Erro ao atualizar conta.");
+      setTimeout(() => setToast(""), 4000);
+    } finally {
+      setAdminSettingsSaving(false);
+    }
   }
 
   async function resendInvite(managerId) {
@@ -175,15 +398,23 @@ export default function AdminPage() {
     setSelectedStoreIds((prev) => (prev.includes(storeId) ? prev.filter((id) => id !== storeId) : [...prev, storeId]));
   }
 
+  function toggleManagerStore(storeId) {
+    setManagerEditor((prev) => {
+      if (!prev) return prev;
+      const has = prev.storeIds.includes(storeId);
+      return { ...prev, storeIds: has ? prev.storeIds.filter((id) => id !== storeId) : [...prev.storeIds, storeId] };
+    });
+  }
+
   const links = [
     { key: "dashboard", label: "Dashboard da Rede", icon: <FaChartBar />, onClick: () => setTab("dashboard") },
     { key: "stores", label: "Lojas & Gerentes", icon: <FaStore />, onClick: () => setTab("stores") },
     { key: "opportunities", label: "Oportunidades", icon: <FaLightbulb />, onClick: () => setTab("opportunities") },
     { key: "products", label: "Análise", icon: <FaChartLine />, onClick: () => setTab("products") },
     { key: "ranking", label: "Comparação", icon: <FaBalanceScale />, onClick: () => setTab("ranking") },
-    { key: "products-admin", label: "Produtos (Admin)", icon: <FaCog />, onClick: () => setTab("products-admin") },
+    { key: "products-admin", label: "Produtos", icon: <FaCog />, onClick: () => setTab("products-admin") },
     { key: "supplier-aliases", label: "NF → produto (fornecedor)", icon: <FaLink />, onClick: () => setTab("supplier-aliases") },
-    { key: "settings", label: "Configuracoes", icon: <FaCog />, onClick: () => setTab("dashboard") }
+    { key: "settings", label: "Configuracoes", icon: <FaUserCog />, onClick: () => setTab("settings") }
   ];
 
   function resetProductForm() {
@@ -445,7 +676,7 @@ export default function AdminPage() {
       {loading ? <p className="empty">Carregando...</p> : null}
       {error ? <p className="field-error">{error}</p> : null}
 
-      {tab !== "opportunities" && tab !== "ranking" ? (
+      {tab !== "opportunities" && tab !== "ranking" && tab !== "settings" && tab !== "stores" ? (
         <div className="admin-filters-wrap">
           <div className="opportunity-filters">{filtersControls}</div>
         </div>
@@ -602,43 +833,144 @@ export default function AdminPage() {
       ) : null}
 
       {tab === "stores" ? (
-        <DataCard
-          title="Gerentes e lojas vinculadas"
-          actions={
-            <button className="btn btn-primary" onClick={() => setShowInviteModal(true)}>
-              Convidar gerente
-            </button>
-          }
-        >
-          <CompactTable
-            columns={[
-              {
-                id: "stores",
-                label: "Loja",
-                render: (r) =>
-                  r.stores?.length ? (
-                    <div className="table-chip-list">
-                      {r.stores.map((s) => (
-                        <span key={s.id || s.name} className="badge badge-info">
-                          {s.name}
-                        </span>
-                      ))}
+        <div className="grid">
+          <DataCard
+            title="Lojas da rede"
+            subtitle="CRUD completo: cada loja pode estar ligada a um único gerente."
+            actions={
+              <button type="button" className="btn btn-secondary" onClick={openStoreEditorCreate}>
+                Nova loja
+              </button>
+            }
+          >
+            <CompactTable
+              columns={[
+                { id: "store_number", label: "Nº", render: (s) => s.store_number },
+                { id: "name", label: "Nome" },
+                { id: "location", label: "Local" },
+                { id: "cnpj", label: "CNPJ", render: (s) => s.cnpj },
+                { id: "manager_name", label: "Resp. loja", render: (s) => s.manager_name || "—" },
+                {
+                  id: "actions",
+                  label: "",
+                  render: (s) => (
+                    <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                      <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openStoreEditorEdit(s)}>
+                        <FaEdit />
+                      </button>
+                      <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteStoreRow(s.id)}>
+                        <FaTrash />
+                      </button>
                     </div>
-                  ) : (
-                    "-"
                   )
-              },
-              { id: "managerName", label: "Gerente", render: (r) => <span className="price-store">{r.managerName || "-"}</span> },
-              { id: "email", label: "Email", render: (r) => <span className="table-email">{r.email}</span> },
-              { id: "status", label: "Status", render: (r) => <span className={r.status === "ativo" ? "badge badge-info" : "badge badge-danger"}>{r.status}</span> },
-              { id: "actions", label: "Convite", render: (r) => <button className="btn btn-ghost" onClick={() => resendInvite(r.id)}>Reenviar</button> }
-            ]}
-            rows={managers}
-            keyField="id"
-            loading={loading}
-            emptyMessage="Nenhum gerente cadastrado."
-          />
-        </DataCard>
+                }
+              ]}
+              rows={stores}
+              keyField="id"
+              loading={loading}
+              emptyMessage="Nenhuma loja. Crie uma aqui ou ao convidar um gerente."
+            />
+          </DataCard>
+
+          <DataCard
+            title="Gerentes"
+            subtitle="Editar e-mail, senha, nome e lojas vinculadas. Convite por e-mail continua disponível."
+            actions={
+              <button type="button" className="btn btn-primary" onClick={() => setShowInviteModal(true)}>
+                Convidar gerente
+              </button>
+            }
+          >
+            <CompactTable
+              columns={[
+                {
+                  id: "stores",
+                  label: "Loja",
+                  render: (r) =>
+                    r.stores?.length ? (
+                      <div className="table-chip-list">
+                        {r.stores.map((s) => (
+                          <span key={s.id || s.name} className="badge badge-info">
+                            {s.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      "-"
+                    )
+                },
+                { id: "managerName", label: "Gerente", render: (r) => <span className="price-store">{r.managerName || "-"}</span> },
+                { id: "email", label: "Email", render: (r) => <span className="table-email">{r.email}</span> },
+                { id: "status", label: "Status", render: (r) => <span className={r.status === "ativo" ? "badge badge-info" : "badge badge-danger"}>{r.status}</span> },
+                {
+                  id: "actions",
+                  label: "Ações",
+                  render: (r) => (
+                    <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center" }}>
+                      <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openManagerEditor(r)}>
+                        <FaEdit />
+                      </button>
+                      <button type="button" className="btn btn-ghost" onClick={() => resendInvite(r.id)}>
+                        Reenviar convite
+                      </button>
+                      <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteManagerRow(r.id)}>
+                        <FaTrash />
+                      </button>
+                    </div>
+                  )
+                }
+              ]}
+              rows={managers}
+              keyField="id"
+              loading={loading}
+              emptyMessage="Nenhum gerente cadastrado."
+            />
+          </DataCard>
+        </div>
+      ) : null}
+
+      {tab === "settings" ? (
+        <div className="grid">
+          <section className="span-12">
+            <DataCard title="Minha conta" subtitle="Altere o seu e-mail, nome de exibição ou senha de acesso (Supabase Auth).">
+              <form className="grid" onSubmit={saveAdminSettings}>
+                <div className="field span-6">
+                  <label>E-mail</label>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={adminSettings.email}
+                    onChange={(e) => setAdminSettings((f) => ({ ...f, email: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="field span-6">
+                  <label>Nome de exibição</label>
+                  <input
+                    value={adminSettings.displayName}
+                    onChange={(e) => setAdminSettings((f) => ({ ...f, displayName: e.target.value }))}
+                    placeholder="Como aparece no painel"
+                  />
+                </div>
+                <div className="field span-6">
+                  <label>Nova senha (opcional)</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={adminSettings.password}
+                    onChange={(e) => setAdminSettings((f) => ({ ...f, password: e.target.value }))}
+                    placeholder="Mínimo 8 caracteres se quiser alterar"
+                  />
+                </div>
+                <div className="field span-12">
+                  <button type="submit" className="btn btn-primary" disabled={adminSettingsSaving}>
+                    {adminSettingsSaving ? "A guardar…" : "Guardar alterações"}
+                  </button>
+                </div>
+              </form>
+            </DataCard>
+          </section>
+        </div>
       ) : null}
 
       {tab === "ranking" ? (
@@ -1056,33 +1388,188 @@ export default function AdminPage() {
 
       {showInviteModal ? (
         <div className="modal-overlay" role="dialog" aria-modal="true">
-          <div className="modal">
+          <div className="modal" style={{ maxWidth: "32rem" }}>
             <h3>Convidar gerente</h3>
             <form onSubmit={inviteManager}>
               <div className="field">
                 <label>Nome</label>
-                <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
+                <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} required />
               </div>
               <div className="field">
                 <label>Email</label>
-                <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+                <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required />
               </div>
               <div className="field">
                 <label>Lojas vinculadas</label>
                 <div className="card" style={{ borderTop: 0, boxShadow: "none", padding: "0.5rem", maxHeight: 180, overflow: "auto" }}>
+                  {stores.length === 0 ? (
+                    <p className="empty" style={{ margin: 0 }}>
+                      Nenhuma loja ainda. Use &quot;Cadastrar nova loja&quot; abaixo.
+                    </p>
+                  ) : (
+                    stores.map((store) => (
+                      <label key={store.id} style={{ display: "block" }}>
+                        <input type="checkbox" checked={selectedStoreIds.includes(store.id)} onChange={() => toggleStore(store.id)} />{" "}
+                        {store.name} (nº {store.store_number})
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="field">
+                <button type="button" className="btn btn-link" style={{ padding: 0 }} onClick={() => setInviteNewStoreOpen((v) => !v)}>
+                  {inviteNewStoreOpen ? "Ocultar cadastro de loja" : "+ Cadastrar nova loja (e selecionar)"}
+                </button>
+              </div>
+              {inviteNewStoreOpen ? (
+                <div className="card" style={{ padding: "0.75rem", marginBottom: "0.75rem" }}>
+                  <p className="subtitle" style={{ marginTop: 0 }}>
+                    Cria a loja na rede e adiciona à seleção deste convite.
+                  </p>
+                  <div className="field">
+                    <label>CNPJ (14 dígitos)</label>
+                    <input value={quickStore.cnpj} onChange={(e) => setQuickStore((q) => ({ ...q, cnpj: e.target.value }))} placeholder="Somente números" />
+                  </div>
+                  <div className="field">
+                    <label>Nome da loja</label>
+                    <input value={quickStore.name} onChange={(e) => setQuickStore((q) => ({ ...q, name: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <label>Localização / bairro</label>
+                    <input value={quickStore.location} onChange={(e) => setQuickStore((q) => ({ ...q, location: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <label>Número da loja (código rede)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={quickStore.storeNumber}
+                      onChange={(e) => setQuickStore((q) => ({ ...q, storeNumber: e.target.value }))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Nome do responsável na loja (opcional)</label>
+                    <input
+                      value={quickStore.managerName}
+                      onChange={(e) => setQuickStore((q) => ({ ...q, managerName: e.target.value }))}
+                      placeholder="Se vazio, usa o nome do gerente ou “Responsável pela loja”"
+                    />
+                  </div>
+                  <button type="button" className="btn btn-secondary" disabled={quickStoreSaving} onClick={() => saveQuickStoreInInvite()}>
+                    {quickStoreSaving ? "A criar…" : "Cadastrar loja e selecionar"}
+                  </button>
+                </div>
+              ) : null}
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowInviteModal(false)}>
+                  Cancelar
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={!inviteEmail || !inviteName || !selectedStoreIds.length}>
+                  Enviar convite
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {storeEditor ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal" style={{ maxWidth: "28rem" }}>
+            <h3>{storeEditor.mode === "create" ? "Nova loja" : "Editar loja"}</h3>
+            <form onSubmit={saveStoreEditor}>
+              <div className="field">
+                <label>CNPJ (14 dígitos)</label>
+                <input value={storeEditor.cnpj} onChange={(e) => setStoreEditor((s) => ({ ...s, cnpj: e.target.value }))} required />
+              </div>
+              <div className="field">
+                <label>Nome</label>
+                <input value={storeEditor.name} onChange={(e) => setStoreEditor((s) => ({ ...s, name: e.target.value }))} required />
+              </div>
+              <div className="field">
+                <label>Localização</label>
+                <input value={storeEditor.location} onChange={(e) => setStoreEditor((s) => ({ ...s, location: e.target.value }))} required />
+              </div>
+              <div className="field">
+                <label>Número da loja</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={storeEditor.storeNumber}
+                  onChange={(e) => setStoreEditor((s) => ({ ...s, storeNumber: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Responsável (campo da loja)</label>
+                <input value={storeEditor.managerName} onChange={(e) => setStoreEditor((s) => ({ ...s, managerName: e.target.value }))} required />
+              </div>
+              <div className="field">
+                <label>Telefone (opcional)</label>
+                <input value={storeEditor.phone} onChange={(e) => setStoreEditor((s) => ({ ...s, phone: e.target.value }))} />
+              </div>
+              <div className="field">
+                <label>Horário (opcional)</label>
+                <input value={storeEditor.openingHours} onChange={(e) => setStoreEditor((s) => ({ ...s, openingHours: e.target.value }))} />
+              </div>
+              <div className="field">
+                <label>Notas onboarding (opcional)</label>
+                <textarea value={storeEditor.onboardingNotes} onChange={(e) => setStoreEditor((s) => ({ ...s, onboardingNotes: e.target.value }))} rows={2} />
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setStoreEditor(null)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Guardar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {managerEditor ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal" style={{ maxWidth: "32rem" }}>
+            <h3>Editar gerente</h3>
+            <form onSubmit={saveManagerEditor}>
+              <div className="field">
+                <label>E-mail</label>
+                <input type="email" value={managerEditor.email} onChange={(e) => setManagerEditor((m) => ({ ...m, email: e.target.value }))} required />
+              </div>
+              <div className="field">
+                <label>Nome do gerente</label>
+                <input value={managerEditor.managerName} onChange={(e) => setManagerEditor((m) => ({ ...m, managerName: e.target.value }))} required />
+              </div>
+              <div className="field">
+                <label>Nova senha (opcional)</label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={managerEditor.password}
+                  onChange={(e) => setManagerEditor((m) => ({ ...m, password: e.target.value }))}
+                  placeholder="Mínimo 8 caracteres; vazio = não alterar"
+                />
+              </div>
+              <div className="field">
+                <label>Lojas vinculadas</label>
+                <p className="field-helper">Cada loja só pode ter um gerente; ao guardar, vínculos antigos dessas lojas são transferidos.</p>
+                <div className="card" style={{ borderTop: 0, boxShadow: "none", padding: "0.5rem", maxHeight: 200, overflow: "auto" }}>
                   {stores.map((store) => (
                     <label key={store.id} style={{ display: "block" }}>
-                      <input type="checkbox" checked={selectedStoreIds.includes(store.id)} onChange={() => toggleStore(store.id)} /> {store.name}
+                      <input type="checkbox" checked={managerEditor.storeIds.includes(store.id)} onChange={() => toggleManagerStore(store.id)} />{" "}
+                      {store.name} (nº {store.store_number})
                     </label>
                   ))}
                 </div>
               </div>
               <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowInviteModal(false)}>
+                <button type="button" className="btn btn-ghost" onClick={() => setManagerEditor(null)}>
                   Cancelar
                 </button>
-                <button className="btn btn-primary" disabled={!inviteEmail || !inviteName || !selectedStoreIds.length}>
-                  Enviar convite
+                <button type="submit" className="btn btn-primary">
+                  Guardar gerente
                 </button>
               </div>
             </form>

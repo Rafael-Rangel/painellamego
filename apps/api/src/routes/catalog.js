@@ -274,6 +274,49 @@ router.post("/stores", requireAuth, requireAdmin, async (req, res) => {
   return res.status(201).json(data);
 });
 
+const storeAdminBodySchema = z.object({
+  cnpj: z.string().min(14),
+  name: z.string().min(2),
+  location: z.string().min(2),
+  storeNumber: z.coerce.number().int().positive(),
+  managerName: z.string().min(2),
+  phone: z.string().optional().nullable(),
+  openingHours: z.string().optional().nullable(),
+  onboardingNotes: z.string().optional().nullable()
+});
+
+router.put("/stores/:id", requireAuth, requireAdmin, async (req, res) => {
+  const parsed = storeAdminBodySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+
+  const { data, error } = await supabaseAdmin
+    .from("stores")
+    .update({
+      cnpj: parsed.data.cnpj,
+      name: parsed.data.name,
+      location: parsed.data.location,
+      store_number: parsed.data.storeNumber,
+      manager_name: parsed.data.managerName,
+      phone: parsed.data.phone ?? null,
+      opening_hours: parsed.data.openingHours ?? null,
+      onboarding_notes: parsed.data.onboardingNotes ?? null
+    })
+    .eq("id", req.params.id)
+    .select("*")
+    .single();
+
+  if (error) return res.status(400).json({ message: error.message });
+  await logAudit({ userId: req.user.id, action: "update", resource: "store", payload: { storeId: data.id } });
+  return res.json(data);
+});
+
+router.delete("/stores/:id", requireAuth, requireAdmin, async (req, res) => {
+  const { error } = await supabaseAdmin.from("stores").delete().eq("id", req.params.id);
+  if (error) return res.status(400).json({ message: error.message });
+  await logAudit({ userId: req.user.id, action: "delete", resource: "store", payload: { storeId: req.params.id } });
+  return res.status(204).send();
+});
+
 router.put("/stores/:id/onboarding", requireAuth, async (req, res) => {
   const schema = z.object({
     name: z.string().min(2),

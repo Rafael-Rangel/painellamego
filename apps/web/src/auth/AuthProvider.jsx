@@ -10,7 +10,8 @@ function normalizeUser(session) {
     id: user.id,
     email: user.email,
     role: user.app_metadata?.role ?? "manager",
-    storeId: user.user_metadata?.store_id ?? null
+    storeId: user.user_metadata?.store_id ?? null,
+    displayName: user.user_metadata?.display_name ?? user.user_metadata?.manager_name ?? ""
   };
 }
 
