@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FaBalanceScale, FaChartBar, FaChartLine, FaCog, FaEdit, FaLightbulb, FaLink, FaTrash, FaUserCog } from "react-icons/fa";
+import { FaBalanceScale, FaBoxes, FaChartBar, FaChartLine, FaEdit, FaLightbulb, FaLink, FaTrash, FaUserCog } from "react-icons/fa";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import AppShell from "../components/AppShell";
 import { api, withAuth } from "../api";
@@ -411,9 +411,9 @@ export default function AdminPage() {
     { key: "opportunities", label: "Oportunidades", icon: <FaLightbulb />, onClick: () => setTab("opportunities") },
     { key: "products", label: "Análise", icon: <FaChartLine />, onClick: () => setTab("products") },
     { key: "ranking", label: "Comparação", icon: <FaBalanceScale />, onClick: () => setTab("ranking") },
-    { key: "products-admin", label: "Produtos", icon: <FaCog />, onClick: () => setTab("products-admin") },
+    { key: "products-admin", label: "Produtos", icon: <FaBoxes />, onClick: () => setTab("products-admin") },
     { key: "supplier-aliases", label: "Mapeamento NF", icon: <FaLink />, onClick: () => setTab("supplier-aliases") },
-    { key: "settings", label: "Configuracoes", icon: <FaUserCog />, onClick: () => setTab("settings") }
+    { key: "settings", label: "Configurações", icon: <FaUserCog />, onClick: () => setTab("settings") }
   ];
 
   function resetProductForm() {
@@ -675,7 +675,6 @@ export default function AdminPage() {
       subtitle="Visao consolidada da rede e gestao de gerentes"
       links={links}
       activeLinkKey={tab}
-      sidebarNavClass="sidebar-nav--compact"
     >
 
       {loading ? <p className="empty">Carregando...</p> : null}
