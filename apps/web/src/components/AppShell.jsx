@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { FaBell, FaMoon, FaSun } from "react-icons/fa";
+import { FaBars, FaBell, FaMoon, FaSun, FaTimes } from "react-icons/fa";
 import { useAuth } from "../auth/AuthProvider";
 
 const logoUrl = import.meta.env.VITE_BRAND_LOGO_URL ?? "/logo.jpg";
@@ -16,16 +16,28 @@ export default function AppShell({
 }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem("lamego-theme");
     if (saved === "dark" || saved === "light") return saved;
     return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
   });
 
+  const storeLabel = useMemo(() => {
+    if (storeBadge !== undefined) return storeBadge ?? "Sua loja";
+    if (user?.storeId) return `Loja: ${user.storeId}`;
+    return "Visao de rede";
+  }, [storeBadge, user?.storeId]);
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("lamego-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname, location.search]);
 
   async function handleSignOut() {
     await signOut();
@@ -36,6 +48,14 @@ export default function AppShell({
     <div className="app">
       <header className="topbar">
         <div className="brand">
+          <button
+            className="btn btn-ghost sidebar-toggle"
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Abrir menu"
+          >
+            <FaBars />
+          </button>
           <img src={logoUrl} alt="Logo Lamego" />
           <div>
             <h1>{title}</h1>
@@ -58,13 +78,7 @@ export default function AppShell({
           <span className="badge badge-info topbar-notify" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
             <FaBell /> 3
           </span>
-          <span className="topbar-pill">
-            {storeBadge !== undefined
-              ? storeBadge ?? "Sua loja"
-              : user?.storeId
-                ? `Loja: ${user.storeId}`
-                : "Visao de rede"}
-          </span>
+          <span className="topbar-pill">{storeLabel}</span>
           <span className="topbar-user">{user?.email}</span>
           <button className="btn btn-secondary" onClick={handleSignOut}>
             Sair
@@ -72,8 +86,18 @@ export default function AppShell({
         </div>
       </header>
       <main className="container app-layout">
-        <aside className="sidebar">
-          <h4>{sidebarTitle}</h4>
+        <div
+          className={sidebarOpen ? "sidebar-overlay sidebar-overlay-open" : "sidebar-overlay"}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden={!sidebarOpen}
+        />
+        <aside className={sidebarOpen ? "sidebar sidebar-drawer sidebar-drawer-open" : "sidebar sidebar-drawer"}>
+          <div className="sidebar-drawer-head">
+            <h4>{sidebarTitle}</h4>
+            <button className="btn btn-ghost sidebar-close" type="button" onClick={() => setSidebarOpen(false)} aria-label="Fechar menu">
+              <FaTimes />
+            </button>
+          </div>
           <nav>
             {links.map((link) =>
               link.onClick ? (

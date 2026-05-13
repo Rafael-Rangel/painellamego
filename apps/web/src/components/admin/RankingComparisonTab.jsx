@@ -197,8 +197,8 @@ export default function RankingComparisonTab({
     cutout: "62%",
     plugins: {
       legend: {
-        position: "right",
-        labels: { boxWidth: 10, usePointStyle: true, padding: 8 }
+        position: "bottom",
+        labels: { boxWidth: 10, usePointStyle: true, padding: 10 }
       },
       tooltip: {
         callbacks: {

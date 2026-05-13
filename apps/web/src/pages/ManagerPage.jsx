@@ -257,7 +257,7 @@ export default function ManagerPage() {
     maintainAspectRatio: false,
     cutout: "52%",
     plugins: {
-      legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } },
+      legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 }, padding: 10 } },
       tooltip: {
         callbacks: {
           label: (ctx) => {

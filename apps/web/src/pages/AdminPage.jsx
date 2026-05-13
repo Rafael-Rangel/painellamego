@@ -459,7 +459,7 @@ export default function AdminPage() {
                   cutout: "58%",
                   plugins: {
                     legend: {
-                      position: "right",
+                      position: "bottom",
                       align: "center",
                       labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, padding: 6 }
                     }

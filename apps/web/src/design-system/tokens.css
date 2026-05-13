@@ -62,4 +62,17 @@
   --motion-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
   --motion-ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
   --motion-stagger-step: 0.04s;
+
+  /*
+    Breakpoints (mobile-first)
+    Referência:
+      sm: 37.5rem (600px)
+      md: 48rem   (768px)
+      lg: 64rem   (1024px)
+      xl: 80rem   (1280px)
+  */
+  --bp-sm: 37.5rem;
+  --bp-md: 48rem;
+  --bp-lg: 64rem;
+  --bp-xl: 80rem;
 }
