@@ -795,6 +795,17 @@ img {
   box-sizing: border-box;
 }
 
+.wizard-fields .field-wizard-supplier .ms-root {
+  min-width: 0;
+}
+
+.wizard-fields .field-wizard-supplier .ms-root input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .wizard-fields > .field .btn {
   width: 100%;
   max-width: 100%;
@@ -1115,6 +1126,18 @@ img {
 
 .ss-option-btn:hover {
   background: rgb(240 165 0 / 0.12);
+}
+
+.ss-option-create {
+  font-weight: 700;
+  border-top: 1px solid var(--neutral-200);
+  margin-top: 0.15rem;
+  padding-top: 0.65rem;
+}
+
+.ss-option-create:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .ms-chips {

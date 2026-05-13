@@ -12,7 +12,14 @@ export default function SingleSelectSearch({
   placeholder = "Digite para buscar...",
   options = [],
   value = "",
-  onChange
+  onChange,
+  /** Quando não há resultados na pesquisa, permite criar entrada com o texto digitado (ex.: fornecedor). */
+  allowCreate = false,
+  /** async (trimmedQuery) => void — o pai cria o registo e atualiza options/value. */
+  onCreateOption,
+  createBusy = false,
+  minCreateLength = 2,
+  inputClassName = ""
 }) {
   const rootRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -29,6 +36,20 @@ export default function SingleSelectSearch({
       .slice(0, 30);
   }, [options, q]);
 
+  const trimmedQ = (q || "").trim();
+  const canOfferCreate =
+    allowCreate &&
+    typeof onCreateOption === "function" &&
+    trimmedQ.length >= minCreateLength &&
+    !filtered.length &&
+    !createBusy;
+
+  useEffect(() => {
+    const opt = (options || []).find((o) => o.value === value);
+    if (opt) setQ(opt.label);
+    else if (!value) setQ("");
+  }, [value, options]);
+
   useEffect(() => {
     function onDocClick(e) {
       if (!rootRef.current) return;
@@ -42,6 +63,7 @@ export default function SingleSelectSearch({
     <div className="field field-styled ms-root" ref={rootRef}>
       <label>{label}</label>
       <input
+        className={inputClassName || undefined}
         value={query}
         placeholder={placeholder}
         onFocus={() => setOpen(true)}
@@ -68,6 +90,28 @@ export default function SingleSelectSearch({
                   {o.label}
                 </button>
               ))
+            ) : canOfferCreate ? (
+              <button
+                type="button"
+                className="ss-option-btn ss-option-create"
+                disabled={createBusy}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={async () => {
+                  if (!trimmedQ || createBusy) return;
+                  try {
+                    await onCreateOption(trimmedQ);
+                    setOpen(false);
+                  } catch {
+                    /* erro tratado no pai (toast) */
+                  }
+                }}
+              >
+                {createBusy ? "A guardar…" : `+ Adicionar fornecedor “${trimmedQ}”`}
+              </button>
+            ) : trimmedQ.length > 0 && trimmedQ.length < minCreateLength ? (
+              <p className="empty" style={{ margin: 0, padding: "0.6rem 0.7rem" }}>
+                Digite pelo menos {minCreateLength} caracteres para adicionar.
+              </p>
             ) : (
               <p className="empty" style={{ margin: 0, padding: "0.6rem 0.7rem" }}>
                 Nenhum resultado.

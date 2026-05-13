@@ -44,7 +44,9 @@ export default function ManagerPurchasePage() {
     total,
     addItem,
     confirmPurchase,
-    parseReceiptsByAI
+    parseReceiptsByAI,
+    createSupplier,
+    supplierCreating
   } = usePurchaseForm(token, { recordAiHighlights: false, onAfterConfirm });
 
   const handleParseAi = useCallback(() => {
@@ -129,16 +131,17 @@ export default function ManagerPurchasePage() {
                   <label>Data da compra</label>
                   <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
                 </div>
-                <div className="field field-wizard">
-                  <label>Fornecedor</label>
-                  <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-                    <option value="">Selecione o fornecedor</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="field field-wizard field-wizard-supplier">
+                  <SingleSelectSearch
+                    label="Fornecedor"
+                    placeholder="Digite para buscar ou adicionar…"
+                    options={suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name }))}
+                    value={supplierId}
+                    onChange={setSupplierId}
+                    allowCreate
+                    createBusy={supplierCreating}
+                    onCreateOption={createSupplier}
+                  />
                 </div>
                 <div className="field field-wizard">
                   <label>Número da nota fiscal</label>

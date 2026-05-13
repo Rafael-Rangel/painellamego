@@ -44,7 +44,9 @@ export default function ManagerPurchaseAiPage() {
     parseReceiptsByAI,
     aiHighlightKeys,
     clearAiHighlight,
-    clearItemRowAiHighlight
+    clearItemRowAiHighlight,
+    createSupplier,
+    supplierCreating
   } = usePurchaseForm(token, { recordAiHighlights: true, onAfterConfirm });
 
   const handleDropzoneFiles = useCallback(
@@ -136,23 +138,20 @@ export default function ManagerPurchaseAiPage() {
                   />
                 </div>
                 <div className={`field purchase-ai-field span-2 ${aiClass("supplierId")}`}>
-                  <label htmlFor="purchase-ai-supplier">Fornecedor</label>
-                  <select
-                    id="purchase-ai-supplier"
-                    className="purchase-ai-input"
+                  <SingleSelectSearch
+                    label="Fornecedor"
+                    placeholder="Digite para buscar ou adicionar…"
+                    options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
                     value={supplierId}
-                    onChange={(e) => {
+                    onChange={(id) => {
                       clearAiHighlight("supplierId");
-                      setSupplierId(e.target.value);
+                      setSupplierId(id);
                     }}
-                  >
-                    <option value="">Selecione o fornecedor</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                    allowCreate
+                    createBusy={supplierCreating}
+                    onCreateOption={createSupplier}
+                    inputClassName="purchase-ai-input"
+                  />
                 </div>
                 <div className={`field purchase-ai-field span-2 ${aiClass("invoiceNumber")}`}>
                   <label htmlFor="purchase-ai-invoice">Número da nota fiscal</label>

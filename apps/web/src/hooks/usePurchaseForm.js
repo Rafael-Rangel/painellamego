@@ -62,6 +62,7 @@ export function usePurchaseForm(token, options = {}) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiMissing, setAiMissing] = useState([]);
   const [aiHighlightKeys, setAiHighlightKeys] = useState(() => new Set());
+  const [supplierCreating, setSupplierCreating] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -139,6 +140,48 @@ export function usePurchaseForm(token, options = {}) {
       });
     },
     [recordAiHighlights]
+  );
+
+  const createSupplier = useCallback(
+    async (name) => {
+      const trimmed = String(name || "").trim();
+      if (trimmed.length < 2) {
+        setToast("O nome do fornecedor deve ter pelo menos 2 caracteres.");
+        setTimeout(() => setToast(""), 3200);
+        return;
+      }
+      setSupplierCreating(true);
+      try {
+        let storeId = overview?.storeIds?.[0];
+        if (!storeId) {
+          const { data: stores } = await api.get("/catalog/stores", withAuth(token));
+          storeId = stores?.[0]?.id;
+        }
+        if (!storeId) {
+          setToast("Não há loja cadastrada. Crie uma loja no painel admin antes de adicionar fornecedor.");
+          setTimeout(() => setToast(""), 4500);
+          return;
+        }
+        const { data } = await api.post("/catalog/suppliers", { name: trimmed, storeId }, withAuth(token));
+        setSuppliers((prev) =>
+          [...prev, data].sort((a, b) => String(a.name).localeCompare(String(b.name), "pt-BR"))
+        );
+        setSupplierId(data.id);
+        clearAiHighlight("supplierId");
+        setToast(`Fornecedor “${data.name}” adicionado.`);
+        setTimeout(() => setToast(""), 2800);
+      } catch (err) {
+        const d = err?.response?.data;
+        let msg = "Não foi possível criar o fornecedor.";
+        if (typeof d?.message === "string") msg = d.message;
+        else if (Array.isArray(d?.formErrors?.fieldErrors?.name)) msg = d.formErrors.fieldErrors.name[0];
+        setToast(msg);
+        setTimeout(() => setToast(""), 4200);
+      } finally {
+        setSupplierCreating(false);
+      }
+    },
+    [token, overview, clearAiHighlight]
   );
 
   const confirmPurchase = useCallback(async () => {
@@ -291,6 +334,8 @@ export function usePurchaseForm(token, options = {}) {
     parseReceiptsByAI,
     aiHighlightKeys: recordAiHighlights ? aiHighlightKeys : null,
     clearAiHighlight,
-    clearItemRowAiHighlight
+    clearItemRowAiHighlight,
+    createSupplier,
+    supplierCreating
   };
 }
