@@ -1206,39 +1206,49 @@ export default function AdminPage() {
         <div className="grid">
           <section className="span-12">
             <DataCard title="Produtos" subtitle="Catálogo global da rede. Na tabela, origem “Rede” ou “Gerente”.">
-              <form className="grid" onSubmit={saveProduct}>
-                <div className="field span-4">
-                  <label>Nome</label>
-                  <input value={productForm.name} onChange={(e) => setProductForm((p) => ({ ...p, name: e.target.value }))} required />
+              <form className="admin-catalog-product-form" onSubmit={saveProduct}>
+                <div className="admin-catalog-product-form__row">
+                  <div className="field admin-catalog-product-form__field">
+                    <label>Nome</label>
+                    <input value={productForm.name} onChange={(e) => setProductForm((p) => ({ ...p, name: e.target.value }))} required />
+                  </div>
+                  <div className="admin-catalog-product-form__cell">
+                    <SingleSelectInput
+                      label="Categoria"
+                      placeholder="Digite ou selecione..."
+                      options={categoryOptions}
+                      value={productForm.category}
+                      onChange={(next) => setProductForm((p) => ({ ...p, category: next }))}
+                    />
+                  </div>
                 </div>
-                <div className="field span-3">
-                  <SingleSelectInput
-                    label="Categoria"
-                    placeholder="Digite ou selecione..."
-                    options={categoryOptions}
-                    value={productForm.category}
-                    onChange={(next) => setProductForm((p) => ({ ...p, category: next }))}
-                  />
-                </div>
-                <div className="field span-2">
-                  <label>Tipo</label>
-                  <select value={productForm.type} onChange={(e) => setProductForm((p) => ({ ...p, type: e.target.value }))}>
-                    <option value="insumo">Insumo</option>
-                    <option value="venda">Venda</option>
-                  </select>
-                </div>
-                <div className="field span-2">
-                  <SingleSelectInput
-                    label="Unidade padrão"
-                    placeholder="Digite ou selecione..."
-                    options={unitOptions}
-                    value={productForm.standardUnit}
-                    onChange={(next) => setProductForm((p) => ({ ...p, standardUnit: next }))}
-                  />
-                </div>
-                <div className="field span-1" style={{ display: "flex", alignItems: "end", gap: "0.5rem" }}>
-                  <button className="btn btn-primary" type="submit">{editingProductId ? "Salvar" : "Criar"}</button>
-                  {editingProductId ? <button className="btn btn-ghost" type="button" onClick={resetProductForm}>Cancelar</button> : null}
+                <div className="admin-catalog-product-form__row">
+                  <div className="field admin-catalog-product-form__field admin-catalog-product-form__field--tipo">
+                    <label>Tipo</label>
+                    <select value={productForm.type} onChange={(e) => setProductForm((p) => ({ ...p, type: e.target.value }))}>
+                      <option value="insumo">Insumo</option>
+                      <option value="venda">Venda</option>
+                    </select>
+                  </div>
+                  <div className="admin-catalog-product-form__cell admin-catalog-product-form__cell--unit">
+                    <SingleSelectInput
+                      label="Unidade padrão"
+                      placeholder="Digite ou selecione..."
+                      options={unitOptions}
+                      value={productForm.standardUnit}
+                      onChange={(next) => setProductForm((p) => ({ ...p, standardUnit: next }))}
+                    />
+                  </div>
+                  <div className="admin-catalog-product-form__actions">
+                    <button className="btn btn-primary" type="submit">
+                      {editingProductId ? "Salvar" : "Criar"}
+                    </button>
+                    {editingProductId ? (
+                      <button className="btn btn-ghost" type="button" onClick={resetProductForm}>
+                        Cancelar
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </form>
             </DataCard>

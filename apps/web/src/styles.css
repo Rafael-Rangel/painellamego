@@ -292,26 +292,6 @@ img {
   color: #fff;
 }
 
-/** Menu lateral mais compacto (painel admin, muitos itens). */
-.sidebar-nav--compact .nav {
-  font-size: var(--font-xs);
-  padding: 0.42rem 0.55rem;
-  gap: 0.45rem;
-  margin-bottom: 0.35rem;
-  line-height: 1.25;
-}
-
-.sidebar-nav--compact .nav span:first-child {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.sidebar-nav--compact .nav span:last-child {
-  min-width: 0;
-  word-break: break-word;
-}
-
 .sidebar-footer {
   margin-top: var(--space-6);
   color: #d7e4ff;
@@ -429,6 +409,62 @@ img {
 .admin-filters-wrap {
   width: 100%;
   margin-bottom: var(--space-4);
+}
+
+/* Formulário “Produtos” no admin: evita grid 12 col espremido dentro do card */
+.admin-catalog-product-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.admin-catalog-product-form__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.admin-catalog-product-form__field {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.admin-catalog-product-form__field--tipo {
+  flex: 0 1 10rem;
+}
+
+.admin-catalog-product-form__cell {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.admin-catalog-product-form__cell .field {
+  margin-bottom: 0;
+}
+
+.admin-catalog-product-form__cell--unit {
+  flex: 1 1 12rem;
+  max-width: min(100%, 18rem);
+}
+
+.admin-catalog-product-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@media (max-width: 36rem) {
+  .admin-catalog-product-form__actions {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 
 .ranking-comparison-root .ranking-comparison-toolbar {

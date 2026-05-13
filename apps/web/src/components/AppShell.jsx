@@ -12,9 +12,7 @@ export default function AppShell({
   links = [],
   activeLinkKey = "",
   storeBadge,
-  sidebarTitle = "Admin tools",
-  /** Classe extra no `<nav>` do menu (ex.: tipografia mais compacta no admin). */
-  sidebarNavClass = ""
+  sidebarTitle = "Admin tools"
 }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -29,7 +27,7 @@ export default function AppShell({
   const storeLabel = useMemo(() => {
     if (storeBadge !== undefined) return storeBadge ?? "Sua loja";
     if (user?.storeId) return `Loja: ${user.storeId}`;
-    return "Visao de rede";
+    return "";
   }, [storeBadge, user?.storeId]);
 
   useEffect(() => {
@@ -77,7 +75,7 @@ export default function AppShell({
           >
             {theme === "dark" ? <FaSun /> : <FaMoon />}
           </button>
-          <span className="topbar-pill">{storeLabel}</span>
+          {storeLabel ? <span className="topbar-pill">{storeLabel}</span> : null}
           <span className="topbar-user">{user?.email}</span>
           <button className="btn btn-secondary" onClick={handleSignOut}>
             Sair
@@ -97,7 +95,7 @@ export default function AppShell({
               <FaTimes />
             </button>
           </div>
-          <nav className={sidebarNavClass || undefined}>
+          <nav>
             {links.map((link) =>
               link.onClick ? (
                 <button
