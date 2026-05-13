@@ -1,0 +1,17 @@
+{
+  "suppliers": [
+    { "id": "s-rafael-1", "name": "RAFAEL RANGEL DOS SANTOS FARINHA" },
+    { "id": "s-rafael-2", "name": "58.056.048 RAFAEL RANGEL DOS SANTOS FARINHA" },
+    { "id": "s-alicia", "name": "ALICIA CATARINO CORDEIRO" }
+  ],
+  "products": [
+    {
+      "id": "p-dev-1",
+      "name": "Desenvolvimento de sistema web personalizado para gestão e comparação de preços",
+      "type": "insumo"
+    },
+    { "id": "p-dev-2", "name": "Desenvolvimento de sistema web", "type": "insumo" },
+    { "id": "p-prog", "name": "Programação", "type": "insumo" },
+    { "id": "p-serv", "name": "Serviço de desenvolvimento de software", "type": "insumo" }
+  ]
+}

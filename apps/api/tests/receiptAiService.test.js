@@ -169,3 +169,68 @@ test("parseReceiptWithAI: falha do provider na 1ª chamada faz retry sem respons
 
   delete global.fetch;
 });
+
+test("parseReceiptWithAI: esgota modelo principal e usa OPENROUTER_FALLBACK_MODEL", async () => {
+  let n = 0;
+  global.fetch = async (_url, init) => {
+    n += 1;
+    const body = JSON.parse(init.body);
+    const model = body.model;
+    if (model === "google/gemini-2.0-flash-001") {
+      return {
+        ok: false,
+        status: 502,
+        async json() {
+          return { error: { message: "Provider returned error" } };
+        }
+      };
+    }
+    if (model === "openai/gpt-4o-mini") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    invoiceNumber: "77",
+                    purchaseDate: "2026-02-01",
+                    supplierName: "Fornecedor X",
+                    items: [
+                      {
+                        productName: "Produto Y",
+                        quantity: 2,
+                        unitUsed: "kg",
+                        unitPrice: 3
+                      }
+                    ]
+                  })
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+    throw new Error(`modelo inesperado: ${model}`);
+  };
+
+  process.env.OPENROUTER_API_KEY = "test-key";
+  process.env.OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
+  process.env.OPENROUTER_FALLBACK_MODEL = "openai/gpt-4o-mini";
+
+  const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
+  const jpegBuf = Buffer.from("ff", "hex");
+  const out = await parseReceiptWithAI({
+    imageBuffer: jpegBuf,
+    mimeType: "image/jpeg",
+    products: [{ id: "p1", name: "Produto Y", type: "insumo" }],
+    suppliers: [{ id: "s1", name: "Fornecedor X" }]
+  });
+
+  assert.equal(n, 3, "2 falhas no principal + 1 sucesso no fallback");
+  assert.equal(out.invoiceNumber, "77");
+
+  delete global.fetch;
+});

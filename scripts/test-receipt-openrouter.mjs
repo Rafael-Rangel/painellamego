@@ -5,6 +5,9 @@
  *   node scripts/test-receipt-openrouter.mjs
  *   node scripts/test-receipt-openrouter.mjs https://exemplo.com/nota.jpg
  *   node scripts/test-receipt-openrouter.mjs /caminho/local/nota.png
+ *   node scripts/test-receipt-openrouter.mjs nota.png --json
+ * Catálogo opcional (para testar match com cadastro):
+ *   RECEIPT_TEST_CATALOG='{"products":[...],"suppliers":[...]}' node scripts/test-receipt-openrouter.mjs nota.png --json
  * Requer OPENROUTER_API_KEY no .env (raiz ou apps/api).
  */
 import dotenv from "dotenv";
@@ -54,20 +57,45 @@ async function loadImageArg(arg) {
   return { imageBuffer: buf, mimeType: mimeFromPath(abs), label: `ficheiro ${path.basename(abs)} (${buf.length} bytes)` };
 }
 
+function argvImagePath() {
+  const skip = new Set(["--json"]);
+  const args = process.argv.slice(2).filter((a) => !skip.has(a));
+  return args[0] || null;
+}
+
+function loadCatalogFromEnv() {
+  const raw = process.env.RECEIPT_TEST_CATALOG;
+  if (!raw) return null;
+  try {
+    const c = JSON.parse(raw);
+    return {
+      products: Array.isArray(c.products) ? c.products : [],
+      suppliers: Array.isArray(c.suppliers) ? c.suppliers : []
+    };
+  } catch (e) {
+    console.error("RECEIPT_TEST_CATALOG: JSON inválido:", e.message);
+    process.exit(1);
+  }
+}
+
 async function main() {
   if (!process.env.OPENROUTER_API_KEY) {
     console.error("SKIP: defina OPENROUTER_API_KEY no .env para rodar este teste.");
     process.exit(2);
   }
 
-  const arg = process.argv[2];
+  const arg = argvImagePath();
+  const printJson = process.argv.includes("--json");
   const { imageBuffer, mimeType, label } = await loadImageArg(arg);
   console.log("Fonte da imagem:", label, "| mime:", mimeType);
 
-  const products = [
-    { id: "11111111-1111-1111-1111-111111111111", name: "Farinha de trigo", type: "insumo" }
-  ];
-  const suppliers = [{ id: "22222222-2222-2222-2222-222222222222", name: "Distribuidora Sul" }];
+  const fromEnv = loadCatalogFromEnv();
+  const products = fromEnv?.products?.length
+    ? fromEnv.products
+    : [{ id: "11111111-1111-1111-1111-111111111111", name: "Farinha de trigo", type: "insumo" }];
+  const suppliers = fromEnv?.suppliers?.length
+    ? fromEnv.suppliers
+    : [{ id: "22222222-2222-2222-2222-222222222222", name: "Distribuidora Sul" }];
 
   const out = await parseReceiptWithAI({
     imageBuffer,
@@ -91,6 +119,10 @@ async function main() {
   console.log("OK: OpenRouter respondeu e o serviço retornou objeto válido.");
   console.log("  model (env):", process.env.OPENROUTER_MODEL || "(padrão google/gemini-2.0-flash-001)");
   console.log("  itens:", out.items.length, "| missingGlobal:", out.missingGlobal.length);
+  if (printJson) {
+    console.log("\n--- JSON completo ---");
+    console.log(JSON.stringify(out, null, 2));
+  }
 }
 
 main().catch((e) => {

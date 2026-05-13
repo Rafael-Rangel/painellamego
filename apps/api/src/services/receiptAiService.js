@@ -103,12 +103,21 @@ function openRouterHeaders() {
   return h;
 }
 
-async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pdfPlugin }) {
+/** Segundo modelo se o principal esgotar tentativas (ex.: Gemini com “Provider returned error” em algumas PNG). */
+function openRouterFallbackModel() {
+  if (process.env.OPENROUTER_FALLBACK_MODEL === "") return null;
+  const v = (process.env.OPENROUTER_FALLBACK_MODEL ?? "openai/gpt-4o-mini").trim();
+  if (!v || /^(off|false|none|0)$/i.test(v)) return null;
+  if (v === config.openRouterModel) return null;
+  return v;
+}
+
+async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pdfPlugin, model }) {
   // Mídia antes do texto: melhora compatibilidade com modelos de visão no OpenRouter.
   const userContent = [...visionPartsForMime(mimeType, dataUrl), { type: "text", text: prompt }];
 
   const body = {
-    model: config.openRouterModel,
+    model: model || config.openRouterModel,
     temperature: 0.1,
     max_tokens: 8192,
     messages: [
@@ -146,50 +155,13 @@ async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pd
   return payload;
 }
 
-export async function parseReceiptWithAI({
-  imageBuffer,
-  mimeType,
-  products = [],
-  suppliers = []
-}) {
-  if (!config.openRouterApiKey) {
-    throw new Error("OPENROUTER_API_KEY não configurada.");
-  }
-
-  const base64 = imageBuffer.toString("base64");
-  const dataUrl = `data:${mimeType};base64,${base64}`;
-  const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean));
-  const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean));
-
-  const prompt = [
-    "Extraia dados desta nota fiscal brasileira e retorne SOMENTE JSON válido.",
-    "Campos do JSON:",
-    "{",
-    '  "invoiceNumber": "string|null",',
-    '  "purchaseDate": "YYYY-MM-DD|null",',
-    '  "supplierName": "string|null",',
-    '  "items": [',
-    "    {",
-    '      "productName": "string",',
-    '      "quantity": number|null,',
-    '      "unitUsed": "kg|un|cx|L|g|ml|outro|null",',
-    '      "unitPrice": number|null',
-    "    }",
-    "  ]",
-    "}",
-    "Não invente valores.",
-    "Se não achar algum campo, use null.",
-    `Produtos cadastrados: ${JSON.stringify(productNames)}`,
-    `Fornecedores cadastrados: ${JSON.stringify(supplierNames)}`
-  ].join("\n");
-
+async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, model }) {
   let payload;
   try {
-    payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: true });
+    payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: true, model });
   } catch (firstErr) {
     try {
-      // Muitos erros do downstream (ex.: "Provider returned error") somem sem response_format + json_object.
-      payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: false });
+      payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: false, model });
     } catch (secondErr) {
       if (mimeType === "application/pdf") {
         try {
@@ -198,28 +170,29 @@ export async function parseReceiptWithAI({
             dataUrl,
             mimeType,
             useJsonObject: false,
-            pdfPlugin: false
+            pdfPlugin: false,
+            model
           });
         } catch (thirdErr) {
           const hint = [firstErr, secondErr, thirdErr]
             .map((e) => String(e?.message || e))
             .filter(Boolean)
             .join(" | ");
-          throw new Error(`OpenRouter: ${hint}`);
+          throw new Error(`[${model || config.openRouterModel}] ${hint}`);
         }
       } else {
         const hint = [firstErr, secondErr]
           .map((e) => String(e?.message || e))
           .filter(Boolean)
           .join(" | ");
-        throw new Error(`OpenRouter: ${hint}`);
+        throw new Error(`[${model || config.openRouterModel}] ${hint}`);
       }
     }
   }
+  return payload;
+}
 
-  const content = payload?.choices?.[0]?.message?.content || "{}";
-  const parsed = parseJsonFromModelContent(content);
-
+function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
   const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
   const items = (parsed?.items || []).map((it) => {
     const productMatch = bestMatchByName(it?.productName, products, "name");
@@ -257,4 +230,63 @@ export async function parseReceiptWithAI({
     items,
     missingGlobal
   };
+}
+
+export async function parseReceiptWithAI({
+  imageBuffer,
+  mimeType,
+  products = [],
+  suppliers = []
+}) {
+  if (!config.openRouterApiKey) {
+    throw new Error("OPENROUTER_API_KEY não configurada.");
+  }
+
+  const base64 = imageBuffer.toString("base64");
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+  const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean));
+  const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean));
+
+  const prompt = [
+    "Extraia dados desta nota fiscal brasileira e retorne SOMENTE JSON válido.",
+    "Em NFS-e (serviço), supplierName deve ser o EMITENTE / PRESTADOR do serviço (quem emitiu a nota), não o tomador.",
+    "purchaseDate: use a data de emissão ou competência impressa na nota; converta DD/MM/AAAA para YYYY-MM-DD copiando o ANO exatamente como impresso (confunda 3 com 6: 2026 ≠ 2023).",
+    "Campos do JSON:",
+    "{",
+    '  "invoiceNumber": "string|null",',
+    '  "purchaseDate": "YYYY-MM-DD|null",',
+    '  "supplierName": "string|null",',
+    '  "items": [',
+    "    {",
+    '      "productName": "string",',
+    '      "quantity": number|null,',
+    '      "unitUsed": "kg|un|cx|L|g|ml|outro|null",',
+    '      "unitPrice": number|null',
+    "    }",
+    "  ]",
+    "}",
+    "Não invente valores.",
+    "Se não achar algum campo, use null.",
+    "Em nota de serviço com um único valor, pode haver um item com productName = descrição do serviço e unitPrice = valor do serviço; quantity pode ser null ou 1.",
+    `Produtos cadastrados: ${JSON.stringify(productNames)}`,
+    `Fornecedores cadastrados: ${JSON.stringify(supplierNames)}`
+  ].join("\n");
+
+  const models = [config.openRouterModel];
+  const fb = openRouterFallbackModel();
+  if (fb) models.push(fb);
+
+  const errors = [];
+  for (const model of models) {
+    try {
+      const payload = await fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, model });
+      const content = payload?.choices?.[0]?.message?.content || "{}";
+      const parsed = parseJsonFromModelContent(content);
+      return mapAiParsedToReceiptOutput(parsed, products, suppliers);
+    } catch (e) {
+      errors.push(String(e?.message || e));
+    }
+  }
+
+  throw new Error(`OpenRouter: ${errors.join(" || ")}`);
 }
