@@ -90,6 +90,10 @@ function truncateCatalogNames(names, maxItems = 120, maxCharsPerName = 100) {
     .slice(0, maxItems);
 }
 
+/** Limiares de fuzzy match cadastro ↔ texto da nota (descrições longas em NFS-e). */
+const MIN_PRODUCT_MATCH = 0.5;
+const MIN_SUPPLIER_MATCH = 0.55;
+
 function openRouterHeaders() {
   const h = {
     Authorization: `Bearer ${config.openRouterApiKey}`,
@@ -195,14 +199,20 @@ async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, mo
 
 function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
   const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
-  const items = (parsed?.items || []).map((it) => {
+  const rawItems = parsed?.items || [];
+  const singleLine = rawItems.length === 1;
+
+  const items = rawItems.map((it) => {
     const productMatch = bestMatchByName(it?.productName, products, "name");
-    const qty = it?.quantity == null ? null : Number(it.quantity);
+    let qty = it?.quantity == null ? null : Number(it.quantity);
     const unitPrice = it?.unitPrice == null ? null : Number(it.unitPrice);
+    if ((!Number.isFinite(qty) || qty <= 0) && singleLine && Number.isFinite(unitPrice) && unitPrice > 0) {
+      qty = 1;
+    }
     const unitRaw = String(it?.unitUsed || "").toLowerCase();
     const unitUsed = ["kg", "un", "cx", "l", "g", "ml"].includes(unitRaw) ? (unitRaw === "l" ? "L" : unitRaw) : "un";
     const missing = [];
-    if (!productMatch.best || productMatch.score < 0.6) missing.push("produto");
+    if (!productMatch.best || productMatch.score < MIN_PRODUCT_MATCH) missing.push("produto");
     if (!Number.isFinite(qty) || qty <= 0) missing.push("quantidade");
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) missing.push("valor unitário");
     return {
@@ -217,13 +227,17 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers) {
     };
   });
 
+  const invRaw = parsed?.invoiceNumber;
+  const invoiceNormalized =
+    invRaw == null || String(invRaw).trim() === "" ? null : String(invRaw).replace(/\s+/g, " ").trim();
+
   const missingGlobal = [];
-  if (!parsed?.invoiceNumber) missingGlobal.push("número da nota");
+  if (!invoiceNormalized) missingGlobal.push("número da nota");
   if (!parsed?.purchaseDate) missingGlobal.push("data da compra");
-  if (!supplierMatch.best || supplierMatch.score < 0.6) missingGlobal.push("fornecedor");
+  if (!supplierMatch.best || supplierMatch.score < MIN_SUPPLIER_MATCH) missingGlobal.push("fornecedor");
 
   return {
-    invoiceNumber: parsed?.invoiceNumber || null,
+    invoiceNumber: invoiceNormalized,
     purchaseDate: parsed?.purchaseDate || null,
     supplierSuggestion: supplierMatch.best
       ? { id: supplierMatch.best.id, name: supplierMatch.best.name, confidence: supplierMatch.score }
@@ -245,8 +259,8 @@ export async function parseReceiptWithAI({
 
   const base64 = imageBuffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
-  const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean));
-  const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean));
+  const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean), 150, 220);
+  const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean), 120, 140);
 
   const prompt = [
     "Extraia dados desta nota fiscal brasileira e retorne SOMENTE JSON válido.",

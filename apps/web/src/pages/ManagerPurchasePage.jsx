@@ -15,8 +15,15 @@ function toWeekOfMonth(dateStr) {
   return Math.ceil(date.getDate() / 7);
 }
 
+/** Normaliza número da NF vindo da IA (pode ser número ou string). */
+function invoiceNumberFromAi(value) {
+  if (value == null) return "";
+  const s = String(value).trim();
+  return s || "";
+}
+
 const STEPS = [
-  { n: 1, title: "Dados da compra", hint: "Data, fornecedor e loja" },
+  { n: 1, title: "Dados da compra", hint: "Data, fornecedor, nº NF, anexo e IA" },
   { n: 2, title: "Itens da nota", hint: "Produtos, valores e insumo ou venda" },
   { n: 3, title: "Nota fiscal", hint: "Número NF, arquivo e leitura por IA" },
   { n: 4, title: "Conferir e enviar", hint: "Revise tudo antes de salvar" }
@@ -92,6 +99,23 @@ export default function ManagerPurchasePage() {
     setTimeout(() => setToast(""), 2600);
   }
 
+  function buildItemRowFromAi(it, { singleLineInvoice }) {
+    const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
+    if (!it.productId || !Number.isFinite(priceNum) || priceNum <= 0) return null;
+    let qty = it.quantity != null ? Number(it.quantity) : NaN;
+    if (!Number.isFinite(qty) || qty <= 0) {
+      if (singleLineInvoice) qty = 1;
+      else return null;
+    }
+    return {
+      productId: it.productId,
+      quantity: String(qty),
+      unitUsed: it.unitUsed && ["kg", "un", "cx", "L", "l", "g", "ml"].includes(String(it.unitUsed)) ? (it.unitUsed === "l" ? "L" : it.unitUsed) : "un",
+      unitPrice: String(priceNum),
+      lineType: it.lineType === "venda" ? "venda" : "insumo"
+    };
+  }
+
   async function parseReceiptsByAI() {
     if (!receipts.length) return;
     setAiLoading(true);
@@ -102,30 +126,61 @@ export default function ManagerPurchasePage() {
       const { data } = await api.post("/purchases/receipt-ai-parse", form, {
         headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
       });
-      if (data?.invoiceNumber && !invoiceNumber) setInvoiceNumber(data.invoiceNumber);
-      if (data?.purchaseDate) setDate(String(data.purchaseDate).slice(0, 10));
-      if (data?.supplierSuggestion?.id && !supplierId) setSupplierId(data.supplierSuggestion.id);
 
-      const autoItems = (data?.items || [])
-        .filter((it) => it.productId && it.quantity && it.unitPrice)
-        .map((it) => ({
-          productId: it.productId,
-          quantity: String(it.quantity),
-          unitUsed: it.unitUsed || "un",
-          unitPrice: String(it.unitPrice),
-          lineType: it.lineType === "venda" ? "venda" : "insumo"
-        }));
+      const inv = invoiceNumberFromAi(data?.invoiceNumber);
+      if (inv) setInvoiceNumber(inv);
+
+      if (data?.purchaseDate) setDate(String(data.purchaseDate).slice(0, 10));
+
+      if (data?.supplierSuggestion?.id) setSupplierId(String(data.supplierSuggestion.id));
+
+      const fromApi = data?.items || [];
+      const singleLineInvoice = fromApi.length === 1;
+      const autoItems = fromApi.map((row) => buildItemRowFromAi(row, { singleLineInvoice })).filter(Boolean);
       if (autoItems.length) setItems(autoItems);
 
+      const firstIncomplete = fromApi.find((it) => {
+        const priceOk = it.unitPrice != null && Number(it.unitPrice) > 0;
+        return priceOk && !it.productId;
+      });
+      if (firstIncomplete) {
+        const q = firstIncomplete.quantity != null && Number(firstIncomplete.quantity) > 0 ? String(firstIncomplete.quantity) : "1";
+        const p = firstIncomplete.unitPrice != null ? String(firstIncomplete.unitPrice) : "";
+        setDraftItem({
+          productId: "",
+          quantity: q,
+          unitUsed:
+            firstIncomplete.unitUsed && ["kg", "un", "cx", "L", "l", "g", "ml"].includes(String(firstIncomplete.unitUsed))
+              ? firstIncomplete.unitUsed === "l"
+                ? "L"
+                : firstIncomplete.unitUsed
+              : "un",
+          unitPrice: p,
+          lineType: firstIncomplete.lineType === "venda" ? "venda" : "insumo"
+        });
+      } else if (autoItems.length) {
+        setDraftItem({ productId: "", quantity: "", unitUsed: "un", unitPrice: "", lineType: "insumo" });
+      }
+
       const missingRows = [];
-      for (const [idx, it] of (data?.items || []).entries()) {
-        if (it.missing?.length) missingRows.push(`Item ${idx + 1} (${it.rawProductName || "produto"}): ${it.missing.join(", ")}`);
+      for (const [idx, it] of fromApi.entries()) {
+        if (it.missing?.length)
+          missingRows.push(`Item ${idx + 1} (${it.rawProductName || "produto"}): ${it.missing.join(", ")}`);
       }
       for (const g of data?.missingGlobal || []) missingRows.push(`Nota: ${g}`);
       setAiMissing(missingRows);
+
+      const suggestedSupplier = Boolean(data?.supplierSuggestion?.id);
+      const canReviewItems = autoItems.length > 0 && suggestedSupplier && data?.purchaseDate;
+      if (canReviewItems) setStep(2);
+      else setStep(1);
+
       if (!missingRows.length) {
-        setToast("Leitura concluída. Dados da nota preenchidos automaticamente.");
-        setTimeout(() => setToast(""), 2500);
+        setToast("Leitura concluída. Revise os dados nas etapas e confirme ou ajuste o que precisar.");
+        setTimeout(() => setToast(""), 3200);
+      } else {
+        setToast("IA sugeriu parte dos dados. Complete ou corrija os campos indicados abaixo.");
+        setTimeout(() => setToast(""), 3800);
       }
     } catch (err) {
       setAiMissing([err?.response?.data?.message || "Não foi possível ler a nota com IA."]);
@@ -194,7 +249,10 @@ export default function ManagerPurchasePage() {
           {step === 1 ? (
             <div className="wizard-step-content">
               <h3 className="wizard-panel-title">Quem fornece e quando</h3>
-              <p className="wizard-panel-desc">Anexe uma ou mais fotos/PDF da nota. A IA tenta preencher tudo automaticamente.</p>
+              <p className="wizard-panel-desc">
+                Anexe fotos ou PDF da nota e use &quot;Ler nota com IA&quot;. A IA preenche automaticamente data, fornecedor, número da NF e itens
+                quando reconhecer; revê e edita qualquer campo antes de avançar.
+              </p>
               <div className="wizard-fields">
                 <div className="field field-wizard">
                   <label>Data da compra</label>
@@ -210,6 +268,17 @@ export default function ManagerPurchasePage() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="field field-wizard">
+                  <label>Número da nota fiscal</label>
+                  <input
+                    type="text"
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    placeholder="Ex.: 12345 ou chave resumida"
+                    autoComplete="off"
+                  />
+                  <span className="field-helper">A IA tenta preencher a partir da nota; pode editar.</span>
                 </div>
                 <div className="field field-wizard">
                   <label>Fotos / PDF da nota (obrigatório)</label>
@@ -236,7 +305,7 @@ export default function ManagerPurchasePage() {
               </div>
               {aiMissing.length ? (
                 <div className="card" style={{ marginTop: "0.75rem", borderTop: 0 }}>
-                  <h4 style={{ marginBottom: "0.5rem" }}>Completar manualmente antes de salvar</h4>
+                  <h4 style={{ marginBottom: "0.5rem" }}>Ajustes sugeridos (revise o formulário acima e nas etapas seguintes)</h4>
                   <ul style={{ margin: 0, paddingLeft: "1rem" }}>
                     {aiMissing.map((msg, idx) => (
                       <li key={`${msg}-${idx}`}>{msg}</li>
