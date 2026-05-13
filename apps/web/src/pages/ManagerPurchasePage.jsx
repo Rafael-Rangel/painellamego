@@ -1,26 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaArrowRight, FaCheck, FaFileInvoice, FaRobot, FaShoppingBasket } from "react-icons/fa";
 import AppShell from "../components/AppShell";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
-import { api, withAuth } from "../api";
 import { useAuth } from "../auth/AuthProvider";
 import CompactTable from "../components/ui/CompactTable";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import { formatCurrency } from "../lib/formatters";
-import { mockProducts, mockSuppliers } from "../mocks/mockData";
-
-function toWeekOfMonth(dateStr) {
-  const date = new Date(dateStr);
-  return Math.ceil(date.getDate() / 7);
-}
-
-/** Normaliza número da NF vindo da IA (pode ser número ou string). */
-function invoiceNumberFromAi(value) {
-  if (value == null) return "";
-  const s = String(value).trim();
-  return s || "";
-}
+import { usePurchaseForm } from "../hooks/usePurchaseForm";
 
 const STEPS = [
   { n: 1, title: "Dados da compra", hint: "Data, fornecedor, nº NF, anexo e IA" },
@@ -32,162 +19,43 @@ const STEPS = [
 export default function ManagerPurchasePage() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
-  const [overview, setOverview] = useState(undefined);
   const [step, setStep] = useState(1);
-  const [suppliers, setSuppliers] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [supplierId, setSupplierId] = useState("");
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [receipts, setReceipts] = useState([]);
-  const [items, setItems] = useState([]);
-  const [draftItem, setDraftItem] = useState({
-    productId: "",
-    quantity: "",
-    unitUsed: "kg",
-    unitPrice: "",
-    lineType: "insumo"
-  });
-  const [toast, setToast] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiMissing, setAiMissing] = useState([]);
 
-  useEffect(() => {
-    if (!token) return;
-    Promise.all([
-      api.get("/catalog/suppliers", withAuth(token)),
-      api.get("/catalog/products", withAuth(token)),
-      api.get("/manager/overview", withAuth(token))
-    ]).then(([supRes, prodRes, ovRes]) => {
-      setSuppliers(supRes.data?.length ? supRes.data : mockSuppliers);
-      setProducts(prodRes.data?.length ? prodRes.data : mockProducts);
-      setOverview(ovRes.data ?? null);
+  const onAfterConfirm = useCallback(() => setStep(1), []);
+
+  const {
+    overview,
+    suppliers,
+    products,
+    date,
+    setDate,
+    supplierId,
+    setSupplierId,
+    invoiceNumber,
+    setInvoiceNumber,
+    receipts,
+    setReceipts,
+    items,
+    draftItem,
+    setDraftItem,
+    toast,
+    aiLoading,
+    aiMissing,
+    total,
+    addItem,
+    confirmPurchase,
+    parseReceiptsByAI
+  } = usePurchaseForm(token, { recordAiHighlights: false, onAfterConfirm });
+
+  const handleParseAi = useCallback(() => {
+    parseReceiptsByAI({
+      onSuccess: (data, { autoItems, suggestedSupplier }) => {
+        const canReviewItems = autoItems.length > 0 && suggestedSupplier && data?.purchaseDate;
+        if (canReviewItems) setStep(2);
+        else setStep(1);
+      }
     });
-  }, [token]);
-
-  const total = items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);
-
-  function addItem() {
-    if (!draftItem.productId || !draftItem.quantity || !draftItem.unitPrice) return;
-    setItems([...items, { ...draftItem }]);
-    setDraftItem({ productId: "", quantity: "", unitUsed: "kg", unitPrice: "", lineType: "insumo" });
-  }
-
-  async function confirmPurchase() {
-    const payload = items.map((item) => ({
-      productId: item.productId,
-      supplierId,
-      unitPrice: Number(item.unitPrice),
-      unitUsed: item.unitUsed,
-      quantity: Number(item.quantity),
-      purchaseDate: new Date(date).toISOString(),
-      weekOfMonth: toWeekOfMonth(date),
-      lineType: item.lineType === "venda" ? "venda" : "insumo"
-    }));
-    const form = new FormData();
-    form.append("invoiceNumber", invoiceNumber || `NF-${Date.now()}`);
-    form.append("items", JSON.stringify(payload));
-    for (const file of receipts) form.append("receipts", file);
-    await api.post("/purchases", form, {
-      headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
-    });
-    setToast("Lançamento confirmado com sucesso.");
-    setItems([]);
-    setInvoiceNumber("");
-    setReceipts([]);
-    setStep(1);
-    setTimeout(() => setToast(""), 2600);
-  }
-
-  function buildItemRowFromAi(it, { singleLineInvoice }) {
-    const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
-    if (!it.productId || !Number.isFinite(priceNum) || priceNum <= 0) return null;
-    let qty = it.quantity != null ? Number(it.quantity) : NaN;
-    if (!Number.isFinite(qty) || qty <= 0) {
-      if (singleLineInvoice) qty = 1;
-      else return null;
-    }
-    return {
-      productId: it.productId,
-      quantity: String(qty),
-      unitUsed: it.unitUsed && ["kg", "un", "cx", "L", "l", "g", "ml"].includes(String(it.unitUsed)) ? (it.unitUsed === "l" ? "L" : it.unitUsed) : "un",
-      unitPrice: String(priceNum),
-      lineType: it.lineType === "venda" ? "venda" : "insumo"
-    };
-  }
-
-  async function parseReceiptsByAI() {
-    if (!receipts.length) return;
-    setAiLoading(true);
-    setAiMissing([]);
-    try {
-      const form = new FormData();
-      for (const file of receipts) form.append("receipts", file);
-      const { data } = await api.post("/purchases/receipt-ai-parse", form, {
-        headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
-      });
-
-      const inv = invoiceNumberFromAi(data?.invoiceNumber);
-      if (inv) setInvoiceNumber(inv);
-
-      if (data?.purchaseDate) setDate(String(data.purchaseDate).slice(0, 10));
-
-      if (data?.supplierSuggestion?.id) setSupplierId(String(data.supplierSuggestion.id));
-
-      const fromApi = data?.items || [];
-      const singleLineInvoice = fromApi.length === 1;
-      const autoItems = fromApi.map((row) => buildItemRowFromAi(row, { singleLineInvoice })).filter(Boolean);
-      if (autoItems.length) setItems(autoItems);
-
-      const firstIncomplete = fromApi.find((it) => {
-        const priceOk = it.unitPrice != null && Number(it.unitPrice) > 0;
-        return priceOk && !it.productId;
-      });
-      if (firstIncomplete) {
-        const q = firstIncomplete.quantity != null && Number(firstIncomplete.quantity) > 0 ? String(firstIncomplete.quantity) : "1";
-        const p = firstIncomplete.unitPrice != null ? String(firstIncomplete.unitPrice) : "";
-        setDraftItem({
-          productId: "",
-          quantity: q,
-          unitUsed:
-            firstIncomplete.unitUsed && ["kg", "un", "cx", "L", "l", "g", "ml"].includes(String(firstIncomplete.unitUsed))
-              ? firstIncomplete.unitUsed === "l"
-                ? "L"
-                : firstIncomplete.unitUsed
-              : "un",
-          unitPrice: p,
-          lineType: firstIncomplete.lineType === "venda" ? "venda" : "insumo"
-        });
-      } else if (autoItems.length) {
-        setDraftItem({ productId: "", quantity: "", unitUsed: "un", unitPrice: "", lineType: "insumo" });
-      }
-
-      const missingRows = [];
-      for (const [idx, it] of fromApi.entries()) {
-        if (it.missing?.length)
-          missingRows.push(`Item ${idx + 1} (${it.rawProductName || "produto"}): ${it.missing.join(", ")}`);
-      }
-      for (const g of data?.missingGlobal || []) missingRows.push(`Nota: ${g}`);
-      setAiMissing(missingRows);
-
-      const suggestedSupplier = Boolean(data?.supplierSuggestion?.id);
-      const canReviewItems = autoItems.length > 0 && suggestedSupplier && data?.purchaseDate;
-      if (canReviewItems) setStep(2);
-      else setStep(1);
-
-      if (!missingRows.length) {
-        setToast("Leitura concluída. Revise os dados nas etapas e confirme ou ajuste o que precisar.");
-        setTimeout(() => setToast(""), 3200);
-      } else {
-        setToast("IA sugeriu parte dos dados. Complete ou corrija os campos indicados abaixo.");
-        setTimeout(() => setToast(""), 3800);
-      }
-    } catch (err) {
-      setAiMissing([err?.response?.data?.message || "Não foi possível ler a nota com IA."]);
-    } finally {
-      setAiLoading(false);
-    }
-  }
+  }, [parseReceiptsByAI]);
 
   const links = useMemo(() => buildManagerSidebarLinks(navigate), [navigate]);
 
@@ -250,8 +118,11 @@ export default function ManagerPurchasePage() {
             <div className="wizard-step-content">
               <h3 className="wizard-panel-title">Quem fornece e quando</h3>
               <p className="wizard-panel-desc">
-                Anexe fotos ou PDF da nota e use &quot;Ler nota com IA&quot;. A IA preenche automaticamente data, fornecedor, número da NF e itens
-                quando reconhecer; revê e edita qualquer campo antes de avançar.
+                Para análise com IA numa única página (upload, leitura automática e formulário completo), use{" "}
+                <button type="button" className="btn btn-link" style={{ padding: 0, verticalAlign: "baseline" }} onClick={() => navigate("/manager/new-purchase/ai")}>
+                  Compra com IA
+                </button>
+                . Aqui pode continuar por etapas: anexe a nota e use &quot;Ler nota com IA&quot; nesta página, ou preencha à mão.
               </p>
               <div className="wizard-fields">
                 <div className="field field-wizard">
@@ -295,12 +166,22 @@ export default function ManagerPurchasePage() {
                       : "Selecione uma ou várias imagens/PDF da nota"}
                   </span>
                 </div>
-                <div className="field field-wizard">
+                <div className="field field-wizard wizard-ai-actions">
                   <label>&nbsp;</label>
-                  <button className="btn btn-primary" type="button" onClick={parseReceiptsByAI} disabled={!receipts.length || aiLoading}>
-                    <FaRobot style={{ marginRight: "0.35rem" }} />
-                    {aiLoading ? "Lendo nota..." : "Ler nota com IA"}
-                  </button>
+                  <div className="wizard-ai-btn-row">
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={() => navigate("/manager/new-purchase/ai")}
+                    >
+                      <FaRobot style={{ marginRight: "0.35rem" }} />
+                      Analisar com IA
+                    </button>
+                    <button className="btn btn-secondary" type="button" onClick={handleParseAi} disabled={!receipts.length || aiLoading}>
+                      <FaRobot style={{ marginRight: "0.35rem" }} />
+                      {aiLoading ? "Lendo nota..." : "Ler nota com IA (aqui)"}
+                    </button>
+                  </div>
                 </div>
               </div>
               {aiMissing.length ? (
