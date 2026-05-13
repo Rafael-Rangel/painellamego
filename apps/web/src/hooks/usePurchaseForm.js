@@ -13,6 +13,12 @@ export function invoiceNumberFromAi(value) {
   return s || "";
 }
 
+function normalizeUnitUsedFromAi(unitUsed) {
+  const u = String(unitUsed || "").toLowerCase();
+  if (["kg", "un", "cx", "l", "g", "ml"].includes(u)) return u === "l" ? "L" : u;
+  return "un";
+}
+
 function buildItemRowFromAi(it, { singleLineInvoice }) {
   const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
   if (!it.productId || !Number.isFinite(priceNum) || priceNum <= 0) return null;
@@ -24,12 +30,26 @@ function buildItemRowFromAi(it, { singleLineInvoice }) {
   return {
     productId: it.productId,
     quantity: String(qty),
-    unitUsed:
-      it.unitUsed && ["kg", "un", "cx", "L", "l", "g", "ml"].includes(String(it.unitUsed))
-        ? it.unitUsed === "l"
-          ? "L"
-          : it.unitUsed
-        : "un",
+    unitUsed: normalizeUnitUsedFromAi(it.unitUsed),
+    unitPrice: String(priceNum),
+    lineType: it.lineType === "venda" ? "venda" : "insumo"
+  };
+}
+
+/** Linha para a lista mesmo sem produto no catálogo (preço obrigatório; qtd default 1 se inválida). */
+function buildItemRowFromAiPartial(it, { singleLineInvoice }) {
+  const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
+  if (!Number.isFinite(priceNum) || priceNum <= 0) return null;
+  let qty = it.quantity != null ? Number(it.quantity) : NaN;
+  if (!Number.isFinite(qty) || qty <= 0) {
+    qty = singleLineInvoice ? 1 : 1;
+  }
+  const raw = String(it.rawProductName || it.productName || "").trim();
+  return {
+    productId: it.productId || "",
+    aiRawProductName: raw || undefined,
+    quantity: String(qty),
+    unitUsed: normalizeUnitUsedFromAi(it.unitUsed),
     unitPrice: String(priceNum),
     lineType: it.lineType === "venda" ? "venda" : "insumo"
   };
@@ -233,32 +253,12 @@ export function usePurchaseForm(token, options = {}) {
 
         const fromApi = data?.items || [];
         const singleLineInvoice = fromApi.length === 1;
-        const autoItems = fromApi.map((row) => buildItemRowFromAi(row, { singleLineInvoice })).filter(Boolean);
-        if (autoItems.length) setItems(autoItems);
+        const mergedRows = fromApi
+          .map((row) => buildItemRowFromAi(row, { singleLineInvoice }) || buildItemRowFromAiPartial(row, { singleLineInvoice }))
+          .filter(Boolean);
 
-        const firstIncomplete = fromApi.find((it) => {
-          const priceOk = it.unitPrice != null && Number(it.unitPrice) > 0;
-          return priceOk && !it.productId;
-        });
-        if (firstIncomplete) {
-          const q =
-            firstIncomplete.quantity != null && Number(firstIncomplete.quantity) > 0
-              ? String(firstIncomplete.quantity)
-              : "1";
-          const p = firstIncomplete.unitPrice != null ? String(firstIncomplete.unitPrice) : "";
-          setDraftItem({
-            productId: "",
-            quantity: q,
-            unitUsed:
-              firstIncomplete.unitUsed && ["kg", "un", "cx", "L", "l", "g", "ml"].includes(String(firstIncomplete.unitUsed))
-                ? firstIncomplete.unitUsed === "l"
-                  ? "L"
-                  : firstIncomplete.unitUsed
-                : "un",
-            unitPrice: p,
-            lineType: firstIncomplete.lineType === "venda" ? "venda" : "insumo"
-          });
-        } else if (autoItems.length) {
+        if (fromApi.length) {
+          setItems(mergedRows);
           setDraftItem({ productId: "", quantity: "", unitUsed: "un", unitPrice: "", lineType: "insumo" });
         }
 
@@ -275,13 +275,13 @@ export function usePurchaseForm(token, options = {}) {
           if (inv) keys.add("invoiceNumber");
           if (data?.purchaseDate) keys.add("date");
           if (data?.supplierSuggestion?.id) keys.add("supplierId");
-          autoItems.forEach((_, idx) => keys.add(`item.${idx}`));
+          mergedRows.forEach((_, idx) => keys.add(`item.${idx}`));
           setAiHighlightKeys(keys);
         }
 
         if (onSuccess) {
           onSuccess(data, {
-            autoItems,
+            autoItems: mergedRows,
             fromApi,
             suggestedSupplier: Boolean(data?.supplierSuggestion?.id)
           });

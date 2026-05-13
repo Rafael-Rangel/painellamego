@@ -51,8 +51,8 @@ export default function ManagerPurchasePage() {
 
   const handleParseAi = useCallback(() => {
     parseReceiptsByAI({
-      onSuccess: (data, { autoItems, suggestedSupplier }) => {
-        const canReviewItems = autoItems.length > 0 && suggestedSupplier && data?.purchaseDate;
+      onSuccess: (data, { autoItems }) => {
+        const canReviewItems = autoItems.length > 0 && Boolean(data?.purchaseDate);
         if (canReviewItems) setStep(2);
         else setStep(1);
       }
@@ -286,7 +286,7 @@ export default function ManagerPurchasePage() {
 
               <CompactTable
                 columns={[
-                  { id: "productId", label: "Produto", render: (item) => products.find((p) => p.id === item.productId)?.name || item.productId },
+                  { id: "productId", label: "Produto", render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "—" },
                   {
                     id: "lineType",
                     label: "Tipo",

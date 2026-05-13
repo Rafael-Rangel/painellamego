@@ -199,9 +199,15 @@ export default function ManagerPurchaseAiPage() {
                               clearItemRowAiHighlight(idx);
                               const product = products.find((p) => p.id === id);
                               const suggestion = product?.type === "venda" ? "venda" : "insumo";
-                              updateItem(idx, { productId: id, lineType: suggestion });
+                              updateItem(idx, { productId: id, lineType: suggestion, aiRawProductName: undefined });
                             }}
+                            inputClassName="purchase-ai-input"
                           />
+                          {row.aiRawProductName ? (
+                            <p className="purchase-ai-raw-name" title={row.aiRawProductName}>
+                              Na nota: {row.aiRawProductName}
+                            </p>
+                          ) : null}
                         </div>
                         <div className="field purchase-ai-field">
                           <label>Quantidade</label>
