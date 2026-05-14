@@ -219,16 +219,18 @@ Não é necessário restartar containers para schema changes.
 
 ## 11. Auth no Supabase (links sem localhost, gerentes com senha)
 
-Os fluxos de Auth (redefinição de senha, links nos e-mails) usam URLs geradas pelo projeto Supabase. O cadastro de gerente no painel usa **senha definida pelo admin** (`createUser`); o botão «E-mail: redefinir senha» chama a API pública `/auth/v1/recover` e precisa de **SMTP/e-mail** ativo no Supabase para entregar o e-mail. Sem isto, o link pode apontar para `http://localhost:...` ou o e-mail não chega.
+Os fluxos de Auth usam URLs do projeto Supabase. O cadastro de gerente no painel usa **senha definida pelo admin** (`createUser`). Recuperação de senha usa o endpoint GoTrue `/auth/v1/recover` (via API Lamego ou Supabase) e precisa de **SMTP/e-mail** ativo no Supabase para entrega fiável; o e-mail incorporado do plano gratuito tem **poucos envios por hora** ([rate limits](https://supabase.com/docs/guides/auth/rate-limits)).
 
 1. No [Dashboard do Supabase](https://supabase.com/dashboard) do projeto: **Authentication → URL Configuration**.
 2. **Site URL:** `https://painellamego.com.br` (sem barra final desnecessária; o domínio público do painel).
 3. **Redirect URLs:** inclua pelo menos:
-   - `https://painellamego.com.br/reset-password` (link de «Esqueci minha senha» e de redefinição enviado pela API)
+   - `https://painellamego.com.br/reset-password` (link de «Esqueci minha senha» e redefinição)
    - `https://painellamego.com.br/login`
    - Opcional: `https://painellamego.com.br/**` se o painel permitir wildcard.
 
-A API usa **`redirect_to`** no pedido de recuperação de senha com base em **`APP_ORIGIN`** (ver `.env.production` e `docker-compose.yml` no serviço `api`). Em produção deve ser `https://painellamego.com.br`.
+4. **Esqueci minha senha (web):** a página chama `POST /auth/forgot-password` na API (rota pública), com `redirect_to` derivado de **`APP_ORIGIN`** no servidor (evita link com `localhost`). Limite na API Lamego: **5 pedidos / 15 min por IP** (além dos limites do Supabase).
+
+**`APP_ORIGIN`** em `.env.production` / `docker-compose` (serviço `api`) deve ser `https://painellamego.com.br`.
 
 Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 

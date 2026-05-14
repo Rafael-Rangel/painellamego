@@ -1,11 +1,26 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { config } from "../config.js";
+import { sendPasswordRecoveryToEmail } from "../lib/passwordRecovery.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
 
 const router = Router();
+
+/** Limite extra no “esqueci senha” público (além do limite global da app e do Supabase). */
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler(_req, res) {
+    res.status(429).json({
+      message:
+        "Muitas tentativas a partir deste endereço. Aguarde cerca de 15 minutos antes de pedir outro link, ou contacte o administrador."
+    });
+  }
+});
 
 /** Lista todos os utilizadores Auth (paginação interna). */
 async function listAllAuthUsers() {
@@ -51,6 +66,48 @@ router.post("/login", async (req, res) => {
     accessToken: data.session.access_token,
     refreshToken: data.session.refresh_token,
     user: data.user
+  });
+});
+
+/**
+ * Público: pede e-mail de redefinição de senha via Supabase Auth.
+ * Resposta genérica em caso de sucesso (não revela se o e-mail existe).
+ * redirect_to fixo = APP_ORIGIN + /reset-password (evita localhost se o browser estiver errado).
+ */
+router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
+  const schema = z.object({ email: z.string().email() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ message: "Informe um e-mail válido." });
+  }
+
+  const result = await sendPasswordRecoveryToEmail(parsed.data.email);
+
+  if (result.code === "missing_anon_key") {
+    return res.status(500).json({
+      message: "Servidor sem SUPABASE_PUBLISHABLE_KEY. Contacte o administrador."
+    });
+  }
+
+  const errMsg = String(result.json?.message || result.json?.error_description || result.body || "").toLowerCase();
+  if (result.status === 429 || errMsg.includes("over_email_send_rate_limit") || errMsg.includes("email rate limit")) {
+    return res.status(429).json({
+      message:
+        "Limite de envio de e-mails atingido (proteção do Supabase). Aguarde cerca de 1 hora ou configure SMTP personalizado no projeto Supabase para limites maiores."
+    });
+  }
+
+  if (!result.ok && (errMsg.includes("redirect") || errMsg.includes("redirect_uri"))) {
+    return res.status(500).json({
+      message:
+        "URL de redirecionamento não autorizada no Supabase. Em Authentication → URL Configuration, inclua a URL de /reset-password do painel."
+    });
+  }
+
+  return res.json({
+    ok: true,
+    message:
+      "Se este e-mail estiver cadastrado, em breve você receberá um link para redefinir a senha. Verifique também o spam."
   });
 });
 
@@ -129,7 +186,8 @@ router.get("/admin/managers", requireAuth, requireAdmin, async (_req, res) => {
       managerName: manager.user_metadata?.manager_name || manager.user_metadata?.display_name || "",
       invitedAt: manager.created_at,
       lastSignInAt: manager.last_sign_in_at,
-      status: manager.last_sign_in_at ? "ativo" : "pendente",
+      /** "sem login ainda" = conta criada mas nunca fez sign-in (não bloqueia o 1º acesso). */
+      status: manager.last_sign_in_at ? "ativo" : "sem login ainda",
       stores: managerLinks.map((l) => ({
         id: l.store_id,
         name: l.stores?.name,
@@ -270,31 +328,25 @@ router.post("/admin/managers/:id/resend-invite", requireAuth, requireAdmin, asyn
   if (error || !user?.user?.email) return res.status(404).json({ message: "Gerente não encontrado." });
 
   const email = user.user.email;
-  const anon = config.supabasePublishableKey;
-  if (!anon) {
+  const result = await sendPasswordRecoveryToEmail(email);
+
+  if (result.code === "missing_anon_key") {
     return res.status(500).json({
       message: "Configure SUPABASE_PUBLISHABLE_KEY na API para enviar e-mail de redefinição de senha."
     });
   }
 
-  const recoverUrl = `${String(config.supabaseUrl).replace(/\/$/, "")}/auth/v1/recover`;
-  const recoverRes = await fetch(recoverUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: anon,
-      Authorization: `Bearer ${anon}`
-    },
-    body: JSON.stringify({
-      email,
-      redirect_to: config.authInviteRedirectUrl
-    })
-  });
+  const errMsg = String(result.json?.message || result.json?.error_description || result.body || "").toLowerCase();
+  if (result.status === 429 || errMsg.includes("over_email_send_rate_limit") || errMsg.includes("email rate limit")) {
+    return res.status(429).json({
+      message:
+        "Limite de e-mails do Supabase atingido. Tente de novo mais tarde ou configure SMTP no painel do Supabase."
+    });
+  }
 
-  if (!recoverRes.ok) {
-    const text = await recoverRes.text();
+  if (!result.ok) {
     return res.status(400).json({
-      message: text?.slice(0, 200) || "Não foi possível pedir o e-mail de redefinição de senha."
+      message: result.body?.slice(0, 200) || "Não foi possível pedir o e-mail de redefinição de senha."
     });
   }
 
@@ -307,7 +359,7 @@ router.post("/admin/managers/:id/resend-invite", requireAuth, requireAdmin, asyn
 
   return res.json({
     message:
-      "Se o projeto Supabase tiver e-mail (Auth) configurado, o gerente receberá um link para redefinir a senha. Caso contrário, oriente-o a usar «Esqueci minha senha» na página de login."
+      "Se o projeto Supabase tiver e-mail (Auth) configurado, o gerente receberá um link para redefinir a senha. Caso contrário, configure SMTP em Project Settings → Auth."
   });
 });
 

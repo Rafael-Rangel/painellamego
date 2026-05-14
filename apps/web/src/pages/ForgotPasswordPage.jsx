@@ -1,10 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../supabase";
+import { api } from "../api";
 import { authErrorMessage } from "../auth/messages";
 
 const logoUrl = import.meta.env.VITE_BRAND_LOGO_URL ?? "/logo.jpg";
 
+/**
+ * Recuperação de senha via API Lamego → Supabase /auth/v1/recover.
+ * O redirect_to usa APP_ORIGIN no servidor (evita link com localhost).
+ * Limite: 5 pedidos / 15 min por IP na API + limites do próprio Supabase.
+ */
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,13 +26,11 @@ export default function ForgotPasswordPage() {
     }
     setLoading(true);
     try {
-      const { error: supabaseError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/reset-password`
-      });
-      if (supabaseError) throw supabaseError;
+      await api.post("/auth/forgot-password", { email: email.trim() });
       setSent(true);
     } catch (err) {
-      setError(authErrorMessage(err));
+      const msg = err?.response?.data?.message;
+      setError(typeof msg === "string" && msg.length ? msg : authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -38,16 +41,20 @@ export default function ForgotPasswordPage() {
       <section className="login-card">
         <img className="login-logo" src={logoUrl} alt="Logo Lamego" />
         <h2 style={{ marginTop: 0 }}>Recuperar senha</h2>
-        <p className="subtitle">Enviamos um link no seu e-mail para criar uma nova senha.</p>
+        <p className="subtitle">
+          Enviaremos um link seguro no seu e-mail (serviço Auth do Supabase). Por segurança, não dizemos se o e-mail existe ou não na
+          resposta de sucesso.
+        </p>
 
         {sent ? (
           <div className="login-success" role="status">
             <p>
-              <strong>Pronto!</strong> Se este e-mail estiver cadastrado, em alguns minutos você
-              receberá um link para redefinir a senha.
+              <strong>Se este e-mail estiver cadastrado,</strong> em alguns minutos você receberá um link para redefinir a senha na página
+              do painel.
             </p>
             <p className="subtitle" style={{ marginTop: "0.6rem" }}>
-              Verifique também a caixa de spam.
+              Verifique também a caixa de spam. Se nada chegar, o limite de e-mails do projeto pode ter sido atingido — aguarde cerca de 1
+              hora ou peça ao administrador para configurar SMTP no Supabase.
             </p>
           </div>
         ) : (

@@ -1001,7 +1001,15 @@ export default function AdminPage() {
                   },
                   { id: "managerName", label: "Gerente", render: (r) => <span className="price-store">{r.managerName || "-"}</span> },
                   { id: "email", label: "Email", render: (r) => <span className="table-email">{r.email}</span> },
-                  { id: "status", label: "Status", render: (r) => <span className={r.status === "ativo" ? "badge badge-info" : "badge badge-danger"}>{r.status}</span> },
+                  {
+                    id: "status",
+                    label: "Status",
+                    render: (r) => (
+                      <span className={r.status === "ativo" ? "badge badge-info" : "badge badge-warning"} title="Sem login ainda = nunca entrou; pode entrar com e-mail e senha.">
+                        {r.status}
+                      </span>
+                    )
+                  },
                   {
                     id: "actions",
                     label: "Ações",
