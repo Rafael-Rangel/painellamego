@@ -217,18 +217,18 @@ npm run db:push
 
 Não é necessário restartar containers para schema changes.
 
-## 11. Auth no Supabase (convites e links sem localhost)
+## 11. Auth no Supabase (links sem localhost, gerentes com senha)
 
-Os e-mails de **convite de gerente** e fluxos de Auth usam URLs geradas pelo projeto Supabase. Sem isto, o link pode apontar para `http://localhost:...`.
+Os fluxos de Auth (redefinição de senha, links nos e-mails) usam URLs geradas pelo projeto Supabase. O cadastro de gerente no painel usa **senha definida pelo admin** (`createUser`); o botão «E-mail: redefinir senha» chama a API pública `/auth/v1/recover` e precisa de **SMTP/e-mail** ativo no Supabase para entregar o e-mail. Sem isto, o link pode apontar para `http://localhost:...` ou o e-mail não chega.
 
 1. No [Dashboard do Supabase](https://supabase.com/dashboard) do projeto: **Authentication → URL Configuration**.
 2. **Site URL:** `https://painellamego.com.br` (sem barra final desnecessária; o domínio público do painel).
 3. **Redirect URLs:** inclua pelo menos:
-   - `https://painellamego.com.br/reset-password` (convite reenviado + “definir senha” após o link do e-mail)
+   - `https://painellamego.com.br/reset-password` (link de «Esqueci minha senha» e de redefinição enviado pela API)
    - `https://painellamego.com.br/login`
    - Opcional: `https://painellamego.com.br/**` se o painel permitir wildcard.
 
-A API envia `redirectTo` nos convites com base em **`APP_ORIGIN`** (ver `.env.production` e `docker-compose.yml` no serviço `api`). Em produção deve ser `https://painellamego.com.br`.
+A API usa **`redirect_to`** no pedido de recuperação de senha com base em **`APP_ORIGIN`** (ver `.env.production` e `docker-compose.yml` no serviço `api`). Em produção deve ser `https://painellamego.com.br`.
 
 Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 

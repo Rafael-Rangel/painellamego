@@ -58,49 +58,54 @@ router.post("/invite-manager", requireAuth, requireAdmin, async (req, res) => {
   const schema = z.object({
     email: z.string().email(),
     storeIds: z.array(z.string().uuid()).min(1),
-    managerName: z.string().min(2)
+    managerName: z.string().min(2),
+    password: z.string().min(8, "A senha deve ter pelo menos 8 caracteres.")
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
 
-  const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(parsed.data.email, {
-    data: {
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email: parsed.data.email,
+    password: parsed.data.password,
+    email_confirm: true,
+    app_metadata: { role: "manager" },
+    user_metadata: {
       store_id: parsed.data.storeIds[0],
       store_ids: parsed.data.storeIds,
       manager_name: parsed.data.managerName,
       display_name: parsed.data.managerName
-    },
-    redirectTo: config.authInviteRedirectUrl
-  });
-  if (error) return res.status(400).json({ message: error.message });
-
-  if (data.user?.id) {
-    const { error: metaErr } = await supabaseAdmin.auth.admin.updateUserById(data.user.id, {
-      app_metadata: { role: "manager" },
-      user_metadata: {
-        store_id: parsed.data.storeIds[0],
-        store_ids: parsed.data.storeIds,
-        manager_name: parsed.data.managerName,
-        display_name: parsed.data.managerName
-      }
-    });
-    if (metaErr) return res.status(400).json({ message: metaErr.message });
-
-    try {
-      await syncManagerStoreLinks(data.user.id, parsed.data.storeIds);
-    } catch (e) {
-      return res.status(400).json({ message: e?.message || "Falha ao vincular lojas." });
     }
+  });
+
+  if (error) {
+    const msg = (error.message || "").toLowerCase();
+    if (msg.includes("already") || msg.includes("registered") || msg.includes("exists")) {
+      return res.status(400).json({ message: "Este e-mail já está cadastrado. Use outro e-mail ou remova o gerente existente." });
+    }
+    return res.status(400).json({ message: error.message });
+  }
+
+  const userId = data.user?.id;
+  if (!userId) return res.status(400).json({ message: "Falha ao criar utilizador." });
+
+  try {
+    await syncManagerStoreLinks(userId, parsed.data.storeIds);
+  } catch (e) {
+    await supabaseAdmin.auth.admin.deleteUser(userId);
+    return res.status(400).json({ message: e?.message || "Falha ao vincular lojas." });
   }
 
   await logAudit({
     userId: req.user.id,
-    action: "invite",
+    action: "create_manager",
     resource: "manager",
-    payload: { invitedUser: data.user?.id, stores: parsed.data.storeIds }
+    payload: { newUserId: userId, stores: parsed.data.storeIds }
   });
 
-  return res.status(201).json({ invitedUser: data.user?.id, message: "Convite enviado com sucesso." });
+  return res.status(201).json({
+    userId,
+    message: "Gerente criado. Ele pode entrar no painel com este e-mail e a senha que definiu."
+  });
 });
 
 router.get("/admin/managers", requireAuth, requireAdmin, async (_req, res) => {
@@ -264,30 +269,46 @@ router.post("/admin/managers/:id/resend-invite", requireAuth, requireAdmin, asyn
   const { data: user, error } = await supabaseAdmin.auth.admin.getUserById(req.params.id);
   if (error || !user?.user?.email) return res.status(404).json({ message: "Gerente não encontrado." });
 
-  const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(user.user.email, {
-    data: user.user.user_metadata || {},
-    redirectTo: config.authInviteRedirectUrl
+  const email = user.user.email;
+  const anon = config.supabasePublishableKey;
+  if (!anon) {
+    return res.status(500).json({
+      message: "Configure SUPABASE_PUBLISHABLE_KEY na API para enviar e-mail de redefinição de senha."
+    });
+  }
+
+  const recoverUrl = `${String(config.supabaseUrl).replace(/\/$/, "")}/auth/v1/recover`;
+  const recoverRes = await fetch(recoverUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: anon,
+      Authorization: `Bearer ${anon}`
+    },
+    body: JSON.stringify({
+      email,
+      redirect_to: config.authInviteRedirectUrl
+    })
   });
-  if (inviteError) {
-    const msg = inviteError.message || "";
-    // Quando o usuário já existe e está ativo, o Supabase pode retornar 400.
-    // Para UX do admin, tratamos como sucesso (ação idempotente) e orientamos o próximo passo.
-    if (msg.toLowerCase().includes("already been registered")) {
-      return res.json({
-        message:
-          "Este e-mail já está cadastrado. Se precisar recuperar acesso, use o fluxo de redefinição de senha (Esqueci minha senha)."
-      });
-    }
-    return res.status(400).json({ message: msg });
+
+  if (!recoverRes.ok) {
+    const text = await recoverRes.text();
+    return res.status(400).json({
+      message: text?.slice(0, 200) || "Não foi possível pedir o e-mail de redefinição de senha."
+    });
   }
 
   await logAudit({
     userId: req.user.id,
-    action: "resend_invite",
+    action: "resend_password_reset",
     resource: "manager",
     payload: { managerId: req.params.id }
   });
-  return res.json({ message: "Convite reenviado com sucesso." });
+
+  return res.json({
+    message:
+      "Se o projeto Supabase tiver e-mail (Auth) configurado, o gerente receberá um link para redefinir a senha. Caso contrário, oriente-o a usar «Esqueci minha senha» na página de login."
+  });
 });
 
 export default router;

@@ -65,6 +65,8 @@ export default function AdminPage() {
   const [periodData, setPeriodData] = useState([]);
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [invitePasswordConfirm, setInvitePasswordConfirm] = useState("");
   const [selectedStoreIds, setSelectedStoreIds] = useState([]);
   const [inviteNewStoreOpen, setInviteNewStoreOpen] = useState(false);
   const [quickStore, setQuickStore] = useState({
@@ -174,24 +176,43 @@ export default function AdminPage() {
 
   async function inviteManager(e) {
     e.preventDefault();
+    if (invitePassword.length < 8) {
+      setToast("A senha inicial deve ter pelo menos 8 caracteres.");
+      setTimeout(() => setToast(""), 3500);
+      return;
+    }
+    if (invitePassword !== invitePasswordConfirm) {
+      setToast("As senhas não conferem.");
+      setTimeout(() => setToast(""), 3500);
+      return;
+    }
     try {
-      await api.post(
+      const { data } = await api.post(
         "/auth/invite-manager",
-        { managerName: inviteName, email: inviteEmail, storeIds: selectedStoreIds },
+        {
+          managerName: inviteName,
+          email: inviteEmail.trim(),
+          storeIds: selectedStoreIds,
+          password: invitePassword
+        },
         withAuth(token)
       );
-      setToast("Convite enviado com sucesso.");
+      setToast(typeof data?.message === "string" ? data.message : "Gerente criado com sucesso.");
       setInviteName("");
       setInviteEmail("");
+      setInvitePassword("");
+      setInvitePasswordConfirm("");
       setSelectedStoreIds([]);
       setInviteNewStoreOpen(false);
       setQuickStore({ cnpj: "", name: "", location: "", storeNumber: "", managerName: "" });
       setShowInviteModal(false);
       await loadAll();
-      setTimeout(() => setToast(""), 2500);
+      setTimeout(() => setToast(""), 3200);
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.response?.data?.formErrors?.email?.[0] || "Falha ao enviar convite.";
-      setToast(typeof msg === "string" ? msg : "Falha ao enviar convite.");
+      const flat = err?.response?.data?.fieldErrors;
+      const pwErr = flat?.password?.[0];
+      const msg = err?.response?.data?.message || pwErr || err?.response?.data?.formErrors?.email?.[0] || "Falha ao cadastrar gerente.";
+      setToast(typeof msg === "string" ? msg : "Falha ao cadastrar gerente.");
       setTimeout(() => setToast(""), 4000);
     }
   }
@@ -220,7 +241,7 @@ export default function AdminPage() {
       await loadAll();
       if (data?.id) setSelectedStoreIds((prev) => (prev.includes(data.id) ? prev : [...prev, data.id]));
       setQuickStore({ cnpj: "", name: "", location: "", storeNumber: "", managerName: "" });
-      setToast("Loja criada e selecionada para o convite.");
+      setToast("Loja criada e selecionada para o cadastro do gerente.");
       setTimeout(() => setToast(""), 2500);
     } catch (err) {
       const msg = err?.response?.data?.message || "Não foi possível criar a loja.";
@@ -389,9 +410,15 @@ export default function AdminPage() {
   }
 
   async function resendInvite(managerId) {
-    await api.post(`/auth/admin/managers/${managerId}/resend-invite`, {}, withAuth(token));
-    setToast("Convite reenviado.");
-    setTimeout(() => setToast(""), 2500);
+    try {
+      const { data } = await api.post(`/auth/admin/managers/${managerId}/resend-invite`, {}, withAuth(token));
+      setToast(typeof data?.message === "string" ? data.message : "Pedido de e-mail de redefinição enviado.");
+      setTimeout(() => setToast(""), 4500);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Não foi possível pedir o e-mail de redefinição.";
+      setToast(typeof msg === "string" ? msg : "Não foi possível pedir o e-mail de redefinição.");
+      setTimeout(() => setToast(""), 4000);
+    }
   }
 
   function toggleStore(storeId) {
@@ -930,7 +957,7 @@ export default function AdminPage() {
                 rows={stores}
                 keyField="id"
                 loading={loading}
-                emptyMessage="Nenhuma loja. Crie uma aqui ou ao convidar um gerente."
+                emptyMessage="Nenhuma loja. Crie uma aqui ou ao cadastrar um gerente."
               />
             </DataCard>
           </section>
@@ -938,10 +965,10 @@ export default function AdminPage() {
           <section className="span-12">
             <DataCard
               title="Gerentes"
-              subtitle="Editar e-mail, senha, nome e lojas. Convite por e-mail, reenvio e remoção (Auth)."
+              subtitle="Cadastro com senha inicial (entra no login de imediato). Reenvio pede e-mail de redefinição de senha no Supabase. Edição e remoção em Auth."
               actions={
                 <button type="button" className="btn btn-primary" onClick={() => setShowInviteModal(true)}>
-                  Convidar gerente
+                  Cadastrar gerente
                 </button>
               }
             >
@@ -983,8 +1010,8 @@ export default function AdminPage() {
                         <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openManagerEditor(r)}>
                           <FaEdit />
                         </button>
-                        <button type="button" className="btn btn-ghost" onClick={() => resendInvite(r.id)}>
-                          Reenviar convite
+                        <button type="button" className="btn btn-ghost" onClick={() => resendInvite(r.id)} title="Envia e-mail de recuperação (Auth)">
+                          E-mail: redefinir senha
                         </button>
                         <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteManagerRow(r.id)}>
                           <FaTrash />
@@ -1431,7 +1458,10 @@ export default function AdminPage() {
       {showInviteModal ? (
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal" style={{ maxWidth: "32rem" }}>
-            <h3>Convidar gerente</h3>
+            <h3>Cadastrar gerente</h3>
+            <p className="field-helper" style={{ marginTop: 0, marginBottom: "0.75rem" }}>
+              Defina uma senha inicial: o gerente entra em <strong>/login</strong> com e-mail e esta senha (pode mudar depois ou usar «Esqueci minha senha»). Não depende de e-mail de convite.
+            </p>
             <form onSubmit={inviteManager}>
               <div className="field">
                 <label>Nome</label>
@@ -1439,7 +1469,31 @@ export default function AdminPage() {
               </div>
               <div className="field">
                 <label>Email</label>
-                <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required />
+                <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required autoComplete="off" />
+              </div>
+              <div className="field">
+                <label>Senha inicial</label>
+                <input
+                  type="password"
+                  value={invitePassword}
+                  onChange={(e) => setInvitePassword(e.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                  placeholder="Mínimo 8 caracteres"
+                />
+              </div>
+              <div className="field">
+                <label>Confirmar senha</label>
+                <input
+                  type="password"
+                  value={invitePasswordConfirm}
+                  onChange={(e) => setInvitePasswordConfirm(e.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                  placeholder="Repita a senha"
+                />
               </div>
               <div className="field">
                 <label>Lojas vinculadas</label>
@@ -1466,7 +1520,7 @@ export default function AdminPage() {
               {inviteNewStoreOpen ? (
                 <div className="card" style={{ padding: "0.75rem", marginBottom: "0.75rem" }}>
                   <p className="subtitle" style={{ marginTop: 0 }}>
-                    Cria a loja na rede e adiciona à seleção deste convite.
+                    Cria a loja na rede e adiciona à seleção deste cadastro.
                   </p>
                   <div className="field">
                     <label>CNPJ (14 dígitos)</label>
@@ -1506,8 +1560,18 @@ export default function AdminPage() {
                 <button type="button" className="btn btn-ghost" onClick={() => setShowInviteModal(false)}>
                   Cancelar
                 </button>
-                <button className="btn btn-primary" type="submit" disabled={!inviteEmail || !inviteName || !selectedStoreIds.length}>
-                  Enviar convite
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={
+                    !inviteEmail ||
+                    !inviteName ||
+                    !selectedStoreIds.length ||
+                    invitePassword.length < 8 ||
+                    invitePassword !== invitePasswordConfirm
+                  }
+                >
+                  Cadastrar gerente
                 </button>
               </div>
             </form>
