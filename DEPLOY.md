@@ -239,6 +239,7 @@ Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-u
 - **Causas frequentes:** pedido ao OpenRouter **sem timeout** (ficava pendente até o proxy cortar); **nginx** entre `web` e `api` com `proxy_read_timeout` curto (504); PDF/imagem muito grande; vários ficheiros em sequência; rede lenta.
 - **No código:** cada chamada HTTP ao OpenRouter tem timeout configurável (`OPENROUTER_FETCH_TIMEOUT_MS`, predefinido 120 s); o nginx interno do container `web` usa **300 s** para `/api/`; o browser usa **300 s** neste pedido.
 - **Na VPS:** `docker logs lamego-api-1 --tail 300` (erros OpenRouter, timeout, chave). Se usares **nginx-proxy** à frente (ex.: `jada-nginx-proxy`), pode ser preciso aumentar o timeout do *upstream* para o container Lamego (além do nginx dentro do `web`).
+- **413 no `jada-nginx-proxy`:** o proxy recusava corpos grandes (ex.: ~4,5 MB) com *“client intended to send too large body”* — o pedido **não chegava à API**; no telemóvel parecia carregar muito tempo e falhar. O `docker-compose.nginxproxy.yml` define `CLIENT_MAX_BODY_SIZE: 25m` no serviço `web`; após `git pull`, recria o container `web` (`compose ... up -d --build web`).
 
 ## 12. Tarefas pendentes (sem urgência)
 

@@ -412,7 +412,19 @@ export function usePurchaseForm(token, options = {}) {
         }
         return true;
       } catch (err) {
-        setAiMissing([err?.response?.data?.message || "Não foi possível ler a nota com IA."]);
+        const st = err?.response?.status;
+        let msg = typeof err?.response?.data?.message === "string" ? err.response.data.message : "";
+        if (st === 413) {
+          msg =
+            "O ficheiro é grande demais para o proxy (413). Use foto com menos resolução ou PDF mais leve. Após atualizar o servidor, o limite sobe (até ~25 MB).";
+        }
+        if (!msg && st === 504) {
+          msg = "O proxy encerrou por tempo (504). Tente ficheiro menor ou volte a tentar.";
+        }
+        if (!msg && err?.code === "ECONNABORTED") {
+          msg = "Tempo esgotado ao analisar a nota. Tente ficheiro menor ou verifique a rede.";
+        }
+        setAiMissing([msg || "Não foi possível ler a nota com IA."]);
         if (recordAiHighlights) setAiHighlightKeys(new Set());
         return false;
       } finally {

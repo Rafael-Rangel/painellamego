@@ -17,6 +17,8 @@ services:
       LETSENCRYPT_HOST: painellamego.com.br,www.painellamego.com.br
       LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-admin@painellamego.com.br}
       VIRTUAL_PORT: "80"
+      # Multipart (nota / IA): limite baixo do nginx-proxy causa 413 em PDFs ~4–5 MB.
+      CLIENT_MAX_BODY_SIZE: 25m
 
 networks:
   webproxy:
