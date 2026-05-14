@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { FaBalanceScale, FaBoxes, FaChartBar, FaChartLine, FaEdit, FaLightbulb, FaLink, FaTrash, FaUserCog } from "react-icons/fa";
+import {
+  FaBalanceScale,
+  FaBoxes,
+  FaChartBar,
+  FaChartLine,
+  FaEdit,
+  FaEye,
+  FaEyeSlash,
+  FaLightbulb,
+  FaLink,
+  FaTrash,
+  FaUserCog
+} from "react-icons/fa";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import AppShell from "../components/AppShell";
 import { api, withAuth } from "../api";
@@ -67,6 +79,8 @@ export default function AdminPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [invitePassword, setInvitePassword] = useState("");
   const [invitePasswordConfirm, setInvitePasswordConfirm] = useState("");
+  const [showInvitePassword, setShowInvitePassword] = useState(false);
+  const [showInvitePasswordConfirm, setShowInvitePasswordConfirm] = useState(false);
   const [selectedStoreIds, setSelectedStoreIds] = useState([]);
   const [inviteNewStoreOpen, setInviteNewStoreOpen] = useState(false);
   const [quickStore, setQuickStore] = useState({
@@ -164,6 +178,13 @@ export default function AdminPage() {
     if (!token) return;
     loadAll();
   }, [token, monthsFilter, dashboardFilterQuery]);
+
+  useEffect(() => {
+    if (!showInviteModal) {
+      setShowInvitePassword(false);
+      setShowInvitePasswordConfirm(false);
+    }
+  }, [showInviteModal]);
 
   useEffect(() => {
     if (tab !== "settings" || !user) return;
@@ -1480,28 +1501,52 @@ export default function AdminPage() {
                 <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required autoComplete="off" />
               </div>
               <div className="field">
-                <label>Senha inicial</label>
-                <input
-                  type="password"
-                  value={invitePassword}
-                  onChange={(e) => setInvitePassword(e.target.value)}
-                  autoComplete="new-password"
-                  minLength={8}
-                  required
-                  placeholder="Mínimo 8 caracteres"
-                />
+                <label htmlFor="invite-password">Senha inicial</label>
+                <div className="login-password-wrap">
+                  <input
+                    id="invite-password"
+                    type={showInvitePassword ? "text" : "password"}
+                    value={invitePassword}
+                    onChange={(e) => setInvitePassword(e.target.value)}
+                    autoComplete="new-password"
+                    minLength={8}
+                    required
+                    placeholder="Mínimo 8 caracteres"
+                  />
+                  <button
+                    type="button"
+                    className="login-password-toggle"
+                    onClick={() => setShowInvitePassword((v) => !v)}
+                    aria-label={showInvitePassword ? "Ocultar senha inicial" : "Mostrar senha inicial"}
+                    title={showInvitePassword ? "Ocultar" : "Mostrar"}
+                  >
+                    {showInvitePassword ? <FaEyeSlash aria-hidden /> : <FaEye aria-hidden />}
+                  </button>
+                </div>
               </div>
               <div className="field">
-                <label>Confirmar senha</label>
-                <input
-                  type="password"
-                  value={invitePasswordConfirm}
-                  onChange={(e) => setInvitePasswordConfirm(e.target.value)}
-                  autoComplete="new-password"
-                  minLength={8}
-                  required
-                  placeholder="Repita a senha"
-                />
+                <label htmlFor="invite-password-confirm">Confirmar senha</label>
+                <div className="login-password-wrap">
+                  <input
+                    id="invite-password-confirm"
+                    type={showInvitePasswordConfirm ? "text" : "password"}
+                    value={invitePasswordConfirm}
+                    onChange={(e) => setInvitePasswordConfirm(e.target.value)}
+                    autoComplete="new-password"
+                    minLength={8}
+                    required
+                    placeholder="Repita a senha"
+                  />
+                  <button
+                    type="button"
+                    className="login-password-toggle"
+                    onClick={() => setShowInvitePasswordConfirm((v) => !v)}
+                    aria-label={showInvitePasswordConfirm ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
+                    title={showInvitePasswordConfirm ? "Ocultar" : "Mostrar"}
+                  >
+                    {showInvitePasswordConfirm ? <FaEyeSlash aria-hidden /> : <FaEye aria-hidden />}
+                  </button>
+                </div>
               </div>
               <div className="field">
                 <label>Lojas vinculadas</label>

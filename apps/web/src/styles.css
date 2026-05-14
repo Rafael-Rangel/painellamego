@@ -2220,6 +2220,11 @@ tbody tr:last-child td {
   background: rgb(61 10 10 / 0.06);
 }
 
+.login-password-toggle svg {
+  display: block;
+  font-size: 1.05rem;
+}
+
 .login-submit {
   display: inline-flex;
   align-items: center;
