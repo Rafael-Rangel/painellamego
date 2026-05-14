@@ -234,6 +234,12 @@ Os fluxos de Auth usam URLs do projeto Supabase. O cadastro de gerente no painel
 
 Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 
+### Leitura de nota com IA (OpenRouter) — “carrega para sempre”
+
+- **Causas frequentes:** pedido ao OpenRouter **sem timeout** (ficava pendente até o proxy cortar); **nginx** entre `web` e `api` com `proxy_read_timeout` curto (504); PDF/imagem muito grande; vários ficheiros em sequência; rede lenta.
+- **No código:** cada chamada HTTP ao OpenRouter tem timeout configurável (`OPENROUTER_FETCH_TIMEOUT_MS`, predefinido 120 s); o nginx interno do container `web` usa **300 s** para `/api/`; o browser usa **300 s** neste pedido.
+- **Na VPS:** `docker logs lamego-api-1 --tail 300` (erros OpenRouter, timeout, chave). Se usares **nginx-proxy** à frente (ex.: `jada-nginx-proxy`), pode ser preciso aumentar o timeout do *upstream* para o container Lamego (além do nginx dentro do `web`).
+
 ## 12. Tarefas pendentes (sem urgência)
 
 - Configurar **SMTP** no Supabase Auth (Project Settings > Auth > Email) para que o "Esqueci minha senha" entregue e-mails reais.

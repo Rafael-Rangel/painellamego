@@ -118,6 +118,23 @@ function openRouterHeaders() {
   return h;
 }
 
+async function fetchWithTimeout(url, init, timeoutMs) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error(
+        `Tempo esgotado (${Math.round(timeoutMs / 1000)}s) ao contactar a IA. Tente foto menor, menos páginas no PDF ou outra rede.`
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /** Segundo modelo se o principal esgotar tentativas (ex.: Gemini com “Provider returned error” em algumas PNG). */
 function openRouterFallbackModel() {
   if (process.env.OPENROUTER_FALLBACK_MODEL === "") return null;
@@ -152,11 +169,15 @@ async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pd
     body.plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
   }
 
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: openRouterHeaders(),
-    body: JSON.stringify(body)
-  });
+  const resp = await fetchWithTimeout(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: openRouterHeaders(),
+      body: JSON.stringify(body)
+    },
+    config.openRouterFetchTimeoutMs
+  );
 
   const payload = await resp.json();
   if (!resp.ok) {

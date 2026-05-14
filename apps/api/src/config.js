@@ -36,7 +36,12 @@ export const config = {
   openRouterModel: process.env.OPENROUTER_MODEL ?? "google/gemini-2.0-flash-001",
   /** OpenRouter recomenda para rankings / depuração (opcional) */
   openRouterHttpReferer: process.env.OPENROUTER_HTTP_REFERER ?? process.env.APP_ORIGIN ?? "",
-  openRouterAppTitle: process.env.OPENROUTER_APP_TITLE ?? "Lamego Compras"
+  openRouterAppTitle: process.env.OPENROUTER_APP_TITLE ?? "Lamego Compras",
+  /** Timeout por pedido HTTP ao OpenRouter (evita requisição pendente indefinida na leitura de NF). */
+  openRouterFetchTimeoutMs: Math.min(
+    300_000,
+    Math.max(15_000, Number(process.env.OPENROUTER_FETCH_TIMEOUT_MS ?? 120_000) || 120_000)
+  )
 };
 
 export function ensureRequiredConfig() {

@@ -356,7 +356,8 @@ export function usePurchaseForm(token, options = {}) {
         for (const file of receipts) form.append("receipts", file);
         if (supplierId) form.append("supplierId", supplierId);
         const { data } = await api.post("/purchases/receipt-ai-parse", form, {
-          headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
+          headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" },
+          timeout: 300000
         });
 
         const inv = invoiceNumberFromAi(data?.invoiceNumber);
