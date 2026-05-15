@@ -9,6 +9,7 @@ import {
   FaEyeSlash,
   FaLightbulb,
   FaLink,
+  FaSitemap,
   FaTrash,
   FaUserCog
 } from "react-icons/fa";
@@ -98,6 +99,10 @@ export default function AdminPage() {
   const [toast, setToast] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
   const [supplierRowsLimit, setSupplierRowsLimit] = useState(10);
+  const [catalogReviewProducts, setCatalogReviewProducts] = useState([]);
+  const [mergeCanonicalId, setMergeCanonicalId] = useState("");
+  const [mergeSelectedIds, setMergeSelectedIds] = useState(() => new Set());
+  const [mergeBusy, setMergeBusy] = useState(false);
   const [supplierFilter, setSupplierFilter] = useState([]);
   const [activeStoreId, setActiveStoreId] = useState([]);
   const [activeProductId, setActiveProductId] = useState([]);
@@ -174,6 +179,78 @@ export default function AdminPage() {
     }
   }
 
+  async function loadCatalogReview() {
+    if (!token) return;
+    try {
+      const { data } = await api.get("/catalog/products/pending-catalog-review", withAuth(token));
+      setCatalogReviewProducts(Array.isArray(data) ? data : []);
+    } catch {
+      setCatalogReviewProducts([]);
+    }
+  }
+
+  function toggleMergeSelect(productId) {
+    setMergeSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  }
+
+  async function markProductCatalogReviewed(row) {
+    try {
+      await api.put(
+        `/catalog/products/${row.id}`,
+        {
+          name: row.name,
+          category: row.category,
+          type: row.type,
+          standardUnit: row.standard_unit || "un",
+          needsCatalogReview: false
+        },
+        withAuth(token)
+      );
+      setToast("Produto marcado como revisto.");
+      setTimeout(() => setToast(""), 2200);
+      await loadCatalogReview();
+      await loadAll();
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Erro ao atualizar.";
+      setToast(typeof msg === "string" ? msg : "Erro ao atualizar.");
+      setTimeout(() => setToast(""), 4000);
+    }
+  }
+
+  async function submitProductMerge() {
+    const mergeIds = [...mergeSelectedIds].filter((id) => id && id !== mergeCanonicalId);
+    if (!mergeCanonicalId || mergeIds.length < 1) {
+      setToast("Seleccione o produto canónico e pelo menos uma linha a fundir.");
+      setTimeout(() => setToast(""), 3500);
+      return;
+    }
+    setMergeBusy(true);
+    try {
+      await api.post(
+        "/catalog/products/merge",
+        { canonicalProductId: mergeCanonicalId, mergeProductIds: mergeIds },
+        withAuth(token)
+      );
+      setToast("Produtos fundidos com sucesso.");
+      setMergeSelectedIds(new Set());
+      setMergeCanonicalId("");
+      setTimeout(() => setToast(""), 2800);
+      await loadCatalogReview();
+      await loadAll();
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Fusão falhou.";
+      setToast(typeof msg === "string" ? msg : "Fusão falhou.");
+      setTimeout(() => setToast(""), 4500);
+    } finally {
+      setMergeBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
     loadAll();
@@ -185,6 +262,11 @@ export default function AdminPage() {
       setShowInvitePasswordConfirm(false);
     }
   }, [showInviteModal]);
+
+  useEffect(() => {
+    if (tab !== "catalog-review" || !token) return;
+    void loadCatalogReview();
+  }, [tab, token]);
 
   useEffect(() => {
     if (tab !== "settings" || !user) return;
@@ -460,6 +542,7 @@ export default function AdminPage() {
     { key: "products", label: "Análise", icon: <FaChartLine />, onClick: () => setTab("products") },
     { key: "ranking", label: "Comparação", icon: <FaBalanceScale />, onClick: () => setTab("ranking") },
     { key: "products-admin", label: "Produtos", icon: <FaBoxes />, onClick: () => setTab("products-admin") },
+    { key: "catalog-review", label: "Revisão IA", icon: <FaSitemap />, onClick: () => setTab("catalog-review") },
     { key: "supplier-aliases", label: "Mapeamento NF", icon: <FaLink />, onClick: () => setTab("supplier-aliases") },
     { key: "settings", label: "Configurações", icon: <FaUserCog />, onClick: () => setTab("settings") }
   ];
@@ -964,14 +1047,14 @@ export default function AdminPage() {
                     id: "actions",
                     label: "",
                     render: (s) => (
-                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                        <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openStoreEditorEdit(s)}>
+                      <>
+                        <button type="button" className="btn btn-ghost btn-icon" title="Editar" onClick={() => openStoreEditorEdit(s)}>
                           <FaEdit />
                         </button>
-                        <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteStoreRow(s.id)}>
+                        <button type="button" className="btn btn-ghost btn-icon" title="Remover" onClick={() => deleteStoreRow(s.id)}>
                           <FaTrash />
                         </button>
-                      </div>
+                      </>
                     )
                   }
                 ]}
@@ -1007,6 +1090,7 @@ export default function AdminPage() {
                   {
                     id: "stores",
                     label: "Loja",
+                    getTitle: (r) => (r.stores?.length ? r.stores.map((s) => s.name).join(", ") : ""),
                     render: (r) =>
                       r.stores?.length ? (
                         <div className="table-chip-list">
@@ -1035,17 +1119,22 @@ export default function AdminPage() {
                     id: "actions",
                     label: "Ações",
                     render: (r) => (
-                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center" }}>
-                        <button type="button" className="btn btn-ghost" title="Editar" onClick={() => openManagerEditor(r)}>
+                      <>
+                        <button type="button" className="btn btn-ghost btn-icon" title="Editar" onClick={() => openManagerEditor(r)}>
                           <FaEdit />
                         </button>
-                        <button type="button" className="btn btn-ghost" onClick={() => resendInvite(r.id)} title="Envia e-mail de recuperação (Auth)">
-                          E-mail: redefinir senha
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => resendInvite(r.id)}
+                          title="Envia e-mail de recuperação de senha (Auth)"
+                        >
+                          Redefinir
                         </button>
-                        <button type="button" className="btn btn-ghost" title="Remover" onClick={() => deleteManagerRow(r.id)}>
+                        <button type="button" className="btn btn-ghost btn-icon" title="Remover" onClick={() => deleteManagerRow(r.id)}>
                           <FaTrash />
                         </button>
-                      </div>
+                      </>
                     )
                   }
                 ]}
@@ -1322,6 +1411,10 @@ export default function AdminPage() {
                         <span className="badge badge-warning" title="Criado pelo fluxo rápido na compra">
                           Gerente
                         </span>
+                      ) : r.created_by === "ai_auto" ? (
+                        <span className="badge badge-info" title="Criado automaticamente a partir da nota">
+                          IA
+                        </span>
                       ) : (
                         <span className="badge badge-success">Rede</span>
                       )
@@ -1333,10 +1426,11 @@ export default function AdminPage() {
                     id: "actions",
                     label: "Ações",
                     render: (r) => (
-                      <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <>
                         <button
-                          className="btn btn-ghost"
+                          className="btn btn-ghost btn-icon"
                           type="button"
+                          title="Editar"
                           onClick={() => {
                             setEditingProductId(r.id);
                             setProductForm({
@@ -1347,12 +1441,12 @@ export default function AdminPage() {
                             });
                           }}
                         >
-                          Editar
+                          <FaEdit />
                         </button>
-                        <button className="btn btn-ghost" type="button" onClick={() => removeProduct(r.id)}>
+                        <button className="btn btn-ghost btn-icon" type="button" title="Remover" onClick={() => removeProduct(r.id)}>
                           <FaTrash />
                         </button>
-                      </div>
+                      </>
                     )
                   }
                 ]}
@@ -1360,6 +1454,84 @@ export default function AdminPage() {
                 keyField="id"
                 loading={loading}
                 emptyMessage="Nenhum produto cadastrado."
+              />
+            </DataCard>
+          </section>
+        </div>
+      ) : null}
+
+      {tab === "catalog-review" ? (
+        <div className="grid">
+          <section className="span-12">
+            <DataCard
+              title="Revisão de produtos (IA)"
+              subtitle="Itens criados automaticamente ou marcados para revisão. Fundir duplicados no produto canónico; aliases globais passam a apontar para ele."
+            >
+              <div className="field" style={{ marginBottom: "1rem" }}>
+                <SingleSelectInput
+                  label="Produto canónico (destino da fusão)"
+                  placeholder="Escolha um produto do catálogo…"
+                  options={(catalogProducts || []).map((x) => ({ value: x.id, label: x.name }))}
+                  value={mergeCanonicalId}
+                  onChange={(next) => setMergeCanonicalId(next)}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+                <button type="button" className="btn btn-primary" disabled={mergeBusy} onClick={() => void submitProductMerge()}>
+                  {mergeBusy ? "A fundir…" : "Fundir linhas seleccionadas"}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => setMergeSelectedIds(new Set())}>
+                  Limpar selecção
+                </button>
+              </div>
+              <CompactTable
+                columns={[
+                  {
+                    id: "sel",
+                    label: "",
+                    render: (r) => (
+                      <input
+                        type="checkbox"
+                        checked={mergeSelectedIds.has(r.id)}
+                        onChange={() => toggleMergeSelect(r.id)}
+                        aria-label={`Seleccionar ${r.name}`}
+                      />
+                    )
+                  },
+                  { id: "name", label: "Nome", render: (r) => <strong>{r.name}</strong> },
+                  { id: "category", label: "Categoria" },
+                  {
+                    id: "created_by",
+                    label: "Origem",
+                    render: (r) =>
+                      r.created_by === "ai_auto" ? (
+                        <span className="badge badge-info">IA</span>
+                      ) : r.created_by === "manager" ? (
+                        <span className="badge badge-warning">Gerente</span>
+                      ) : (
+                        <span className="badge badge-success">Rede</span>
+                      )
+                  },
+                  {
+                    id: "flags",
+                    label: "Revisão",
+                    render: (r) =>
+                      r.needs_catalog_review ? <span className="badge badge-warning">Pendente</span> : <span className="badge badge-success">OK</span>
+                  },
+                  {
+                    id: "actions",
+                    label: "",
+                    render: (r) => (
+                      <button type="button" className="btn btn-ghost" onClick={() => void markProductCatalogReviewed(r)}>
+                        Marcar revisto
+                      </button>
+                    )
+                  }
+                ]}
+                rows={catalogReviewProducts}
+                keyField="id"
+                loading={loading}
+                emptyMessage="Nenhum produto pendente de revisão."
               />
             </DataCard>
           </section>
@@ -1387,14 +1559,14 @@ export default function AdminPage() {
                     id: "actions",
                     label: "",
                     render: (r) => (
-                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                      <>
                         <button type="button" className="btn btn-primary" onClick={() => approvePendingAlias(r)}>
                           Aprovar
                         </button>
                         <button type="button" className="btn btn-ghost" onClick={() => rejectPendingAlias(r)}>
                           Rejeitar
                         </button>
-                      </div>
+                      </>
                     )
                   }
                 ]}

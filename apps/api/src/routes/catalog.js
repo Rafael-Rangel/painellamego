@@ -1,21 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
-import { normalizeProductNameKey, QUICK_PRODUCT_CATEGORY } from "../lib/productNameNormalize.js";
+import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
+import { mergeProductsIntoCanonical } from "../services/productMergeService.js";
+import { quickResolveOrCreateProduct } from "../services/productQuickCreateService.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
-import {
-  AUTO_ALIAS_MIN_SCORE,
-  MIN_PRODUCT_FUZZY,
-  maybeRecordAutoAlias,
-  maybeRecordPendingAlias,
-  preloadSupplierMatchContext,
-  resolveOneProductLabel,
-  touchSupplierAlias,
-  upsertSupplierProductAlias,
-  deleteSupplierProductAlias
-} from "../services/productMatchService.js";
+import { upsertSupplierProductAlias, deleteSupplierProductAlias } from "../services/productMatchService.js";
 
 const router = Router();
 const missingStoreIdColumn = (msg = "") =>
@@ -25,7 +17,8 @@ const productSchema = z.object({
   name: z.string().min(2),
   category: z.string().min(2),
   type: z.enum(["insumo", "venda"]),
-  standardUnit: z.string().min(1)
+  standardUnit: z.string().min(1),
+  needsCatalogReview: z.boolean().optional()
 });
 
 const supplierSchema = z.object({
@@ -60,9 +53,62 @@ async function ensureCategoryExists(categoryName) {
 }
 
 router.get("/products", requireAuth, async (_req, res) => {
-  const { data, error } = await supabaseAdmin.from("products").select("*").order("name");
+  const { data, error } = await supabaseAdmin.from("products").select("*").eq("is_active", true).order("name");
   if (error) return res.status(400).json({ message: error.message });
   return res.json(data);
+});
+
+/** Admin: produtos criados pela IA ou marcados para revisão de catálogo. */
+router.get("/products/pending-catalog-review", requireAuth, requireAdmin, async (_req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from("products")
+    .select("*")
+    .eq("is_active", true)
+    .or("needs_catalog_review.eq.true,created_by.eq.ai_auto")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) {
+    const msg = String(error.message || "").toLowerCase();
+    if (msg.includes("needs_catalog_review") || msg.includes("created_by") || msg.includes("column")) {
+      const { data: fallback, error: e2 } = await supabaseAdmin
+        .from("products")
+        .select("*")
+        .eq("is_active", true)
+        .eq("created_by", "ai_auto")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (e2) return res.status(400).json({ message: e2.message });
+      return res.json(fallback || []);
+    }
+    return res.status(400).json({ message: error.message });
+  }
+  return res.json(data || []);
+});
+
+const productMergeSchema = z.object({
+  canonicalProductId: z.string().uuid(),
+  mergeProductIds: z.array(z.string().uuid()).min(1),
+  newName: z.string().min(2).max(400).optional(),
+  newCategory: z.string().min(2).optional()
+});
+
+router.post("/products/merge", requireAuth, requireAdmin, async (req, res) => {
+  const parsed = productMergeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+  const result = await mergeProductsIntoCanonical(supabaseAdmin, {
+    canonicalProductId: parsed.data.canonicalProductId,
+    mergeProductIds: parsed.data.mergeProductIds,
+    newName: parsed.data.newName,
+    newCategory: parsed.data.newCategory
+  });
+  if (!result.ok) return res.status(400).json({ message: result.error || "Fusão falhou." });
+  await logAudit({
+    userId: req.user.id,
+    action: "merge",
+    resource: "products",
+    payload: { canonicalProductId: parsed.data.canonicalProductId, mergeProductIds: parsed.data.mergeProductIds }
+  });
+  return res.json({ ok: true, mergedCount: result.mergedCount });
 });
 
 const productQuickSchema = z.object({
@@ -76,110 +122,21 @@ router.post("/products/quick", requireAuth, async (req, res) => {
   const parsed = productQuickSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
 
-  const displayName = String(parsed.data.name).trim().replace(/\s+/g, " ");
-  const keyStrong = normalizeProductNameKey(displayName);
-  const keyLegacy = displayName.toLowerCase();
-  const lineType = parsed.data.type ?? "insumo";
-  const supplierIdQuick = parsed.data.supplierId || null;
-
-  if (supplierIdQuick) {
-    try {
-      const { data: allProducts, error: pAllErr } = await supabaseAdmin.from("products").select("*").eq("is_active", true);
-      if (!pAllErr && allProducts?.length) {
-        const ctx = await preloadSupplierMatchContext(supabaseAdmin, supplierIdQuick, allProducts);
-        const resMatch = resolveOneProductLabel(displayName, allProducts, ctx);
-        if (resMatch.product) {
-          if (resMatch.matchKind === "alias") {
-            await touchSupplierAlias(supabaseAdmin, supplierIdQuick, keyStrong).catch(() => {});
-          } else if (resMatch.matchKind === "fuzzy") {
-            const sc = Number(resMatch.score || 0);
-            if (sc >= AUTO_ALIAS_MIN_SCORE) {
-              await maybeRecordAutoAlias(supabaseAdmin, {
-                supplierId: supplierIdQuick,
-                rawLabel: displayName,
-                productId: resMatch.product.id,
-                score: sc
-              }).catch(() => {});
-            } else if (sc >= MIN_PRODUCT_FUZZY) {
-              await maybeRecordPendingAlias(supabaseAdmin, {
-                supplierId: supplierIdQuick,
-                rawLabel: displayName,
-                productId: resMatch.product.id,
-                score: sc
-              }).catch(() => {});
-            }
-          }
-          return res.status(200).json({ ...resMatch.product, reused: true, resolvedVia: resMatch.matchKind });
-        }
-      }
-    } catch {
-      /* continua criação em Outros */
-    }
+  try {
+    const createdBy = req.user?.role === "admin" ? "admin" : "manager";
+    const { product, reused, resolvedVia } = await quickResolveOrCreateProduct({
+      displayName: parsed.data.name,
+      lineType: parsed.data.type ?? "insumo",
+      supplierId: parsed.data.supplierId || null,
+      createdBy,
+      userIdForAudit: req.user.id,
+      needsCatalogReview: false
+    });
+    const status = reused ? 200 : 201;
+    return res.status(status).json({ ...product, reused, resolvedVia });
+  } catch (e) {
+    return res.status(400).json({ message: String(e?.message || e) });
   }
-
-  const { data: byStrong, error: e1 } = await supabaseAdmin
-    .from("products")
-    .select("*")
-    .eq("category", QUICK_PRODUCT_CATEGORY)
-    .eq("normalized_name", keyStrong)
-    .maybeSingle();
-  if (e1) return res.status(400).json({ message: e1.message });
-  if (byStrong) return res.status(200).json({ ...byStrong, reused: true });
-
-  const { data: byLegacy, error: e2 } = await supabaseAdmin
-    .from("products")
-    .select("*")
-    .eq("category", QUICK_PRODUCT_CATEGORY)
-    .eq("normalized_name", keyLegacy)
-    .maybeSingle();
-  if (e2) return res.status(400).json({ message: e2.message });
-  if (byLegacy) return res.status(200).json({ ...byLegacy, reused: true });
-
-  const { data: outrosRows, error: e3 } = await supabaseAdmin
-    .from("products")
-    .select("*")
-    .eq("category", QUICK_PRODUCT_CATEGORY)
-    .limit(3000);
-  if (e3) return res.status(400).json({ message: e3.message });
-  const sameKey = (outrosRows || []).find((p) => normalizeProductNameKey(p.name) === keyStrong);
-  if (sameKey) return res.status(200).json({ ...sameKey, reused: true });
-
-  await ensureCategoryExists(QUICK_PRODUCT_CATEGORY);
-  const catCode = toCategoryCode(QUICK_PRODUCT_CATEGORY);
-  const { data: catRow } = await supabaseAdmin.from("categories").select("id").eq("code", catCode).maybeSingle();
-
-  const insertPayload = {
-    name: displayName,
-    normalized_name: keyStrong,
-    category: QUICK_PRODUCT_CATEGORY,
-    type: lineType,
-    standard_unit: "un",
-    is_active: true,
-    created_by: req.user?.role === "admin" ? "admin" : "manager"
-  };
-  if (catRow?.id) insertPayload.category_id = catRow.id;
-
-  const { data: created, error: insErr } = await supabaseAdmin.from("products").insert(insertPayload).select("*").single();
-  if (insErr) {
-    const msg = String(insErr.message || "");
-    if (msg.toLowerCase().includes("unique") || insErr.code === "23505") {
-      const { data: again } = await supabaseAdmin
-        .from("products")
-        .select("*")
-        .eq("category", QUICK_PRODUCT_CATEGORY)
-        .eq("normalized_name", keyStrong)
-        .maybeSingle();
-      if (again) return res.status(200).json({ ...again, reused: true });
-    }
-    return res.status(400).json({ message: insErr.message });
-  }
-  await logAudit({
-    userId: req.user.id,
-    action: "create",
-    resource: "product_quick",
-    payload: { productId: created.id }
-  });
-  return res.status(201).json({ ...created, reused: false });
 });
 
 router.get("/categories", requireAuth, async (_req, res) => {
@@ -204,6 +161,9 @@ router.post("/products", requireAuth, requireAdmin, async (req, res) => {
     standard_unit: parsed.data.standardUnit,
     created_by: "admin"
   };
+  if (parsed.data.needsCatalogReview === true || parsed.data.needsCatalogReview === false) {
+    payload.needs_catalog_review = parsed.data.needsCatalogReview;
+  }
   await ensureCategoryExists(parsed.data.category);
   const { data, error } = await supabaseAdmin.from("products").insert(payload).select("*").single();
   if (error) return res.status(400).json({ message: error.message });
@@ -222,6 +182,11 @@ router.put("/products/:id", requireAuth, requireAdmin, async (req, res) => {
     type: parsed.data.type,
     standard_unit: parsed.data.standardUnit
   };
+  if (parsed.data.needsCatalogReview === true || parsed.data.needsCatalogReview === false) {
+    payload.needs_catalog_review = parsed.data.needsCatalogReview;
+  }
+
+  const { data, error } = await supabaseAdmin.from("products").update(payload).eq("id", req.params.id).select("*").single();
   if (error) return res.status(400).json({ message: error.message });
   await logAudit({ userId: req.user.id, action: "update", resource: "product", payload: { productId: data.id } });
   return res.json(data);

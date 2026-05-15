@@ -1,9 +1,11 @@
 import { config } from "../config.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 import { supabaseAdmin } from "../lib/supabase.js";
+import { quickResolveOrCreateProduct } from "./productQuickCreateService.js";
 import {
   AUTO_ALIAS_MIN_SCORE,
   MIN_PRODUCT_FUZZY,
+  loadGlobalCanonicalAliasMap,
   maybeRecordAutoAlias,
   maybeRecordPendingAlias,
   preloadSupplierMatchContext,
@@ -235,7 +237,13 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx) {
 
   const aliasByKey = matchCtx?.aliasByKey instanceof Map ? matchCtx.aliasByKey : new Map();
   const candidateProducts = matchCtx?.candidateProducts?.length ? matchCtx.candidateProducts : products;
-  const resolveCtx = { aliasByKey, candidateProducts };
+  const resolveCtx = {
+    aliasByKey,
+    candidateProducts,
+    globalAliasByKey: matchCtx?.globalAliasByKey instanceof Map ? matchCtx.globalAliasByKey : new Map(),
+    receiptUseFullCatalog: Boolean(matchCtx?.receiptUseFullCatalog),
+    supplierBoostIds: matchCtx?.supplierBoostIds instanceof Set ? matchCtx.supplierBoostIds : null
+  };
 
   const itemMatchMeta = [];
 
@@ -274,7 +282,9 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx) {
       unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : null,
       lineType: best?.type === "venda" ? "venda" : "insumo",
       missing,
-      suggestedProductMatches: resolved.suggestedProductMatches
+      suggestedProductMatches: resolved.suggestedProductMatches,
+      matchKindResolved: resolved.matchKind,
+      matchScoreResolved: matchScore
     };
   });
 
@@ -299,12 +309,47 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx) {
   };
 }
 
+/**
+ * Garante productId em cada linha com rótulo + preço válidos (criação automática em "Outros" se necessário).
+ */
+async function finalizeReceiptItemsWithAutoProducts(mapped, { supplierIdHint, userId, matchCtx }) {
+  const items = mapped?.items || [];
+  for (let i = 0; i < items.length; i += 1) {
+    const row = items[i];
+    if (row.productId) continue;
+    const label = String(row.rawProductName || "").trim();
+    const unitPrice = row.unitPrice;
+    if (!label || unitPrice == null || !Number.isFinite(Number(unitPrice)) || Number(unitPrice) <= 0) continue;
+    try {
+      const { product, reused, resolvedVia } = await quickResolveOrCreateProduct({
+        displayName: label,
+        lineType: row.lineType === "venda" ? "venda" : "insumo",
+        supplierId: supplierIdHint || null,
+        createdBy: "ai_auto",
+        userIdForAudit: userId || null,
+        needsCatalogReview: true,
+        resolveCtx: matchCtx
+      });
+      row.productId = product.id;
+      row.productName = product.name;
+      row.lineType = product.type === "venda" ? "venda" : "insumo";
+      row.autoCreated = Boolean(!reused && resolvedVia === "created");
+      row.resolvedVia = resolvedVia;
+      row.missing = (row.missing || []).filter((m) => m !== "produto");
+    } catch {
+      /* mantém missing produto */
+    }
+  }
+  return mapped;
+}
+
 export async function parseReceiptWithAI({
   imageBuffer,
   mimeType,
   products = [],
   suppliers = [],
-  supplierIdHint = null
+  supplierIdHint = null,
+  userId = null
 }) {
   if (!config.openRouterApiKey) {
     throw new Error("OPENROUTER_API_KEY não configurada.");
@@ -358,30 +403,60 @@ export async function parseReceiptWithAI({
 
       const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
       const supplierIdForLearn = supplierIdHint || supplierMatch.best?.id || null;
-      let matchCtx = { aliasByKey: new Map(), candidateProducts: products };
+
+      let globalAliasByKey = new Map();
+      try {
+        globalAliasByKey = await loadGlobalCanonicalAliasMap(supabaseAdmin);
+      } catch {
+        globalAliasByKey = new Map();
+      }
+
+      let matchCtx = {
+        aliasByKey: new Map(),
+        candidateProducts: products,
+        globalAliasByKey,
+        receiptUseFullCatalog: true,
+        supplierBoostIds: null
+      };
       if (supplierIdForLearn) {
         try {
-          matchCtx = await preloadSupplierMatchContext(supabaseAdmin, supplierIdForLearn, products);
+          const sup = await preloadSupplierMatchContext(supabaseAdmin, supplierIdForLearn, products);
+          const supplierBoostIds = new Set((sup.candidateProducts || []).map((p) => p.id));
+          matchCtx = { ...sup, globalAliasByKey, receiptUseFullCatalog: true, supplierBoostIds };
         } catch {
-          matchCtx = { aliasByKey: new Map(), candidateProducts: products };
+          matchCtx = {
+            aliasByKey: new Map(),
+            candidateProducts: products,
+            globalAliasByKey,
+            receiptUseFullCatalog: true,
+            supplierBoostIds: null
+          };
         }
       }
 
       const mapped = mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx);
+      await finalizeReceiptItemsWithAutoProducts(mapped, {
+        supplierIdHint: supplierIdForLearn,
+        userId,
+        matchCtx
+      });
 
       if (supplierIdForLearn && mapped._itemMatchMeta?.length) {
         const tasks = [];
         for (let i = 0; i < mapped._itemMatchMeta.length; i += 1) {
           const m = mapped._itemMatchMeta[i];
           const row = mapped.items[i];
+          if (!row?.productId) continue;
+          const rawLabel = m.rawLabel || row.rawProductName;
+          if (!rawLabel) continue;
           if (m.matchKind === "alias" && m.matchKey) {
             tasks.push(touchSupplierAlias(supabaseAdmin, supplierIdForLearn, m.matchKey).catch(() => {}));
-          } else if (m.matchKind === "fuzzy" && row?.productId) {
+          } else if (m.matchKind === "fuzzy") {
             if (m.score >= AUTO_ALIAS_MIN_SCORE) {
               tasks.push(
                 maybeRecordAutoAlias(supabaseAdmin, {
                   supplierId: supplierIdForLearn,
-                  rawLabel: m.rawLabel,
+                  rawLabel,
                   productId: row.productId,
                   score: m.score
                 }).catch(() => {})
@@ -390,13 +465,34 @@ export async function parseReceiptWithAI({
               tasks.push(
                 maybeRecordPendingAlias(supabaseAdmin, {
                   supplierId: supplierIdForLearn,
-                  rawLabel: m.rawLabel,
+                  rawLabel,
                   productId: row.productId,
                   score: m.score
                 }).catch(() => {})
               );
             }
+          } else if (["global_alias", "exact", "aggressive"].includes(m.matchKind)) {
+            tasks.push(
+              maybeRecordAutoAlias(supabaseAdmin, {
+                supplierId: supplierIdForLearn,
+                rawLabel,
+                productId: row.productId,
+                score: 0.95
+              }).catch(() => {})
+            );
           }
+        }
+        for (let i = 0; i < mapped.items.length; i += 1) {
+          const row = mapped.items[i];
+          if (!row?.autoCreated || !supplierIdForLearn || !row.productId || !row.rawProductName) continue;
+          tasks.push(
+            maybeRecordAutoAlias(supabaseAdmin, {
+              supplierId: supplierIdForLearn,
+              rawLabel: row.rawProductName,
+              productId: row.productId,
+              score: 0.9
+            }).catch(() => {})
+          );
         }
         await Promise.all(tasks);
       }

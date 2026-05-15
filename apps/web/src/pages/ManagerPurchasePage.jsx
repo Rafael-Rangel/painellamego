@@ -270,7 +270,12 @@ export default function ManagerPurchasePage() {
 
               <CompactTable
                 columns={[
-                  { id: "productId", label: "Produto", render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "—" },
+                  {
+                    id: "productId",
+                    label: "Produto",
+                    getTitle: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "",
+                    render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "—"
+                  },
                   {
                     id: "lineType",
                     label: "Insumo / venda",

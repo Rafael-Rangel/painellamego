@@ -13,3 +13,12 @@ export function normalizeProductNameKey(name) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 }
+
+/**
+ * Chave agressiva para fuzzy/dedupe: remove espaços e pontuação (mantém letras e números).
+ * Não substitui `normalized_name` na BD; usar só em matching e aliases globais.
+ */
+export function normalizeProductNameKeyAggressive(name) {
+  const base = normalizeProductNameKey(name);
+  return base.replace(/[^a-z0-9]+/g, "");
+}

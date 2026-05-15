@@ -918,6 +918,20 @@ img {
   gap: 0.25rem 0.65rem;
 }
 
+.table-wrap .purchase-line-type-options--compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  max-height: calc(1.35em * 2 + 0.5rem);
+  overflow: hidden;
+}
+
+.table-wrap .purchase-line-type-options--compact .purchase-line-type-option {
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
+}
+
 .purchase-line-type-options--compact .purchase-line-type-option span {
   font-size: 0.82rem;
 }
@@ -1518,10 +1532,15 @@ select:focus-visible {
   min-width: 640px;
 }
 
+.table-wrap--mobile {
+  border-radius: 12px;
+}
+
 table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
 
 th,
@@ -1530,6 +1549,31 @@ td {
   padding: 0.78rem 0.9rem;
   font-size: 13px;
   text-align: left;
+  vertical-align: top;
+  max-width: 0;
+}
+
+.table-th-label,
+.table-cell-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  max-height: calc(1.35em * 2);
+}
+
+.table-cell-plain {
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.table-cell-clamp .badge,
+.table-cell-clamp .price-pill,
+.table-cell-clamp .price-store {
+  vertical-align: baseline;
 }
 
 th {
@@ -1674,6 +1718,23 @@ tbody tr:last-child td {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+  max-height: calc(1.35em * 2 + 0.35rem);
+  overflow: hidden;
+  align-content: flex-start;
+}
+
+.table-cell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  max-height: calc(1.35em * 2 + 2.75rem);
+  overflow: hidden;
+}
+
+.table-cell-actions .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .supplier-share {
@@ -2358,6 +2419,43 @@ tbody tr:last-child td {
 
   .topbar-user {
     max-width: min(200px, 42vw);
+  }
+
+  .table-wrap--mobile {
+    max-height: min(70vh, 520px);
+  }
+
+  .table-wrap--mobile table {
+    min-width: min(100%, 520px);
+  }
+
+  .table-wrap--mobile th,
+  .table-wrap--mobile td {
+    padding: 0.5rem 0.55rem;
+    font-size: 12px;
+  }
+
+  .table-wrap--mobile th {
+    font-size: 11px;
+  }
+
+  .table-wrap--mobile .table-cell-actions .btn-ghost:not(.btn-icon) {
+    padding: 0.4rem 0.5rem;
+    font-size: 11px;
+  }
+
+  .table-wrap--mobile td[data-col="actions"] {
+    min-width: 5.5rem;
+  }
+
+  .table-wrap--mobile td[data-col="sel"] {
+    width: 2.25rem;
+    min-width: 2.25rem;
+  }
+
+  .table-wrap--mobile td[data-col="rank"] {
+    width: 2rem;
+    min-width: 2rem;
   }
 }
 

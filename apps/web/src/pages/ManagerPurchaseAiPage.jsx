@@ -272,11 +272,6 @@ export default function ManagerPurchaseAiPage() {
                             }}
                             inputClassName="purchase-ai-input"
                           />
-                          {row.aiRawProductName ? (
-                            <p className="purchase-ai-raw-name" title={row.aiRawProductName}>
-                              Na nota: {row.aiRawProductName}
-                            </p>
-                          ) : null}
                           <div className="purchase-ai-product-line-type">
                             <span className="purchase-ai-mini-label">Insumo ou venda (esta linha)</span>
                             <div className="purchase-line-type-options" role="radiogroup" aria-label={`Insumo ou venda linha ${idx + 1}`}>

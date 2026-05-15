@@ -61,28 +61,46 @@ export default function ComponentLibraryPage() {
         </section>
         <section className="card span-6">
           <h3>Organisms</h3>
-          <div className="table-wrap">
+          <div className="table-wrap table-wrap--mobile">
             <table>
               <thead>
                 <tr>
-                  <th>Produto</th>
-                  <th>Preco</th>
-                  <th>Status</th>
+                  <th>
+                    <span className="table-th-label">Produto</span>
+                  </th>
+                  <th>
+                    <span className="table-th-label">Preco</span>
+                  </th>
+                  <th>
+                    <span className="table-th-label">Status</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>Farinha de trigo</td>
-                  <td>R$ 4,90</td>
                   <td>
-                    <span className="badge badge-warning">Acima da media</span>
+                    <div className="table-cell-clamp">Farinha de trigo</div>
+                  </td>
+                  <td>
+                    <div className="table-cell-clamp">R$ 4,90</div>
+                  </td>
+                  <td>
+                    <div className="table-cell-clamp">
+                      <span className="badge badge-warning">Acima da media</span>
+                    </div>
                   </td>
                 </tr>
                 <tr>
-                  <td>Manteiga</td>
-                  <td>R$ 28,10</td>
                   <td>
-                    <span className="badge badge-success">Dentro da meta</span>
+                    <div className="table-cell-clamp">Manteiga</div>
+                  </td>
+                  <td>
+                    <div className="table-cell-clamp">R$ 28,10</div>
+                  </td>
+                  <td>
+                    <div className="table-cell-clamp">
+                      <span className="badge badge-success">Dentro da meta</span>
+                    </div>
                   </td>
                 </tr>
               </tbody>

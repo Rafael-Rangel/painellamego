@@ -373,6 +373,26 @@ export function usePurchaseForm(token, options = {}) {
           .map((row) => buildItemRowFromAi(row, { singleLineInvoice }) || buildItemRowFromAiPartial(row, { singleLineInvoice }))
           .filter(Boolean);
 
+        const productStubs = fromApi
+          .filter((row) => row.productId && row.productName)
+          .map((row) => ({
+            id: row.productId,
+            name: row.productName,
+            type: row.lineType === "venda" ? "venda" : "insumo"
+          }));
+        if (productStubs.length) {
+          setProducts((prev) => {
+            const byId = new Map((prev || []).map((p) => [p.id, p]));
+            for (const stub of productStubs) {
+              const cur = byId.get(stub.id) || {};
+              byId.set(stub.id, { ...cur, ...stub });
+            }
+            return [...byId.values()].sort((a, b) =>
+              String(a.name || "").localeCompare(String(b.name || ""), "pt-BR")
+            );
+          });
+        }
+
         if (fromApi.length) {
           setItems(mergedRows);
           setDraftItem({ productId: "", quantity: "", unitUsed: "un", unitPrice: "", lineType: "insumo" });

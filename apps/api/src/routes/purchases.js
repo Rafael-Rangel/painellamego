@@ -51,7 +51,10 @@ router.post(
     suppliers = fallbackSuppliers.data || [];
   }
 
-  const { data: products, error: productsError } = await supabaseAdmin.from("products").select("id,name,type");
+  const { data: products, error: productsError } = await supabaseAdmin
+    .from("products")
+    .select("*")
+    .eq("is_active", true);
   if (productsError) return res.status(400).json({ message: productsError.message });
 
     try {
@@ -70,7 +73,8 @@ router.post(
         mimeType: file.mimetype,
         products: products || [],
         suppliers: suppliers || [],
-        supplierIdHint: supplierIdForParse
+        supplierIdHint: supplierIdForParse,
+        userId: req.user?.id || null
       });
       if (!aggregate.invoiceNumber && parsed.invoiceNumber) aggregate.invoiceNumber = parsed.invoiceNumber;
       if (!aggregate.purchaseDate && parsed.purchaseDate) aggregate.purchaseDate = parsed.purchaseDate;

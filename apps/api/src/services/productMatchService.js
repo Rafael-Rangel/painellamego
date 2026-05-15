@@ -1,4 +1,4 @@
-import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
+import { normalizeProductNameKey, normalizeProductNameKeyAggressive } from "../lib/productNameNormalize.js";
 
 /** Igual ao receiptAiService: fuzzy leve entre strings. */
 function normalizeText(s) {
@@ -22,6 +22,15 @@ function similarityScore(a, b) {
   return inter / union;
 }
 
+function aggressiveKeysMatchLabelToProduct(rawLabel, productName) {
+  const ka = normalizeProductNameKeyAggressive(rawLabel);
+  const kb = normalizeProductNameKeyAggressive(productName);
+  return Boolean(ka && kb && ka === kb);
+}
+
+/** Diferença mínima entre 1º e 2º melhor score para aceitar match fuzzy (evita empates perigosos). */
+export const FUZZY_AMBIGUITY_GAP = 0.08;
+
 function productDbNormalizedKey(p) {
   const raw = p?.normalized_name != null && String(p.normalized_name).trim() !== "" ? String(p.normalized_name).trim() : null;
   if (raw) return normalizeProductNameKey(raw);
@@ -36,18 +45,30 @@ function findProductExactNormalized(products, key) {
   return null;
 }
 
-function bestMatchByName(name, list, labelKey = "name") {
-  if (name == null || String(name).trim() === "") return { best: null, score: 0 };
-  let best = null;
-  let bestScore = 0;
-  for (const item of list || []) {
-    const score = similarityScore(name, item?.[labelKey]);
-    if (score > bestScore) {
-      bestScore = score;
-      best = item;
-    }
+function bestTwoMatchesByName(name, list, labelKey = "name", supplierBoostIds) {
+  if (name == null || String(name).trim() === "") {
+    return { first: null, second: null, firstScore: 0, secondScore: 0 };
   }
-  return { best, score: bestScore };
+  const scored = [];
+  for (const item of list || []) {
+    let score = similarityScore(name, item?.[labelKey]);
+    if (aggressiveKeysMatchLabelToProduct(name, item?.[labelKey])) {
+      score = Math.max(score, 0.96);
+    }
+    if (supplierBoostIds?.has?.(item?.id)) {
+      score = Math.min(1, score + 0.04);
+    }
+    scored.push({ item, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const a = scored[0];
+  const b = scored[1];
+  return {
+    first: a?.item ?? null,
+    second: b?.item ?? null,
+    firstScore: a?.score ?? 0,
+    secondScore: b?.score ?? 0
+  };
 }
 
 function topSuggestedProductMatches(name, products, limit = 3, minScore = 0.12) {
@@ -68,6 +89,39 @@ function topSuggestedProductMatches(name, products, limit = 3, minScore = 0.12) 
 export const MIN_PRODUCT_FUZZY = 0.5;
 /** Acima disto grava alias automático (fornecedor + rótulo) quando há supplier_id. */
 export const AUTO_ALIAS_MIN_SCORE = 0.88;
+
+/**
+ * Aliases globais (pós-fusão admin): normalized_key → produto canónico.
+ */
+export async function loadGlobalCanonicalAliasMap(supabaseAdmin) {
+  const map = new Map();
+  const { data: rows, error } = await supabaseAdmin.from("product_canonical_aliases").select("normalized_key, canonical_product_id");
+  if (error) {
+    const msg = String(error.message || "").toLowerCase();
+    if (msg.includes("product_canonical_aliases") || msg.includes("does not exist") || msg.includes("schema cache")) return map;
+    return map;
+  }
+  const ids = [...new Set(rows.map((r) => r.canonical_product_id).filter(Boolean))];
+  if (!ids.length) return map;
+  const { data: prods, error: pErr } = await supabaseAdmin.from("products").select("*").in("id", ids).eq("is_active", true);
+  if (pErr || !prods?.length) return map;
+  const byId = new Map(prods.map((p) => [p.id, p]));
+  for (const r of rows) {
+    const p = byId.get(r.canonical_product_id);
+    const k = String(r.normalized_key || "").trim();
+    if (k && p?.id) map.set(k, p);
+  }
+  return map;
+}
+
+function findProductByAggressiveName(allProducts, rawLabel) {
+  if (!normalizeProductNameKeyAggressive(rawLabel)) return null;
+  for (const p of allProducts || []) {
+    if (p?.is_active === false) continue;
+    if (aggressiveKeysMatchLabelToProduct(rawLabel, p?.name)) return p;
+  }
+  return null;
+}
 
 const FREQUENT_PRODUCTS_LIMIT = 200;
 const CATALOG_FALLBACK_LIMIT = 400;
@@ -94,7 +148,7 @@ export async function preloadSupplierMatchContext(supabaseAdmin, supplierId, all
   for (const row of aliasRows || []) {
     const key = String(row.label_normalized || "").trim();
     const prod = row.products;
-    if (key && prod?.id) aliasByKey.set(key, prod);
+    if (key && prod?.id && prod.is_active !== false) aliasByKey.set(key, prod);
   }
 
   const { data: freqRows, error: fErr } = await supabaseAdmin
@@ -138,43 +192,86 @@ export async function preloadSupplierMatchContext(supabaseAdmin, supplierId, all
 }
 
 /**
- * Resolve um rótulo livre para um produto do catálogo (alias → exact global → fuzzy no conjunto candidato).
- * @returns {{ product: object|null, matchKind: 'alias'|'exact'|'fuzzy'|'none', score: number, suggestedProductMatches: array }}
+ * Resolve um rótulo livre para um produto do catálogo (alias global → alias fornecedor → exact → aggressive → fuzzy).
+ * @returns {{ product: object|null, matchKind: 'global_alias'|'alias'|'exact'|'aggressive'|'fuzzy'|'none', score: number, suggestedProductMatches: array }}
  */
 export function resolveOneProductLabel(rawLabel, allProducts, ctx) {
-  const { aliasByKey = new Map(), candidateProducts = allProducts } = ctx || {};
+  const {
+    aliasByKey = new Map(),
+    candidateProducts = allProducts,
+    globalAliasByKey = new Map(),
+    receiptUseFullCatalog = false,
+    supplierBoostIds = null
+  } = ctx || {};
+  const activeProducts = (allProducts || []).filter((p) => p?.is_active !== false);
   const raw = String(rawLabel || "").trim();
   const normalizedLabel = raw;
   const matchKey = normalizeProductNameKey(normalizedLabel);
+  const aggKey = normalizeProductNameKeyAggressive(normalizedLabel);
+
+  const globalHit =
+    (matchKey && globalAliasByKey.get(matchKey)) || (aggKey && globalAliasByKey.get(aggKey)) || null;
+  if (globalHit?.id) {
+    return {
+      product: globalHit,
+      matchKind: "global_alias",
+      score: 1,
+      suggestedProductMatches: topSuggestedProductMatches(raw, activeProducts, 3, 0.12)
+    };
+  }
 
   const aliasHit = matchKey ? aliasByKey.get(matchKey) : null;
-  if (aliasHit?.id) {
+  if (aliasHit?.id && aliasHit.is_active !== false) {
     return {
       product: aliasHit,
       matchKind: "alias",
       score: 1,
-      suggestedProductMatches: topSuggestedProductMatches(raw, allProducts, 3, 0.12)
+      suggestedProductMatches: topSuggestedProductMatches(raw, activeProducts, 3, 0.12)
     };
   }
 
-  const exact = findProductExactNormalized(allProducts, matchKey);
+  const exact = findProductExactNormalized(activeProducts, matchKey);
   if (exact) {
     return {
       product: exact,
       matchKind: "exact",
       score: 1,
-      suggestedProductMatches: topSuggestedProductMatches(raw, allProducts, 3, 0.12)
+      suggestedProductMatches: topSuggestedProductMatches(raw, activeProducts, 3, 0.12)
     };
   }
 
-  const fuzzy = bestMatchByName(raw || normalizedLabel, candidateProducts, "name");
-  const best = fuzzy.score >= MIN_PRODUCT_FUZZY ? fuzzy.best : null;
-  const matchScore = fuzzy.score;
+  const aggressive = findProductByAggressiveName(activeProducts, raw || normalizedLabel);
+  if (aggressive) {
+    return {
+      product: aggressive,
+      matchKind: "aggressive",
+      score: 0.97,
+      suggestedProductMatches: topSuggestedProductMatches(raw, activeProducts, 3, 0.12)
+    };
+  }
+
+  const fuzzyList = receiptUseFullCatalog ? activeProducts : candidateProducts;
+  const { first, second, firstScore, secondScore } = bestTwoMatchesByName(
+    raw || normalizedLabel,
+    fuzzyList,
+    "name",
+    supplierBoostIds
+  );
+  const ambiguous =
+    first &&
+    second &&
+    firstScore >= MIN_PRODUCT_FUZZY &&
+    secondScore >= MIN_PRODUCT_FUZZY &&
+    firstScore - secondScore < FUZZY_AMBIGUITY_GAP;
+
+  const best = !ambiguous && firstScore >= MIN_PRODUCT_FUZZY ? first : null;
+  const matchScore = ambiguous ? Math.max(0, firstScore - 0.01) : firstScore;
+
   return {
     product: best,
     matchKind: best ? "fuzzy" : "none",
     score: matchScore,
-    suggestedProductMatches: topSuggestedProductMatches(raw || normalizedLabel, candidateProducts, 3, 0.12)
+    suggestedProductMatches: topSuggestedProductMatches(raw || normalizedLabel, fuzzyList, 3, 0.12)
   };
 }
 

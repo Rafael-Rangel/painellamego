@@ -8,6 +8,7 @@ import { useAuth } from "../auth/AuthProvider";
 import "../charts/chartSetup";
 import ChartCard from "../components/ui/ChartCard";
 import CompactTable from "../components/ui/CompactTable";
+import { summarizePurchaseItems } from "../components/ui/tableCellUtils";
 import DataCard from "../components/ui/DataCard";
 import KpiCardCompact from "../components/ui/KpiCardCompact";
 import MultiSelectSearch from "../components/ui/MultiSelectSearch";
@@ -516,17 +517,7 @@ export default function ManagerPage() {
               {
                 id: "items",
                 label: "Itens",
-                render: (p) =>
-                  (p.purchase_items || []).slice(0, 5).map((it) => (
-                    <div key={it.id}>
-                      {it.products?.name || it.product_id} - {it.quantity} x R$ {Number(it.unit_price).toFixed(2)}
-                      {it.line_type ? (
-                        <span className={it.line_type === "venda" ? "badge badge-warning" : "badge badge-info"} style={{ marginLeft: "0.35rem" }}>
-                          {it.line_type === "venda" ? "Venda" : "Insumo"}
-                        </span>
-                      ) : null}
-                    </div>
-                  ))
+                render: (p) => summarizePurchaseItems(p.purchase_items) || "—"
               },
               { id: "fiscal_receipts", label: "Nota fiscal", render: (p) => (p.fiscal_receipts?.length ? "Anexada" : "Nao anexada") }
             ]}
