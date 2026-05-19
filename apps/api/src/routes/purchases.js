@@ -9,7 +9,10 @@ import { recalculateProductSnapshot } from "../services/comparisonService.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
 import { parseReceiptWithAI } from "../services/receiptAiService.js";
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 7 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 12 }
+});
 const router = Router();
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "application/pdf"]);
 const missingStoreIdColumn = (msg = "") =>
@@ -57,6 +60,18 @@ router.post(
     .eq("is_active", true);
   if (productsError) return res.status(400).json({ message: productsError.message });
 
+    const reqStarted = Date.now();
+    const fileMeta = receiptFiles.map((f) => ({
+      name: f.originalname,
+      bytes: f.buffer?.length ?? 0,
+      mime: f.mimetype
+    }));
+    console.info("[receipt-ai-parse] início", {
+      userId: req.user?.id,
+      files: fileMeta,
+      totalBytes: fileMeta.reduce((s, f) => s + f.bytes, 0)
+    });
+
     try {
     const aggregate = {
       invoiceNumber: null,
@@ -68,6 +83,7 @@ router.post(
     const supplierIdHint = req.body?.supplierId ? String(req.body.supplierId).trim() : "";
     const supplierIdForParse = supplierIdHint && /^[0-9a-f-]{36}$/i.test(supplierIdHint) ? supplierIdHint : null;
     for (const file of receiptFiles) {
+      const fileStarted = Date.now();
       const parsed = await parseReceiptWithAI({
         imageBuffer: file.buffer,
         mimeType: file.mimetype,
@@ -76,6 +92,12 @@ router.post(
         supplierIdHint: supplierIdForParse,
         userId: req.user?.id || null
       });
+      console.info("[receipt-ai-parse] ficheiro", {
+        name: file.originalname,
+        bytes: file.buffer?.length ?? 0,
+        ms: Date.now() - fileStarted,
+        items: parsed.items?.length ?? 0
+      });
       if (!aggregate.invoiceNumber && parsed.invoiceNumber) aggregate.invoiceNumber = parsed.invoiceNumber;
       if (!aggregate.purchaseDate && parsed.purchaseDate) aggregate.purchaseDate = parsed.purchaseDate;
       if (!aggregate.supplierSuggestion && parsed.supplierSuggestion) aggregate.supplierSuggestion = parsed.supplierSuggestion;
@@ -83,8 +105,18 @@ router.post(
       aggregate.missingGlobal.push(...(parsed.missingGlobal || []));
     }
     aggregate.missingGlobal = [...new Set(aggregate.missingGlobal)];
+    console.info("[receipt-ai-parse] ok", {
+      userId: req.user?.id,
+      ms: Date.now() - reqStarted,
+      items: aggregate.items.length
+    });
     return res.json(aggregate);
   } catch (err) {
+    console.error("[receipt-ai-parse] erro", {
+      userId: req.user?.id,
+      ms: Date.now() - reqStarted,
+      message: err?.message
+    });
     return res.status(400).json({ message: err.message || "Falha ao analisar nota com IA." });
   }
 });

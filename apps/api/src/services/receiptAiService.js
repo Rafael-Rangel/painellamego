@@ -360,6 +360,10 @@ export async function parseReceiptWithAI({
     throw new Error("OPENROUTER_API_KEY não configurada.");
   }
 
+  const parseStarted = Date.now();
+  const inputBytes = imageBuffer?.length ?? 0;
+  console.info("[receipt-ai] parse início", { mimeType, inputBytes, userId: userId || null });
+
   const base64 = imageBuffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
   const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean), 150, 220);
@@ -509,11 +513,24 @@ export async function parseReceiptWithAI({
         await Promise.all(tasks);
       }
       delete mapped._itemMatchMeta;
+      console.info("[receipt-ai] parse ok", {
+        mimeType,
+        inputBytes,
+        ms: Date.now() - parseStarted,
+        items: mapped.items?.length ?? 0,
+        model
+      });
       return mapped;
     } catch (e) {
       errors.push(String(e?.message || e));
     }
   }
 
+  console.error("[receipt-ai] parse falhou", {
+    mimeType,
+    inputBytes,
+    ms: Date.now() - parseStarted,
+    errors
+  });
   throw new Error(`OpenRouter: ${errors.join(" || ")}`);
 }

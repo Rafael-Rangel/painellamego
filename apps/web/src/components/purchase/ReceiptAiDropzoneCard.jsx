@@ -69,7 +69,7 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
         {analyzing ? (
           <div className="purchase-ai-dropzone-overlay" aria-live="polite">
             <div className="purchase-ai-spinner" aria-hidden />
-            <p className="purchase-ai-analyze-msg">Analisando documento e preenchendo formulário…</p>
+            <p className="purchase-ai-analyze-msg">A preparar e analisar a nota… veja o progresso abaixo.</p>
           </div>
         ) : null}
         <FaCloudUploadAlt className="purchase-ai-dropzone-graphic" aria-hidden />
@@ -91,7 +91,9 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
           onChange={onInputChange}
           disabled={disabled || analyzing}
         />
-        <p className="purchase-ai-dropzone-meta">JPG, PNG ou PDF · até 7 MB por arquivo · vários ficheiros permitidos</p>
+        <p className="purchase-ai-dropzone-meta">
+          Tire ou escolha a foto da nota (JPG/PNG) · o sistema ajusta o envio automaticamente, sem precisar ver o tamanho em MB
+        </p>
       </div>
 
       {fileNames.length > 0 ? (

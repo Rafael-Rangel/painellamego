@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaPlus, FaRobot, FaStore, FaTimes, FaTrash } from "react-icons/fa";
 import AppShell from "../components/AppShell";
 import ReceiptAiDropzoneCard from "../components/purchase/ReceiptAiDropzoneCard";
+import ReceiptAiProgressPanel from "../components/purchase/ReceiptAiProgressPanel";
+import { formatFileSize } from "../lib/compressReceiptImages";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
@@ -42,6 +44,11 @@ export default function ManagerPurchaseAiPage() {
     setDraftItem,
     toast,
     aiLoading,
+    aiStage,
+    aiProgress,
+    aiStatusMessage,
+    aiError,
+    aiRetryCount,
     aiMissing,
     total,
     addItem,
@@ -49,6 +56,7 @@ export default function ManagerPurchaseAiPage() {
     removeItem,
     confirmPurchase,
     parseReceiptsByAI,
+    retryAiParse,
     aiHighlightKeys,
     clearAiHighlight,
     clearItemRowAiHighlight,
@@ -77,13 +85,17 @@ export default function ManagerPurchaseAiPage() {
     [appendReceiptExtras]
   );
 
+  const parseInFlightRef = useRef(false);
+
   useEffect(() => {
-    if (!receipts.length || aiLoading) return;
+    if (!receipts.length || aiLoading || parseInFlightRef.current) return;
     const sig = receipts.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join("|");
     if (sig === lastAnalyzedSigRef.current) return;
     lastAnalyzedSigRef.current = sig;
+    parseInFlightRef.current = true;
     void (async () => {
       const ok = await parseReceiptsByAI({ onSuccess: () => {} });
+      parseInFlightRef.current = false;
       if (!ok) lastAnalyzedSigRef.current = "";
     })();
   }, [receipts, aiLoading, parseReceiptsByAI]);
@@ -104,7 +116,10 @@ export default function ManagerPurchaseAiPage() {
           ? "Loja vinculada ao seu acesso"
           : "—";
 
-  const fileNames = useMemo(() => receipts.map((f) => f.name), [receipts]);
+  const fileNames = useMemo(
+    () => receipts.map((f) => `${f.name} (${formatFileSize(f.size)})`),
+    [receipts]
+  );
 
   const canRegister =
     !aiLoading &&
@@ -138,6 +153,16 @@ export default function ManagerPurchaseAiPage() {
             analyzing={aiLoading}
             fileNames={fileNames}
             onFilesChange={handleDropzoneFiles}
+          />
+
+          <ReceiptAiProgressPanel
+            visible={aiLoading}
+            stage={aiStage}
+            progress={aiProgress}
+            message={aiStatusMessage}
+            error={!aiLoading ? aiError : ""}
+            retryCount={aiRetryCount}
+            onRetry={aiError && receipts.length ? () => void retryAiParse() : undefined}
           />
 
           <div className="card purchase-ai-optional-receipt">

@@ -1,6 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, withAuth } from "../api";
 import { buildUnitOptions, normalizeUnitUsed } from "../lib/catalogUnits";
+import { compressReceiptFiles, formatFileSize } from "../lib/compressReceiptImages";
+
+const AI_REQUEST_TIMEOUT_MS = 120_000;
+const AI_MAX_RETRIES = 2;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableAiError(err) {
+  const st = err?.response?.status;
+  return err?.code === "ECONNABORTED" || st === 502 || st === 503 || st === 504;
+}
 
 function receiptFileKey(f) {
   return `${f?.name || ""}:${f?.size}:${f?.lastModified}`;
@@ -82,7 +95,13 @@ export function usePurchaseForm(token, options = {}) {
   });
   const [toast, setToast] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiStage, setAiStage] = useState(null);
+  const [aiProgress, setAiProgress] = useState(0);
+  const [aiStatusMessage, setAiStatusMessage] = useState("");
+  const [aiError, setAiError] = useState("");
+  const [aiRetryCount, setAiRetryCount] = useState(0);
   const [aiMissing, setAiMissing] = useState([]);
+  const analyzeProgressTimerRef = useRef(null);
   const [aiHighlightKeys, setAiHighlightKeys] = useState(() => new Set());
   const [supplierCreating, setSupplierCreating] = useState(false);
   const [productCreating, setProductCreating] = useState(false);
@@ -343,7 +362,8 @@ export function usePurchaseForm(token, options = {}) {
     const form = new FormData();
     form.append("invoiceNumber", invoiceNumber || `NF-${Date.now()}`);
     form.append("items", JSON.stringify(payload));
-    for (const file of [...receipts, ...receiptExtras]) form.append("receipts", file);
+    const filesToUpload = await compressReceiptFiles([...receipts, ...receiptExtras]);
+    for (const file of filesToUpload) form.append("receipts", file);
     await api.post("/purchases", form, {
       headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
     });
@@ -357,20 +377,108 @@ export function usePurchaseForm(token, options = {}) {
     setTimeout(() => setToast(""), 2600);
   }, [token, items, supplierId, date, invoiceNumber, receipts, receiptExtras, onAfterConfirm]);
 
+  const clearAnalyzeProgressTimer = useCallback(() => {
+    if (analyzeProgressTimerRef.current) {
+      clearInterval(analyzeProgressTimerRef.current);
+      analyzeProgressTimerRef.current = null;
+    }
+  }, []);
+
+  const startAnalyzeProgressTimer = useCallback(() => {
+    clearAnalyzeProgressTimer();
+    analyzeProgressTimerRef.current = setInterval(() => {
+      setAiProgress((p) => (p < 88 ? p + 1 : p));
+    }, 1800);
+  }, [clearAnalyzeProgressTimer]);
+
   const parseReceiptsByAI = useCallback(
     async (opts = {}) => {
-      const { onSuccess } = opts;
+      const { onSuccess, isRetry = false } = opts;
       if (!receipts.length) return false;
       setAiLoading(true);
       setAiMissing([]);
+      setAiError("");
+      if (!isRetry) setAiRetryCount(0);
+
+      const t0 = performance.now();
+      let filesToSend = receipts;
+
       try {
-        const form = new FormData();
-        for (const file of receipts) form.append("receipts", file);
-        if (supplierId) form.append("supplierId", supplierId);
-        const { data } = await api.post("/purchases/receipt-ai-parse", form, {
-          headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" },
-          timeout: 300000
+        setAiStage("optimize");
+        setAiProgress(4);
+        setAiStatusMessage("A preparar a foto para envio (mantendo nitidez para a IA)…");
+
+        const originalBytes = receipts.reduce((s, f) => s + (f.size || 0), 0);
+        filesToSend = await compressReceiptFiles(receipts, {
+          onFileStart: ({ name, index, total }) => {
+            setAiStatusMessage(`Otimizando ${index + 1}/${total}: ${name}`);
+            setAiProgress(4 + Math.round(((index + 1) / total) * 12));
+          }
         });
+        const compressedBytes = filesToSend.reduce((s, f) => s + (f.size || 0), 0);
+        setAiProgress(18);
+        const saved =
+          compressedBytes < originalBytes
+            ? ` Enviando ${formatFileSize(compressedBytes)} em vez de ${formatFileSize(originalBytes)}.`
+            : "";
+        setAiStatusMessage(`Foto pronta.${saved}`);
+
+        const form = new FormData();
+        for (const file of filesToSend) form.append("receipts", file);
+        if (supplierId) form.append("supplierId", supplierId);
+
+        let lastErr = null;
+        let data = null;
+        for (let attempt = 0; attempt <= AI_MAX_RETRIES; attempt += 1) {
+          if (attempt > 0) {
+            setAiRetryCount(attempt);
+            setAiStatusMessage(`Nova tentativa (${attempt + 1}/${AI_MAX_RETRIES + 1})…`);
+            await sleep(1200 * attempt);
+          }
+          try {
+            setAiStage("upload");
+            setAiProgress(22);
+            setAiStatusMessage("A enviar para o servidor…");
+            setAiStage("analyze");
+            startAnalyzeProgressTimer();
+
+            const uploadStart = performance.now();
+            const res = await api.post("/purchases/receipt-ai-parse", form, {
+              headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" },
+              timeout: AI_REQUEST_TIMEOUT_MS,
+              onUploadProgress: (ev) => {
+                if (!ev.total) return;
+                const pct = 18 + Math.round((ev.loaded / ev.total) * 32);
+                setAiProgress(pct);
+                if (ev.loaded >= ev.total) {
+                  setAiStage("analyze");
+                  setAiStatusMessage("IA a analisar a nota…");
+                }
+              }
+            });
+            clearAnalyzeProgressTimer();
+            const uploadMs = Math.round(performance.now() - uploadStart);
+            console.info("[receipt-ai] cliente ok", {
+              uploadMs,
+              totalMs: Math.round(performance.now() - t0),
+              bytes: compressedBytes,
+              files: filesToSend.length
+            });
+            data = res.data;
+            lastErr = null;
+            break;
+          } catch (err) {
+            clearAnalyzeProgressTimer();
+            lastErr = err;
+            if (attempt < AI_MAX_RETRIES && isRetryableAiError(err)) continue;
+            throw err;
+          }
+        }
+        if (!data) throw lastErr || new Error("Falha ao analisar nota.");
+
+        setAiStage("extract");
+        setAiProgress(92);
+        setAiStatusMessage("A organizar produtos e valores…");
 
         const inv = invoiceNumberFromAi(data?.invoiceNumber);
         if (inv) setInvoiceNumber(inv);
@@ -439,6 +547,10 @@ export function usePurchaseForm(token, options = {}) {
           });
         }
 
+        setAiStage("finish");
+        setAiProgress(100);
+        setAiStatusMessage("Análise concluída.");
+
         if (!missingRows.length) {
           setToast("Leitura concluída. Revise os dados nas etapas e confirme ou ajuste o que precisar.");
           setTimeout(() => setToast(""), 3200);
@@ -448,27 +560,48 @@ export function usePurchaseForm(token, options = {}) {
         }
         return true;
       } catch (err) {
+        clearAnalyzeProgressTimer();
         const st = err?.response?.status;
         let msg = typeof err?.response?.data?.message === "string" ? err.response.data.message : "";
+        if (err?.message && !msg) msg = err.message;
         if (st === 413) {
           msg =
-            "O ficheiro é grande demais para o proxy (413). Use foto com menos resolução ou PDF mais leve. Após atualizar o servidor, o limite sobe (até ~25 MB).";
+            "O servidor recusou o tamanho do ficheiro (413). Tire outra foto com menos zoom ou tente de novo; fotos são otimizadas automaticamente.";
         }
         if (!msg && st === 504) {
-          msg = "O proxy encerrou por tempo (504). Tente ficheiro menor ou volte a tentar.";
+          msg = "O servidor demorou demais (504). Toque em «Tentar novamente» ou use uma foto mais leve.";
         }
         if (!msg && err?.code === "ECONNABORTED") {
-          msg = "Tempo esgotado ao analisar a nota. Tente ficheiro menor ou verifique a rede.";
+          msg = `Tempo esgotado (${AI_REQUEST_TIMEOUT_MS / 1000}s). Verifique a rede e use «Tentar novamente».`;
         }
-        setAiMissing([msg || "Não foi possível ler a nota com IA."]);
+        const finalMsg = msg || "Não foi possível ler a nota com IA.";
+        setAiError(finalMsg);
+        setAiMissing([finalMsg]);
         if (recordAiHighlights) setAiHighlightKeys(new Set());
+        console.warn("[receipt-ai] cliente falhou", {
+          status: st,
+          code: err?.code,
+          message: finalMsg,
+          ms: Math.round(performance.now() - t0)
+        });
         return false;
       } finally {
+        clearAnalyzeProgressTimer();
         setAiLoading(false);
+        setTimeout(() => {
+          setAiStage(null);
+          setAiProgress(0);
+          setAiStatusMessage("");
+        }, 400);
       }
     },
-    [token, receipts, recordAiHighlights, supplierId, unitOptions]
+    [token, receipts, recordAiHighlights, supplierId, unitOptions, clearAnalyzeProgressTimer, startAnalyzeProgressTimer]
   );
+
+  const retryAiParse = useCallback(() => {
+    setAiError("");
+    return parseReceiptsByAI({ isRetry: true });
+  }, [parseReceiptsByAI]);
 
   return {
     overview,
@@ -496,6 +629,11 @@ export function usePurchaseForm(token, options = {}) {
     toast,
     setToast,
     aiLoading,
+    aiStage,
+    aiProgress,
+    aiStatusMessage,
+    aiError,
+    aiRetryCount,
     aiMissing,
     total,
     addItem,
@@ -503,6 +641,7 @@ export function usePurchaseForm(token, options = {}) {
     removeItem,
     confirmPurchase,
     parseReceiptsByAI,
+    retryAiParse,
     aiHighlightKeys: recordAiHighlights ? aiHighlightKeys : null,
     clearAiHighlight,
     clearItemRowAiHighlight,
