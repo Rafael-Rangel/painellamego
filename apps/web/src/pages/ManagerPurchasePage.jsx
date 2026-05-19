@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaArrowRight, FaCheck, FaFileInvoice, FaShoppingBasket } from "react-icons/fa";
-import { MdAutoAwesome } from "react-icons/md";
 import AppShell from "../components/AppShell";
+import FilePickButton from "../components/ui/FilePickButton";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
 import CompactTable from "../components/ui/CompactTable";
@@ -152,31 +152,16 @@ export default function ManagerPurchasePage() {
                 </div>
                 <div className="field field-wizard">
                   <label>Fotos / PDF da nota (obrigatório — mínimo 1 arquivo)</label>
-                  <input
-                    className="wizard-file"
-                    type="file"
-                    accept=".jpg,.jpeg,.png,.pdf"
+                  <FilePickButton
+                    buttonText="Escolher arquivo(s) da nota"
                     multiple
-                    onChange={(e) => setReceipts(Array.from(e.target.files || []))}
+                    onFilesSelected={(files) => setReceipts(files)}
+                    helper={
+                      receipts.length
+                        ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
+                        : "Selecione uma ou várias imagens/PDF da nota. Sem anexo não é possível confirmar o lançamento."
+                    }
                   />
-                  <span className="field-helper">
-                    {receipts.length
-                      ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
-                      : "Selecione uma ou várias imagens/PDF da nota. Sem anexo não é possível confirmar o lançamento."}
-                  </span>
-                </div>
-                <div className="field field-wizard wizard-ai-actions">
-                  <label>&nbsp;</label>
-                  <div className="wizard-ai-btn-row">
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={() => navigate("/manager/new-purchase/ai")}
-                    >
-                      <MdAutoAwesome style={{ marginRight: "0.35rem" }} aria-hidden />
-                      Analisar com IA
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -360,18 +345,16 @@ export default function ManagerPurchasePage() {
                 </div>
                 <div className="field field-wizard">
                   <label>Arquivo da nota (obrigatório — mínimo 1 arquivo)</label>
-                  <input
-                    className="wizard-file"
-                    type="file"
-                    accept=".jpg,.jpeg,.png,.pdf"
+                  <FilePickButton
+                    buttonText="Escolher arquivo(s) da nota"
                     multiple
-                    onChange={(e) => setReceipts(Array.from(e.target.files || []))}
+                    onFilesSelected={(files) => setReceipts(files)}
+                    helper={
+                      receipts.length
+                        ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
+                        : "JPG, PNG ou PDF. Mínimo 1 arquivo obrigatório para confirmar."
+                    }
                   />
-                  <span className="field-helper">
-                    {receipts.length
-                      ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
-                      : "JPG, PNG ou PDF até 7 MB por arquivo. Mínimo 1 arquivo obrigatório para confirmar."}
-                  </span>
                 </div>
               </div>
             </div>

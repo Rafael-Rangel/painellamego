@@ -77,11 +77,12 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
         <p className="purchase-ai-dropzone-hint">Solte os ficheiros aqui</p>
         <button
           type="button"
-          className="btn btn-secondary purchase-ai-select-btn"
+          className="btn btn-secondary purchase-ai-select-btn file-pick-btn"
           disabled={disabled || analyzing}
           onClick={() => inputRef.current?.click()}
         >
-          Selecionar arquivo(s)
+          <FaFileAlt className="file-pick-btn-icon" aria-hidden />
+          <span>Selecionar arquivo(s)</span>
         </button>
         <input
           ref={inputRef}

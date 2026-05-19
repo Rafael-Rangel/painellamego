@@ -8,6 +8,7 @@ import ReceiptAiProgressPanel from "../components/purchase/ReceiptAiProgressPane
 import { formatFileSize } from "../lib/compressReceiptImages";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
+import FilePickButton from "../components/ui/FilePickButton";
 import SingleSelectInput from "../components/ui/SingleSelectInput";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import UnitSelect from "../components/ui/UnitSelect";
@@ -79,10 +80,8 @@ export default function ManagerPurchaseAiPage() {
   );
 
   const handleOptionalReceiptChange = useCallback(
-    (e) => {
-      const list = Array.from(e.target.files || []).filter(Boolean);
-      e.target.value = "";
-      if (!list.length) return;
+    (list) => {
+      if (!list?.length) return;
       appendReceiptExtras(list);
     },
     [appendReceiptExtras]
@@ -169,21 +168,21 @@ export default function ManagerPurchaseAiPage() {
           />
 
           <div className="card purchase-ai-optional-receipt">
-            <label className="purchase-ai-optional-label" htmlFor="purchase-ai-extra-receipt">
-              Anexo adicional (opcional)
-            </label>
+            <p className="purchase-ai-optional-label">Anexo adicional (opcional)</p>
             <p className="field-helper purchase-ai-optional-hint">
               Outros PDFs ou imagens que devam ficar no registro (ex.: verso, complemento). Não voltam a disparar a leitura por IA — para
-              analisar vários ficheiros de uma vez, use &quot;Selecionar arquivo(s)&quot; no cartão acima na mesma seleção.
+              analisar vários ficheiros de uma vez, use o botão no cartão acima na mesma seleção.
             </p>
-            <input
-              id="purchase-ai-extra-receipt"
-              type="file"
-              className="purchase-ai-input"
-              accept=".jpg,.jpeg,.png,.pdf"
+            <FilePickButton
+              buttonText="Adicionar anexo opcional"
               multiple
               disabled={!token || aiLoading}
-              onChange={handleOptionalReceiptChange}
+              onFilesSelected={handleOptionalReceiptChange}
+              helper={
+                receiptExtras.length
+                  ? `${receiptExtras.length} anexo(s) extra: ${receiptExtras.map((f) => f.name).join(", ")}`
+                  : "Nenhum anexo extra selecionado."
+              }
             />
             {receiptExtras.length > 0 ? (
               <ul className="purchase-ai-extra-list" aria-label="Anexos extras">
