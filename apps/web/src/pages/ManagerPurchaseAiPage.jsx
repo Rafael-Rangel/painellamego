@@ -174,6 +174,7 @@ export default function ManagerPurchaseAiPage() {
               analisar vários ficheiros de uma vez, use o botão no cartão acima na mesma seleção.
             </p>
             <FilePickButton
+              className="file-pick--full"
               buttonText="Adicionar anexo opcional"
               multiple
               disabled={!token || aiLoading}

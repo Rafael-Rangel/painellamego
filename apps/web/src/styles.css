@@ -1088,6 +1088,21 @@ img {
   line-height: 1.45;
 }
 
+.file-pick--full {
+  width: 100%;
+}
+
+.file-pick--full .file-pick-btn {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.85rem 1.25rem;
+  font-size: 1rem;
+}
+
+.file-pick--full .file-pick-btn-icon {
+  font-size: 1.2em;
+}
+
 .wizard-skip {
   margin-top: var(--space-3);
 }
@@ -2610,9 +2625,15 @@ tbody tr:last-child td {
 }
 
 .purchase-ai-optional-receipt {
+  width: 100%;
+  box-sizing: border-box;
   padding: var(--space-3);
   border: 1px dashed var(--neutral-300);
   background: var(--neutral-50, #fafafa);
+}
+
+.purchase-ai-optional-receipt .file-pick {
+  width: 100%;
 }
 
 .purchase-ai-optional-label {
