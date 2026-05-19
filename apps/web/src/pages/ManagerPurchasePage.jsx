@@ -6,6 +6,7 @@ import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
 import CompactTable from "../components/ui/CompactTable";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
+import UnitSelect from "../components/ui/UnitSelect";
 import { formatCurrency } from "../lib/formatters";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
 
@@ -27,6 +28,8 @@ export default function ManagerPurchasePage() {
     overview,
     suppliers,
     products,
+    unitOptions,
+    pickDraftProduct,
     date,
     setDate,
     supplierId,
@@ -191,19 +194,14 @@ export default function ManagerPurchasePage() {
                     placeholder="Digite para buscar ou adicionar…"
                     options={products.map((product) => ({ value: product.id, label: product.name }))}
                     value={draftItem.productId}
-                    onChange={(id) => {
-                      const product = products.find((p) => p.id === id);
-                      const suggestion = product?.type === "venda" ? "venda" : "insumo";
-                      setDraftItem({ ...draftItem, productId: id, lineType: suggestion });
-                    }}
+                    onChange={(id) => pickDraftProduct(id)}
                     allowCreate
                     createEntityLabel="produto"
                     createBusy={productCreating}
                     onCreateOption={async (q) => {
                       const data = await createProduct(q, draftItem.lineType);
                       if (!data) return;
-                      const suggestion = data.type === "venda" ? "venda" : "insumo";
-                      setDraftItem({ ...draftItem, productId: data.id, lineType: suggestion });
+                      pickDraftProduct(data.id);
                     }}
                   />
                   <div className="purchase-line-type-block purchase-line-type-block--nested">
@@ -243,12 +241,12 @@ export default function ManagerPurchasePage() {
                 </div>
                 <div className="field span-2 field-wizard">
                   <label>Unidade</label>
-                  <select value={draftItem.unitUsed} onChange={(e) => setDraftItem({ ...draftItem, unitUsed: e.target.value })}>
-                    <option value="kg">kg</option>
-                    <option value="un">un</option>
-                    <option value="cx">cx</option>
-                    <option value="L">L</option>
-                  </select>
+                  <UnitSelect
+                    value={draftItem.unitUsed}
+                    units={unitOptions}
+                    products={products}
+                    onChange={(e) => setDraftItem({ ...draftItem, unitUsed: e.target.value })}
+                  />
                 </div>
                 <div className="field span-2 field-wizard">
                   <label>Valor unitário (R$)</label>

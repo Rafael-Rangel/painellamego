@@ -6,6 +6,7 @@ import ReceiptAiDropzoneCard from "../components/purchase/ReceiptAiDropzoneCard"
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
+import UnitSelect from "../components/ui/UnitSelect";
 import { formatCurrency } from "../lib/formatters";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
 
@@ -22,6 +23,8 @@ export default function ManagerPurchaseAiPage() {
     overview,
     suppliers,
     products,
+    unitOptions,
+    pickDraftProduct,
     date,
     setDate,
     supplierId,
@@ -318,21 +321,16 @@ export default function ManagerPurchaseAiPage() {
                         </div>
                         <div className="field purchase-ai-field">
                           <label>Unidade</label>
-                          <select
+                          <UnitSelect
                             className="purchase-ai-input"
                             value={row.unitUsed}
+                            units={unitOptions}
+                            products={products}
                             onChange={(e) => {
                               clearItemRowAiHighlight(idx);
                               updateItem(idx, { unitUsed: e.target.value });
                             }}
-                          >
-                            <option value="kg">kg</option>
-                            <option value="un">un</option>
-                            <option value="cx">cx</option>
-                            <option value="L">L</option>
-                            <option value="g">g</option>
-                            <option value="ml">ml</option>
-                          </select>
+                          />
                         </div>
                         <div className="field purchase-ai-field">
                           <label>Valor unit. (R$)</label>
@@ -368,19 +366,14 @@ export default function ManagerPurchaseAiPage() {
                       placeholder="Buscar ou adicionar…"
                       options={products.map((p) => ({ value: p.id, label: p.name }))}
                       value={draftItem.productId}
-                      onChange={(id) => {
-                        const product = products.find((p) => p.id === id);
-                        const suggestion = product?.type === "venda" ? "venda" : "insumo";
-                        setDraftItem({ ...draftItem, productId: id, lineType: suggestion });
-                      }}
+                      onChange={(id) => pickDraftProduct(id)}
                       allowCreate
                       createEntityLabel="produto"
                       createBusy={productCreating}
                       onCreateOption={async (q) => {
                         const data = await createProduct(q, draftItem.lineType);
                         if (!data) return;
-                        const suggestion = data.type === "venda" ? "venda" : "insumo";
-                        setDraftItem({ ...draftItem, productId: data.id, lineType: suggestion });
+                        pickDraftProduct(data.id);
                       }}
                     />
                     <div className="purchase-ai-product-line-type">
@@ -420,16 +413,13 @@ export default function ManagerPurchaseAiPage() {
                   </div>
                   <div className="field purchase-ai-field">
                     <label>Unid.</label>
-                    <select
+                    <UnitSelect
                       className="purchase-ai-input"
                       value={draftItem.unitUsed}
+                      units={unitOptions}
+                      products={products}
                       onChange={(e) => setDraftItem({ ...draftItem, unitUsed: e.target.value })}
-                    >
-                      <option value="kg">kg</option>
-                      <option value="un">un</option>
-                      <option value="cx">cx</option>
-                      <option value="L">L</option>
-                    </select>
+                    />
                   </div>
                   <div className="field purchase-ai-field">
                     <label>Valor un.</label>

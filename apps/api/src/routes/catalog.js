@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { ensureMeasurementUnitExists, getActiveMeasurementUnits } from "../lib/measurementUnits.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
@@ -149,6 +150,15 @@ router.get("/categories", requireAuth, async (_req, res) => {
   return res.json(data);
 });
 
+router.get("/units", requireAuth, async (_req, res) => {
+  try {
+    const units = await getActiveMeasurementUnits(supabaseAdmin);
+    return res.json(units);
+  } catch (e) {
+    return res.status(400).json({ message: String(e?.message || e) });
+  }
+});
+
 router.post("/products", requireAuth, requireAdmin, async (req, res) => {
   const parsed = productSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
@@ -165,6 +175,7 @@ router.post("/products", requireAuth, requireAdmin, async (req, res) => {
     payload.needs_catalog_review = parsed.data.needsCatalogReview;
   }
   await ensureCategoryExists(parsed.data.category);
+  await ensureMeasurementUnitExists(supabaseAdmin, parsed.data.standardUnit);
   const { data, error } = await supabaseAdmin.from("products").insert(payload).select("*").single();
   if (error) return res.status(400).json({ message: error.message });
   await logAudit({ userId: req.user.id, action: "create", resource: "product", payload: { productId: data.id } });
@@ -186,6 +197,7 @@ router.put("/products/:id", requireAuth, requireAdmin, async (req, res) => {
     payload.needs_catalog_review = parsed.data.needsCatalogReview;
   }
 
+  await ensureMeasurementUnitExists(supabaseAdmin, parsed.data.standardUnit);
   const { data, error } = await supabaseAdmin.from("products").update(payload).eq("id", req.params.id).select("*").single();
   if (error) return res.status(400).json({ message: error.message });
   await logAudit({ userId: req.user.id, action: "update", resource: "product", payload: { productId: data.id } });

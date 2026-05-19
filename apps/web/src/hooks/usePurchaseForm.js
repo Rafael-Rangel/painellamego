@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, withAuth } from "../api";
+import { buildUnitOptions, normalizeUnitUsed } from "../lib/catalogUnits";
 
 function receiptFileKey(f) {
   return `${f?.name || ""}:${f?.size}:${f?.lastModified}`;
@@ -17,13 +18,7 @@ export function invoiceNumberFromAi(value) {
   return s || "";
 }
 
-function normalizeUnitUsedFromAi(unitUsed) {
-  const u = String(unitUsed || "").toLowerCase();
-  if (["kg", "un", "cx", "l", "g", "ml"].includes(u)) return u === "l" ? "L" : u;
-  return "un";
-}
-
-function buildItemRowFromAi(it, { singleLineInvoice }) {
+function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
   const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
   if (!it.productId || !Number.isFinite(priceNum) || priceNum <= 0) return null;
   let qty = it.quantity != null ? Number(it.quantity) : NaN;
@@ -34,14 +29,14 @@ function buildItemRowFromAi(it, { singleLineInvoice }) {
   return {
     productId: it.productId,
     quantity: String(qty),
-    unitUsed: normalizeUnitUsedFromAi(it.unitUsed),
+    unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
     unitPrice: String(priceNum),
     lineType: it.lineType === "venda" ? "venda" : "insumo"
   };
 }
 
 /** Linha para a lista mesmo sem produto no catálogo (preço obrigatório; qtd default 1 se inválida). */
-function buildItemRowFromAiPartial(it, { singleLineInvoice }) {
+function buildItemRowFromAiPartial(it, { singleLineInvoice, allowedUnits }) {
   const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
   if (!Number.isFinite(priceNum) || priceNum <= 0) return null;
   let qty = it.quantity != null ? Number(it.quantity) : NaN;
@@ -53,7 +48,7 @@ function buildItemRowFromAiPartial(it, { singleLineInvoice }) {
     productId: it.productId || "",
     aiRawProductName: raw || undefined,
     quantity: String(qty),
-    unitUsed: normalizeUnitUsedFromAi(it.unitUsed),
+    unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
     unitPrice: String(priceNum),
     lineType: it.lineType === "venda" ? "venda" : "insumo"
   };
@@ -70,6 +65,7 @@ export function usePurchaseForm(token, options = {}) {
   const [overview, setOverview] = useState(undefined);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [catalogUnits, setCatalogUnits] = useState([]);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [supplierId, setSupplierId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -96,13 +92,29 @@ export function usePurchaseForm(token, options = {}) {
     Promise.all([
       api.get("/catalog/suppliers", withAuth(token)),
       api.get("/catalog/products", withAuth(token)),
+      api.get("/catalog/units", withAuth(token)),
       api.get("/manager/overview", withAuth(token))
-    ]).then(([supRes, prodRes, ovRes]) => {
+    ]).then(([supRes, prodRes, unitsRes, ovRes]) => {
       setSuppliers(supRes.data?.length ? supRes.data : []);
       setProducts(prodRes.data?.length ? prodRes.data : []);
+      setCatalogUnits(Array.isArray(unitsRes.data) ? unitsRes.data : []);
       setOverview(ovRes.data ?? null);
     });
   }, [token]);
+
+  const unitOptions = useMemo(() => buildUnitOptions(catalogUnits, products), [catalogUnits, products]);
+
+  const pickDraftProduct = useCallback(
+    (productId) => {
+      const product = products.find((p) => p.id === productId);
+      setDraftItem((d) => {
+        const lineType = product?.type === "venda" ? "venda" : "insumo";
+        const unitUsed = product?.standard_unit ? normalizeUnitUsed(product.standard_unit, unitOptions) : d.unitUsed;
+        return { ...d, productId, lineType, unitUsed };
+      });
+    },
+    [products, unitOptions]
+  );
 
   const total = useMemo(
     () => items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0),
@@ -370,7 +382,11 @@ export function usePurchaseForm(token, options = {}) {
         const fromApi = data?.items || [];
         const singleLineInvoice = fromApi.length === 1;
         const mergedRows = fromApi
-          .map((row) => buildItemRowFromAi(row, { singleLineInvoice }) || buildItemRowFromAiPartial(row, { singleLineInvoice }))
+          .map(
+            (row) =>
+              buildItemRowFromAi(row, { singleLineInvoice, allowedUnits: unitOptions }) ||
+              buildItemRowFromAiPartial(row, { singleLineInvoice, allowedUnits: unitOptions })
+          )
           .filter(Boolean);
 
         const productStubs = fromApi
@@ -451,13 +467,16 @@ export function usePurchaseForm(token, options = {}) {
         setAiLoading(false);
       }
     },
-    [token, receipts, recordAiHighlights, supplierId]
+    [token, receipts, recordAiHighlights, supplierId, unitOptions]
   );
 
   return {
     overview,
     suppliers,
     products,
+    catalogUnits,
+    unitOptions,
+    pickDraftProduct,
     date,
     setDate,
     supplierId,

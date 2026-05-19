@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { getActiveMeasurementUnits, normalizeUnitUsed } from "../lib/measurementUnits.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { quickResolveOrCreateProduct } from "./productQuickCreateService.js";
@@ -230,7 +231,7 @@ async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, mo
   return payload;
 }
 
-function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx) {
+function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allowedUnits = []) {
   const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
   const rawItems = parsed?.items || [];
   const singleLine = rawItems.length === 1;
@@ -267,8 +268,12 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx) {
     if ((!Number.isFinite(qty) || qty <= 0) && singleLine && Number.isFinite(unitPrice) && unitPrice > 0) {
       qty = 1;
     }
-    const unitRaw = String(it?.unitUsed || "").toLowerCase();
-    const unitUsed = ["kg", "un", "cx", "l", "g", "ml"].includes(unitRaw) ? (unitRaw === "l" ? "L" : unitRaw) : "un";
+    let unitUsed = "un";
+    if (best?.standard_unit) {
+      unitUsed = normalizeUnitUsed(best.standard_unit, allowedUnits);
+    } else if (it?.unitUsed) {
+      unitUsed = normalizeUnitUsed(it.unitUsed, allowedUnits);
+    }
     const missing = [];
     if (!best || matchScore < MIN_PRODUCT_FUZZY) missing.push("produto");
     if (!Number.isFinite(qty) || qty <= 0) missing.push("quantidade");
@@ -359,6 +364,12 @@ export async function parseReceiptWithAI({
   const dataUrl = `data:${mimeType};base64,${base64}`;
   const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean), 150, 220);
   const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean), 120, 140);
+  let allowedUnits = [];
+  try {
+    allowedUnits = await getActiveMeasurementUnits(supabaseAdmin);
+  } catch {
+    allowedUnits = [];
+  }
 
   const prompt = [
     "Extraia dados desta nota fiscal brasileira e retorne SOMENTE JSON válido.",
@@ -375,7 +386,7 @@ export async function parseReceiptWithAI({
     '      "productName": "string",',
     '      "productNameNormalized": "string|null",',
     '      "quantity": number|null,',
-    '      "unitUsed": "kg|un|cx|L|g|ml|outro|null",',
+    '      "unitUsed": "unidade da nota (ex.: kg, un, cx, L, saco, fardo) ou null",',
     '      "unitPrice": number|null',
     "    }",
     "  ]",
@@ -387,7 +398,8 @@ export async function parseReceiptWithAI({
     "Se um item da nota for claramente o mesmo produto que um nome da lista de produtos cadastrados, copie EXATAMENTE esse nome da lista em productName (e o mesmo em productNameNormalized).",
     "Em nota de serviço com um único valor, pode haver um item com productName = descrição do serviço e unitPrice = valor do serviço; quantity pode ser null ou 1.",
     `Produtos cadastrados (reutilize um destes nomes quando for o mesmo produto): ${JSON.stringify(productNames)}`,
-    `Fornecedores cadastrados: ${JSON.stringify(supplierNames)}`
+    `Fornecedores cadastrados: ${JSON.stringify(supplierNames)}`,
+    `Unidades cadastradas na rede (prefira uma destas em unitUsed): ${JSON.stringify(allowedUnits)}`
   ].join("\n");
 
   const models = [config.openRouterModel];
@@ -434,7 +446,7 @@ export async function parseReceiptWithAI({
         }
       }
 
-      const mapped = mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx);
+      const mapped = mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allowedUnits);
       await finalizeReceiptItemsWithAutoProducts(mapped, {
         supplierIdHint: supplierIdForLearn,
         userId,

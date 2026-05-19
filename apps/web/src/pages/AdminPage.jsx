@@ -128,7 +128,7 @@ export default function AdminPage() {
     setLoading(true);
     setError("");
     try {
-      const [s, r, o, p, m, period, comparison, summary, catalogProductsRes, categoriesRes, catalogSuppliersRes, supplierAliasesRes, supplierAliasesPendingRes] =
+      const [s, r, o, p, m, period, comparison, summary, catalogProductsRes, categoriesRes, catalogUnitsRes, catalogSuppliersRes, supplierAliasesRes, supplierAliasesPendingRes] =
         await Promise.all([
         api.get("/catalog/stores", withAuth(token)),
         api.get("/dashboards/stores", withAuth(token)),
@@ -140,6 +140,7 @@ export default function AdminPage() {
         api.get(`/admin/dashboard/summary?${dashboardFilterQuery}`, withAuth(token)),
         api.get("/catalog/products", withAuth(token)),
         api.get("/catalog/categories", withAuth(token)),
+        api.get("/catalog/units", withAuth(token)),
         api.get("/catalog/suppliers", withAuth(token)),
         api.get("/catalog/supplier-product-aliases", withAuth(token)),
         api.get("/catalog/supplier-product-aliases?source=auto_pending", withAuth(token))
@@ -153,6 +154,7 @@ export default function AdminPage() {
       setProductComparisonRows(comparisonRows);
       setCatalogProducts(catalogProductsRes.data || []);
       setCategories(categoriesRes.data || []);
+      setCatalogUnits(Array.isArray(catalogUnitsRes.data) ? catalogUnitsRes.data : []);
       setSuppliersAll(catalogSuppliersRes.data || []);
       setSupplierAliases(supplierAliasesRes.data || []);
       setSupplierAliasesPending(supplierAliasesPendingRes.data || []);
@@ -672,11 +674,14 @@ export default function AdminPage() {
     return [...new Set([...fromTable, ...fromProducts])].sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [categories, catalogProducts]);
 
+  const [catalogUnits, setCatalogUnits] = useState([]);
+
   const unitOptions = useMemo(() => {
+    const fromApi = catalogUnits || [];
     const fromProducts = (catalogProducts || []).map((p) => p.standard_unit).filter(Boolean);
     const defaults = ["un", "kg", "g", "L", "ml", "cx", "pct", "fardo"];
-    return [...new Set([...defaults, ...fromProducts])];
-  }, [catalogProducts]);
+    return [...new Set([...defaults, ...fromApi, ...fromProducts])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [catalogProducts, catalogUnits]);
 
   const supplierComparisonTotals = useMemo(() => {
     const total = supplierComparisonRows.reduce((sum, r) => sum + Number(r.total_spent || 0), 0);
