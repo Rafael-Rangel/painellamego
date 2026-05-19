@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
-import { FaCloudUploadAlt, FaFileAlt, FaRobot } from "react-icons/fa";
+import { FaCloudUploadAlt, FaFileAlt } from "react-icons/fa";
+import { MdAutoAwesome } from "react-icons/md";
 
 const ACCEPT = ".jpg,.jpeg,.png,.pdf";
 
@@ -40,7 +41,7 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
     <div className={`purchase-ai-upload-card card ${analyzing ? "purchase-ai-upload-card-analyzing" : ""}`}>
       <div className="purchase-ai-upload-head">
         <span className="purchase-ai-upload-icon" aria-hidden>
-          <FaRobot />
+          <MdAutoAwesome aria-hidden />
         </span>
         <div>
           <h3 className="purchase-ai-upload-title">Analisar com IA</h3>

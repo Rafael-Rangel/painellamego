@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaArrowLeft, FaPlus, FaRobot, FaStore, FaTimes, FaTrash } from "react-icons/fa";
+import { FaArrowLeft, FaPlus, FaStore, FaTimes, FaTrash } from "react-icons/fa";
+import { MdAutoAwesome } from "react-icons/md";
 import AppShell from "../components/AppShell";
 import ReceiptAiDropzoneCard from "../components/purchase/ReceiptAiDropzoneCard";
 import ReceiptAiProgressPanel from "../components/purchase/ReceiptAiProgressPanel";
 import { formatFileSize } from "../lib/compressReceiptImages";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
+import SingleSelectInput from "../components/ui/SingleSelectInput";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import UnitSelect from "../components/ui/UnitSelect";
 import { formatCurrency } from "../lib/formatters";
@@ -26,6 +28,7 @@ export default function ManagerPurchaseAiPage() {
     suppliers,
     products,
     unitOptions,
+    categoryOptions,
     pickDraftProduct,
     date,
     setDate,
@@ -261,10 +264,12 @@ export default function ManagerPurchaseAiPage() {
 
             <section className="card purchase-ai-section">
               <h3 className="purchase-ai-section-title">
-                <FaRobot className="purchase-ai-section-icon" aria-hidden />
+                <MdAutoAwesome className="purchase-ai-section-icon" aria-hidden />
                 Itens da nota
               </h3>
-              <p className="purchase-ai-section-desc">Cada linha corresponde a um produto. Edite ou complete o que a IA não tiver identificado.</p>
+              <p className="purchase-ai-section-desc">
+                Cada linha corresponde a um produto. Confirme a categoria e complete o que a IA não tiver identificado.
+              </p>
 
               {items.length === 0 ? (
                 <p className="purchase-ai-empty-items">Nenhum item ainda. Após a análise da nota, as linhas aparecem aqui; pode também adicionar linhas manualmente.</p>
@@ -283,22 +288,38 @@ export default function ManagerPurchaseAiPage() {
                               clearItemRowAiHighlight(idx);
                               const product = products.find((p) => p.id === id);
                               const suggestion = product?.type === "venda" ? "venda" : "insumo";
-                              updateItem(idx, { productId: id, lineType: suggestion, aiRawProductName: undefined });
+                              updateItem(idx, {
+                                productId: id,
+                                lineType: suggestion,
+                                category: product?.category ? String(product.category) : row.category,
+                                aiRawProductName: undefined
+                              });
                             }}
                             allowCreate
                             createEntityLabel="produto"
                             createBusy={productCreating}
                             onCreateOption={async (q) => {
-                              const data = await createProduct(q, row.lineType);
+                              const data = await createProduct(q, row.lineType, row.category);
                               if (!data) return;
                               const suggestion = data.type === "venda" ? "venda" : "insumo";
                               updateItem(idx, {
                                 productId: data.id,
                                 lineType: suggestion,
+                                category: data.category ? String(data.category) : row.category,
                                 aiRawProductName: undefined
                               });
                             }}
                             inputClassName="purchase-ai-input"
+                          />
+                          <SingleSelectInput
+                            label="Categoria"
+                            placeholder="Digite para buscar ou criar…"
+                            options={categoryOptions}
+                            value={row.category || ""}
+                            onChange={(next) => {
+                              clearItemRowAiHighlight(idx);
+                              updateItem(idx, { category: next });
+                            }}
                           />
                           <div className="purchase-ai-product-line-type">
                             <span className="purchase-ai-mini-label">Insumo ou venda (esta linha)</span>
@@ -396,10 +417,17 @@ export default function ManagerPurchaseAiPage() {
                       createEntityLabel="produto"
                       createBusy={productCreating}
                       onCreateOption={async (q) => {
-                        const data = await createProduct(q, draftItem.lineType);
+                        const data = await createProduct(q, draftItem.lineType, draftItem.category);
                         if (!data) return;
                         pickDraftProduct(data.id);
                       }}
+                    />
+                    <SingleSelectInput
+                      label="Categoria"
+                      placeholder="Digite para buscar ou criar…"
+                      options={categoryOptions}
+                      value={draftItem.category}
+                      onChange={(next) => setDraftItem({ ...draftItem, category: next })}
                     />
                     <div className="purchase-ai-product-line-type">
                       <span className="purchase-ai-mini-label">Insumo ou venda (esta linha)</span>

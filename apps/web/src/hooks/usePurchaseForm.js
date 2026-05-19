@@ -31,6 +31,26 @@ export function invoiceNumberFromAi(value) {
   return s || "";
 }
 
+export function resolveItemCategory(row, productList) {
+  const explicit = String(row?.category || "").trim();
+  if (explicit.length >= 2) return explicit;
+  if (row?.productId) {
+    const p = (productList || []).find((x) => x.id === row.productId);
+    const fromProduct = String(p?.category || "").trim();
+    if (fromProduct.length >= 2) return fromProduct;
+  }
+  return "";
+}
+
+const EMPTY_DRAFT_ITEM = {
+  productId: "",
+  category: "",
+  quantity: "",
+  unitUsed: "kg",
+  unitPrice: "",
+  lineType: "insumo"
+};
+
 function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
   const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
   if (!it.productId || !Number.isFinite(priceNum) || priceNum <= 0) return null;
@@ -41,6 +61,7 @@ function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
   }
   return {
     productId: it.productId,
+    category: String(it.category || "").trim(),
     quantity: String(qty),
     unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
     unitPrice: String(priceNum),
@@ -59,6 +80,7 @@ function buildItemRowFromAiPartial(it, { singleLineInvoice, allowedUnits }) {
   const raw = String(it.rawProductName || it.productName || "").trim();
   return {
     productId: it.productId || "",
+    category: String(it.category || "").trim(),
     aiRawProductName: raw || undefined,
     quantity: String(qty),
     unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
@@ -78,6 +100,7 @@ export function usePurchaseForm(token, options = {}) {
   const [overview, setOverview] = useState(undefined);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [catalogUnits, setCatalogUnits] = useState([]);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [supplierId, setSupplierId] = useState("");
@@ -86,13 +109,7 @@ export function usePurchaseForm(token, options = {}) {
   /** Anexos adicionais só no envio final (não disparam nova leitura por IA). Usado na página Compra com IA. */
   const [receiptExtras, setReceiptExtras] = useState([]);
   const [items, setItems] = useState([]);
-  const [draftItem, setDraftItem] = useState({
-    productId: "",
-    quantity: "",
-    unitUsed: "kg",
-    unitPrice: "",
-    lineType: "insumo"
-  });
+  const [draftItem, setDraftItem] = useState({ ...EMPTY_DRAFT_ITEM });
   const [toast, setToast] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiStage, setAiStage] = useState(null);
@@ -111,11 +128,13 @@ export function usePurchaseForm(token, options = {}) {
     Promise.all([
       api.get("/catalog/suppliers", withAuth(token)),
       api.get("/catalog/products", withAuth(token)),
+      api.get("/catalog/categories", withAuth(token)),
       api.get("/catalog/units", withAuth(token)),
       api.get("/manager/overview", withAuth(token))
-    ]).then(([supRes, prodRes, unitsRes, ovRes]) => {
+    ]).then(([supRes, prodRes, catRes, unitsRes, ovRes]) => {
       setSuppliers(supRes.data?.length ? supRes.data : []);
       setProducts(prodRes.data?.length ? prodRes.data : []);
+      setCategories(Array.isArray(catRes.data) ? catRes.data : []);
       setCatalogUnits(Array.isArray(unitsRes.data) ? unitsRes.data : []);
       setOverview(ovRes.data ?? null);
     });
@@ -123,13 +142,20 @@ export function usePurchaseForm(token, options = {}) {
 
   const unitOptions = useMemo(() => buildUnitOptions(catalogUnits, products), [catalogUnits, products]);
 
+  const categoryOptions = useMemo(() => {
+    const fromTable = (categories || []).map((c) => c.name).filter(Boolean);
+    const fromProducts = (products || []).map((p) => p.category).filter(Boolean);
+    return [...new Set([...fromTable, ...fromProducts])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [categories, products]);
+
   const pickDraftProduct = useCallback(
     (productId) => {
       const product = products.find((p) => p.id === productId);
       setDraftItem((d) => {
         const lineType = product?.type === "venda" ? "venda" : "insumo";
         const unitUsed = product?.standard_unit ? normalizeUnitUsed(product.standard_unit, unitOptions) : d.unitUsed;
-        return { ...d, productId, lineType, unitUsed };
+        const category = product?.category ? String(product.category) : d.category;
+        return { ...d, productId, lineType, unitUsed, category };
       });
     },
     [products, unitOptions]
@@ -142,11 +168,21 @@ export function usePurchaseForm(token, options = {}) {
 
   const addItem = useCallback(() => {
     setDraftItem((d) => {
-      if (!d.productId || !d.quantity || !d.unitPrice) return d;
-      setItems((prev) => [...prev, { ...d }]);
-      return { productId: "", quantity: "", unitUsed: "kg", unitPrice: "", lineType: "insumo" };
+      const category = resolveItemCategory(d, products);
+      if (!d.productId || !d.quantity || !d.unitPrice) {
+        setToast("Preencha produto, quantidade e valor unitário.");
+        setTimeout(() => setToast(""), 3200);
+        return d;
+      }
+      if (!category) {
+        setToast("Informe a categoria do item.");
+        setTimeout(() => setToast(""), 3200);
+        return d;
+      }
+      setItems((prev) => [...prev, { ...d, category }]);
+      return { ...EMPTY_DRAFT_ITEM };
     });
-  }, []);
+  }, [products]);
 
   const updateItem = useCallback((index, patch) => {
     setItems((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -225,10 +261,16 @@ export function usePurchaseForm(token, options = {}) {
   }, []);
 
   const createProduct = useCallback(
-    async (name, lineTypeOpt) => {
+    async (name, lineTypeOpt, categoryOpt) => {
       const trimmed = String(name || "").trim();
       if (trimmed.length < 2) {
         setToast("O nome do produto deve ter pelo menos 2 caracteres.");
+        setTimeout(() => setToast(""), 3200);
+        return null;
+      }
+      const category = String(categoryOpt || "").trim();
+      if (category.length < 2) {
+        setToast("Selecione a categoria antes de criar o produto.");
         setTimeout(() => setToast(""), 3200);
         return null;
       }
@@ -240,6 +282,7 @@ export function usePurchaseForm(token, options = {}) {
           {
             name: trimmed,
             type: lineType,
+            category,
             ...(supplierId ? { supplierId } : {})
           },
           withAuth(token)
@@ -317,7 +360,16 @@ export function usePurchaseForm(token, options = {}) {
     const workItems = [...items];
     for (let i = 0; i < workItems.length; i += 1) {
       const row = workItems[i];
-      if (row.productId) continue;
+      const category = resolveItemCategory(row, products);
+      if (!category) {
+        setToast("Informe a categoria em todas as linhas antes de confirmar.");
+        setTimeout(() => setToast(""), 4500);
+        return;
+      }
+      if (row.productId) {
+        workItems[i] = { ...row, category };
+        continue;
+      }
       const label = String(row.aiRawProductName || "").trim();
       if (!label) {
         setToast("Cada linha precisa de um produto do catálogo ou do texto da nota para criar o item automaticamente.");
@@ -330,6 +382,7 @@ export function usePurchaseForm(token, options = {}) {
           {
             name: label,
             type: row.lineType === "venda" ? "venda" : "insumo",
+            category,
             ...(supplierId ? { supplierId } : {})
           },
           withAuth(token)
@@ -375,7 +428,7 @@ export function usePurchaseForm(token, options = {}) {
     setAiHighlightKeys(new Set());
     onAfterConfirm?.();
     setTimeout(() => setToast(""), 2600);
-  }, [token, items, supplierId, date, invoiceNumber, receipts, receiptExtras, onAfterConfirm]);
+  }, [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, onAfterConfirm]);
 
   const clearAnalyzeProgressTimer = useCallback(() => {
     if (analyzeProgressTimerRef.current) {
@@ -490,11 +543,19 @@ export function usePurchaseForm(token, options = {}) {
         const fromApi = data?.items || [];
         const singleLineInvoice = fromApi.length === 1;
         const mergedRows = fromApi
-          .map(
-            (row) =>
+          .map((row, idx, all) => {
+            const built =
               buildItemRowFromAi(row, { singleLineInvoice, allowedUnits: unitOptions }) ||
-              buildItemRowFromAiPartial(row, { singleLineInvoice, allowedUnits: unitOptions })
-          )
+              buildItemRowFromAiPartial(row, { singleLineInvoice, allowedUnits: unitOptions });
+            if (!built) return null;
+            const apiRow = all[idx];
+            const category =
+              String(built.category || apiRow?.category || "").trim() ||
+              (built.productId
+                ? String(products.find((p) => p.id === built.productId)?.category || "").trim()
+                : "");
+            return { ...built, category };
+          })
           .filter(Boolean);
 
         const productStubs = fromApi
@@ -502,6 +563,7 @@ export function usePurchaseForm(token, options = {}) {
           .map((row) => ({
             id: row.productId,
             name: row.productName,
+            category: row.category || null,
             type: row.lineType === "venda" ? "venda" : "insumo"
           }));
         if (productStubs.length) {
@@ -519,7 +581,7 @@ export function usePurchaseForm(token, options = {}) {
 
         if (fromApi.length) {
           setItems(mergedRows);
-          setDraftItem({ productId: "", quantity: "", unitUsed: "un", unitPrice: "", lineType: "insumo" });
+          setDraftItem({ ...EMPTY_DRAFT_ITEM, unitUsed: "un" });
         }
 
         const missingRows = [];
@@ -595,7 +657,7 @@ export function usePurchaseForm(token, options = {}) {
         }, 400);
       }
     },
-    [token, receipts, recordAiHighlights, supplierId, unitOptions, clearAnalyzeProgressTimer, startAnalyzeProgressTimer]
+    [token, receipts, products, recordAiHighlights, supplierId, unitOptions, clearAnalyzeProgressTimer, startAnalyzeProgressTimer]
   );
 
   const retryAiParse = useCallback(() => {
@@ -609,6 +671,7 @@ export function usePurchaseForm(token, options = {}) {
     products,
     catalogUnits,
     unitOptions,
+    categoryOptions,
     pickDraftProduct,
     date,
     setDate,

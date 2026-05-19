@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaArrowLeft, FaArrowRight, FaCheck, FaFileInvoice, FaRobot, FaShoppingBasket } from "react-icons/fa";
+import { FaArrowLeft, FaArrowRight, FaCheck, FaFileInvoice, FaShoppingBasket } from "react-icons/fa";
+import { MdAutoAwesome } from "react-icons/md";
 import AppShell from "../components/AppShell";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
 import CompactTable from "../components/ui/CompactTable";
+import SingleSelectInput from "../components/ui/SingleSelectInput";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import UnitSelect from "../components/ui/UnitSelect";
 import { formatCurrency } from "../lib/formatters";
@@ -29,6 +31,7 @@ export default function ManagerPurchasePage() {
     suppliers,
     products,
     unitOptions,
+    categoryOptions,
     pickDraftProduct,
     date,
     setDate,
@@ -170,7 +173,7 @@ export default function ManagerPurchasePage() {
                       type="button"
                       onClick={() => navigate("/manager/new-purchase/ai")}
                     >
-                      <FaRobot style={{ marginRight: "0.35rem" }} />
+                      <MdAutoAwesome style={{ marginRight: "0.35rem" }} aria-hidden />
                       Analisar com IA
                     </button>
                   </div>
@@ -185,7 +188,7 @@ export default function ManagerPurchasePage() {
                 <FaShoppingBasket />
               </div>
               <h3 className="wizard-panel-title">Itens da nota fiscal</h3>
-              <p className="wizard-panel-desc">Busque o produto, informe quantidade e valor. Marque se a linha é insumo ou venda.</p>
+              <p className="wizard-panel-desc">Busque o produto, escolha a categoria, informe quantidade e valor. Marque se a linha é insumo ou venda.</p>
 
               <div className="grid wizard-item-grid">
                 <div className="span-5 wizard-product-col wizard-product-card">
@@ -199,10 +202,17 @@ export default function ManagerPurchasePage() {
                     createEntityLabel="produto"
                     createBusy={productCreating}
                     onCreateOption={async (q) => {
-                      const data = await createProduct(q, draftItem.lineType);
+                      const data = await createProduct(q, draftItem.lineType, draftItem.category);
                       if (!data) return;
                       pickDraftProduct(data.id);
                     }}
+                  />
+                  <SingleSelectInput
+                    label="Categoria"
+                    placeholder="Digite para buscar ou criar…"
+                    options={categoryOptions}
+                    value={draftItem.category}
+                    onChange={(next) => setDraftItem({ ...draftItem, category: next })}
                   />
                   <div className="purchase-line-type-block purchase-line-type-block--nested">
                     <span className="purchase-line-type-label">Esta linha é insumo ou venda?</span>
@@ -273,6 +283,18 @@ export default function ManagerPurchasePage() {
                     label: "Produto",
                     getTitle: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "",
                     render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "—"
+                  },
+                  {
+                    id: "category",
+                    label: "Categoria",
+                    render: (item, idx) => (
+                      <SingleSelectInput
+                        placeholder="Categoria…"
+                        options={categoryOptions}
+                        value={item.category || ""}
+                        onChange={(next) => updateItem(idx, { category: next })}
+                      />
+                    )
                   },
                   {
                     id: "lineType",
@@ -402,7 +424,9 @@ export default function ManagerPurchasePage() {
                   <li key={`${item.productId || "pending"}-${idx}`}>
                     <strong>{products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || item.productId || "—"}</strong>
                     <span className="wizard-review-meta">
-                      {item.lineType === "venda" ? "Venda" : "Insumo"} · {item.quantity} {item.unitUsed} × {formatCurrency(item.unitPrice)}
+                      {item.category || products.find((p) => p.id === item.productId)?.category || "—"} ·{" "}
+                      {item.lineType === "venda" ? "Venda" : "Insumo"} · {item.quantity} {item.unitUsed} ×{" "}
+                      {formatCurrency(item.unitPrice)}
                     </span>
                   </li>
                 ))}

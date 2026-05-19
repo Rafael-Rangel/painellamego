@@ -115,6 +115,7 @@ router.post("/products/merge", requireAuth, requireAdmin, async (req, res) => {
 const productQuickSchema = z.object({
   name: z.string().min(2).max(400),
   type: z.enum(["insumo", "venda"]).optional(),
+  category: z.string().min(2).max(120).optional(),
   supplierId: z.string().uuid().optional()
 });
 
@@ -128,6 +129,7 @@ router.post("/products/quick", requireAuth, async (req, res) => {
     const { product, reused, resolvedVia } = await quickResolveOrCreateProduct({
       displayName: parsed.data.name,
       lineType: parsed.data.type ?? "insumo",
+      category: parsed.data.category,
       supplierId: parsed.data.supplierId || null,
       createdBy,
       userIdForAudit: req.user.id,

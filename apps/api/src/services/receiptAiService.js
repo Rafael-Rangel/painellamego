@@ -2,7 +2,6 @@ import { config } from "../config.js";
 import { getActiveMeasurementUnits, normalizeUnitUsed } from "../lib/measurementUnits.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 import { supabaseAdmin } from "../lib/supabase.js";
-import { quickResolveOrCreateProduct } from "./productQuickCreateService.js";
 import {
   AUTO_ALIAS_MIN_SCORE,
   MIN_PRODUCT_FUZZY,
@@ -282,6 +281,7 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
       rawProductName: it?.productName || null,
       productId: best?.id || null,
       productName: best?.name || null,
+      category: best?.category || null,
       quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
       unitUsed,
       unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : null,
@@ -314,37 +314,8 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
   };
 }
 
-/**
- * Garante productId em cada linha com rótulo + preço válidos (criação automática em "Outros" se necessário).
- */
-async function finalizeReceiptItemsWithAutoProducts(mapped, { supplierIdHint, userId, matchCtx }) {
-  const items = mapped?.items || [];
-  for (let i = 0; i < items.length; i += 1) {
-    const row = items[i];
-    if (row.productId) continue;
-    const label = String(row.rawProductName || "").trim();
-    const unitPrice = row.unitPrice;
-    if (!label || unitPrice == null || !Number.isFinite(Number(unitPrice)) || Number(unitPrice) <= 0) continue;
-    try {
-      const { product, reused, resolvedVia } = await quickResolveOrCreateProduct({
-        displayName: label,
-        lineType: row.lineType === "venda" ? "venda" : "insumo",
-        supplierId: supplierIdHint || null,
-        createdBy: "ai_auto",
-        userIdForAudit: userId || null,
-        needsCatalogReview: true,
-        resolveCtx: matchCtx
-      });
-      row.productId = product.id;
-      row.productName = product.name;
-      row.lineType = product.type === "venda" ? "venda" : "insumo";
-      row.autoCreated = Boolean(!reused && resolvedVia === "created");
-      row.resolvedVia = resolvedVia;
-      row.missing = (row.missing || []).filter((m) => m !== "produto");
-    } catch {
-      /* mantém missing produto */
-    }
-  }
+/** Mantém linhas sem produto no catálogo para o gerente escolher categoria antes de confirmar. */
+async function finalizeReceiptItemsWithAutoProducts(mapped) {
   return mapped;
 }
 
@@ -451,11 +422,7 @@ export async function parseReceiptWithAI({
       }
 
       const mapped = mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allowedUnits);
-      await finalizeReceiptItemsWithAutoProducts(mapped, {
-        supplierIdHint: supplierIdForLearn,
-        userId,
-        matchCtx
-      });
+      await finalizeReceiptItemsWithAutoProducts(mapped);
 
       if (supplierIdForLearn && mapped._itemMatchMeta?.length) {
         const tasks = [];

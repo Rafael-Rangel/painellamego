@@ -42,6 +42,7 @@ async function ensureCategoryExists(categoryName) {
  * @param {object} opts
  * @param {string} opts.displayName
  * @param {'insumo'|'venda'} [opts.lineType]
+ * @param {string} [opts.category] — categoria do catálogo; padrão "Outros"
  * @param {string|null} [opts.supplierId]
  * @param {'admin'|'manager'|'ai_auto'} opts.createdBy
  * @param {string|null} [opts.userIdForAudit]
@@ -56,6 +57,8 @@ export async function quickResolveOrCreateProduct(opts) {
   const keyStrong = normalizeProductNameKey(displayName);
   const keyLegacy = displayName.toLowerCase();
   const lineType = opts.lineType ?? "insumo";
+  const categoryName =
+    String(opts.category || QUICK_PRODUCT_CATEGORY).trim() || QUICK_PRODUCT_CATEGORY;
   const supplierIdQuick = opts.supplierId || null;
   const createdBy = opts.createdBy;
   const needsCatalogReview = Boolean(opts.needsCatalogReview);
@@ -125,7 +128,7 @@ export async function quickResolveOrCreateProduct(opts) {
   const { data: byStrong, error: e1 } = await supabaseAdmin
     .from("products")
     .select("*")
-    .eq("category", QUICK_PRODUCT_CATEGORY)
+    .eq("category", categoryName)
     .eq("normalized_name", keyStrong)
     .maybeSingle();
   if (e1) throw new Error(e1.message);
@@ -134,7 +137,7 @@ export async function quickResolveOrCreateProduct(opts) {
   const { data: byLegacy, error: e2 } = await supabaseAdmin
     .from("products")
     .select("*")
-    .eq("category", QUICK_PRODUCT_CATEGORY)
+    .eq("category", categoryName)
     .eq("normalized_name", keyLegacy)
     .maybeSingle();
   if (e2) throw new Error(e2.message);
@@ -143,20 +146,20 @@ export async function quickResolveOrCreateProduct(opts) {
   const { data: outrosRows, error: e3 } = await supabaseAdmin
     .from("products")
     .select("*")
-    .eq("category", QUICK_PRODUCT_CATEGORY)
+    .eq("category", categoryName)
     .limit(3000);
   if (e3) throw new Error(e3.message);
   const sameKey = (outrosRows || []).find((p) => p.is_active !== false && normalizeProductNameKey(p.name) === keyStrong);
   if (sameKey) return { product: sameKey, reused: true, resolvedVia: "db_scan" };
 
-  await ensureCategoryExists(QUICK_PRODUCT_CATEGORY);
-  const catCode = toCategoryCode(QUICK_PRODUCT_CATEGORY);
+  await ensureCategoryExists(categoryName);
+  const catCode = toCategoryCode(categoryName);
   const { data: catRow } = await supabaseAdmin.from("categories").select("id").eq("code", catCode).maybeSingle();
 
   const insertPayload = {
     name: displayName,
     normalized_name: keyStrong,
-    category: QUICK_PRODUCT_CATEGORY,
+    category: categoryName,
     type: lineType,
     standard_unit: "un",
     is_active: true,
@@ -172,7 +175,7 @@ export async function quickResolveOrCreateProduct(opts) {
       const { data: again } = await supabaseAdmin
         .from("products")
         .select("*")
-        .eq("category", QUICK_PRODUCT_CATEGORY)
+        .eq("category", categoryName)
         .eq("normalized_name", keyStrong)
         .maybeSingle();
       if (again) return { product: again, reused: true, resolvedVia: "race_dedupe" };
