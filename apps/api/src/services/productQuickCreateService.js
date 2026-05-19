@@ -61,7 +61,9 @@ export async function quickResolveOrCreateProduct(opts) {
     String(opts.category || QUICK_PRODUCT_CATEGORY).trim() || QUICK_PRODUCT_CATEGORY;
   const supplierIdQuick = opts.supplierId || null;
   const createdBy = opts.createdBy;
-  const needsCatalogReview = Boolean(opts.needsCatalogReview);
+  const needsCatalogReview =
+    opts.needsCatalogReview === true ||
+    (opts.needsCatalogReview !== false && (opts.createdBy === "manager" || opts.createdBy === "ai_auto"));
   const userIdForAudit = opts.userIdForAudit || null;
 
   const { data: allProducts, error: pAllErr } = await supabaseAdmin.from("products").select("*").eq("is_active", true);

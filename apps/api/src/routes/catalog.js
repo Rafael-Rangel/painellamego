@@ -133,7 +133,7 @@ router.post("/products/quick", requireAuth, async (req, res) => {
       supplierId: parsed.data.supplierId || null,
       createdBy,
       userIdForAudit: req.user.id,
-      needsCatalogReview: false
+      needsCatalogReview: createdBy === "manager"
     });
     const status = reused ? 200 : 201;
     return res.status(status).json({ ...product, reused, resolvedVia });

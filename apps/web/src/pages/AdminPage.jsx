@@ -28,6 +28,7 @@ import SingleSelectInput from "../components/ui/SingleSelectInput";
 import TableToolbar from "../components/ui/TableToolbar";
 import { formatCurrency } from "../lib/formatters";
 import { supabase } from "../supabase";
+import CatalogReviewTab from "../components/admin/CatalogReviewTab";
 import RankingComparisonTab from "../components/admin/RankingComparisonTab";
 
 /** Limite de linhas na tabela do Mapa de oportunidades (sem controle na UI). */
@@ -99,10 +100,6 @@ export default function AdminPage() {
   const [toast, setToast] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
   const [supplierRowsLimit, setSupplierRowsLimit] = useState(10);
-  const [catalogReviewProducts, setCatalogReviewProducts] = useState([]);
-  const [mergeCanonicalId, setMergeCanonicalId] = useState("");
-  const [mergeSelectedIds, setMergeSelectedIds] = useState(() => new Set());
-  const [mergeBusy, setMergeBusy] = useState(false);
   const [supplierFilter, setSupplierFilter] = useState([]);
   const [activeStoreId, setActiveStoreId] = useState([]);
   const [activeProductId, setActiveProductId] = useState([]);
@@ -181,78 +178,6 @@ export default function AdminPage() {
     }
   }
 
-  async function loadCatalogReview() {
-    if (!token) return;
-    try {
-      const { data } = await api.get("/catalog/products/pending-catalog-review", withAuth(token));
-      setCatalogReviewProducts(Array.isArray(data) ? data : []);
-    } catch {
-      setCatalogReviewProducts([]);
-    }
-  }
-
-  function toggleMergeSelect(productId) {
-    setMergeSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(productId)) next.delete(productId);
-      else next.add(productId);
-      return next;
-    });
-  }
-
-  async function markProductCatalogReviewed(row) {
-    try {
-      await api.put(
-        `/catalog/products/${row.id}`,
-        {
-          name: row.name,
-          category: row.category,
-          type: row.type,
-          standardUnit: row.standard_unit || "un",
-          needsCatalogReview: false
-        },
-        withAuth(token)
-      );
-      setToast("Produto marcado como revisto.");
-      setTimeout(() => setToast(""), 2200);
-      await loadCatalogReview();
-      await loadAll();
-    } catch (err) {
-      const msg = err?.response?.data?.message || "Erro ao atualizar.";
-      setToast(typeof msg === "string" ? msg : "Erro ao atualizar.");
-      setTimeout(() => setToast(""), 4000);
-    }
-  }
-
-  async function submitProductMerge() {
-    const mergeIds = [...mergeSelectedIds].filter((id) => id && id !== mergeCanonicalId);
-    if (!mergeCanonicalId || mergeIds.length < 1) {
-      setToast("Seleccione o produto canónico e pelo menos uma linha a fundir.");
-      setTimeout(() => setToast(""), 3500);
-      return;
-    }
-    setMergeBusy(true);
-    try {
-      await api.post(
-        "/catalog/products/merge",
-        { canonicalProductId: mergeCanonicalId, mergeProductIds: mergeIds },
-        withAuth(token)
-      );
-      setToast("Produtos fundidos com sucesso.");
-      setMergeSelectedIds(new Set());
-      setMergeCanonicalId("");
-      setTimeout(() => setToast(""), 2800);
-      await loadCatalogReview();
-      await loadAll();
-    } catch (err) {
-      const msg = err?.response?.data?.message || "Fusão falhou.";
-      setToast(typeof msg === "string" ? msg : "Fusão falhou.");
-      setTimeout(() => setToast(""), 4500);
-    } finally {
-      setMergeBusy(false);
-    }
-  }
-
   useEffect(() => {
     if (!token) return;
     loadAll();
@@ -264,11 +189,6 @@ export default function AdminPage() {
       setShowInvitePasswordConfirm(false);
     }
   }, [showInviteModal]);
-
-  useEffect(() => {
-    if (tab !== "catalog-review" || !token) return;
-    void loadCatalogReview();
-  }, [tab, token]);
 
   useEffect(() => {
     if (tab !== "settings" || !user) return;
@@ -1466,81 +1386,17 @@ export default function AdminPage() {
       ) : null}
 
       {tab === "catalog-review" ? (
-        <div className="grid">
-          <section className="span-12">
-            <DataCard
-              title="Revisão de produtos (IA)"
-              subtitle="Itens criados automaticamente ou marcados para revisão. Fundir duplicados no produto canónico; aliases globais passam a apontar para ele."
-            >
-              <div className="field" style={{ marginBottom: "1rem" }}>
-                <SingleSelectInput
-                  label="Produto canónico (destino da fusão)"
-                  placeholder="Escolha um produto do catálogo…"
-                  options={(catalogProducts || []).map((x) => ({ value: x.id, label: x.name }))}
-                  value={mergeCanonicalId}
-                  onChange={(next) => setMergeCanonicalId(next)}
-                />
-              </div>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-                <button type="button" className="btn btn-primary" disabled={mergeBusy} onClick={() => void submitProductMerge()}>
-                  {mergeBusy ? "A fundir…" : "Fundir linhas seleccionadas"}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => setMergeSelectedIds(new Set())}>
-                  Limpar selecção
-                </button>
-              </div>
-              <CompactTable
-                columns={[
-                  {
-                    id: "sel",
-                    label: "",
-                    render: (r) => (
-                      <input
-                        type="checkbox"
-                        checked={mergeSelectedIds.has(r.id)}
-                        onChange={() => toggleMergeSelect(r.id)}
-                        aria-label={`Seleccionar ${r.name}`}
-                      />
-                    )
-                  },
-                  { id: "name", label: "Nome", render: (r) => <strong>{r.name}</strong> },
-                  { id: "category", label: "Categoria" },
-                  {
-                    id: "created_by",
-                    label: "Origem",
-                    render: (r) =>
-                      r.created_by === "ai_auto" ? (
-                        <span className="badge badge-info">IA</span>
-                      ) : r.created_by === "manager" ? (
-                        <span className="badge badge-warning">Gerente</span>
-                      ) : (
-                        <span className="badge badge-success">Rede</span>
-                      )
-                  },
-                  {
-                    id: "flags",
-                    label: "Revisão",
-                    render: (r) =>
-                      r.needs_catalog_review ? <span className="badge badge-warning">Pendente</span> : <span className="badge badge-success">OK</span>
-                  },
-                  {
-                    id: "actions",
-                    label: "",
-                    render: (r) => (
-                      <button type="button" className="btn btn-ghost" onClick={() => void markProductCatalogReviewed(r)}>
-                        Marcar revisto
-                      </button>
-                    )
-                  }
-                ]}
-                rows={catalogReviewProducts}
-                keyField="id"
-                loading={loading}
-                emptyMessage="Nenhum produto pendente de revisão."
-              />
-            </DataCard>
-          </section>
-        </div>
+        <CatalogReviewTab
+          token={token}
+          catalogProducts={catalogProducts}
+          categoryOptions={categoryOptions}
+          unitOptions={unitOptions}
+          onToast={(msg) => {
+            setToast(msg);
+            setTimeout(() => setToast(""), 4000);
+          }}
+          onDataChanged={loadAll}
+        />
       ) : null}
 
       {tab === "supplier-aliases" ? (

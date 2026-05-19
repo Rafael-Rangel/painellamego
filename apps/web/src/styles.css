@@ -467,6 +467,85 @@ img {
   }
 }
 
+.catalog-review-root {
+  gap: var(--space-4);
+}
+
+.catalog-review-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.catalog-review-title-icon {
+  color: var(--brand-accent);
+  font-size: 1.15em;
+}
+
+.catalog-review-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.catalog-review-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.catalog-review-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.catalog-review-search {
+  position: relative;
+  min-width: min(100%, 16rem);
+}
+
+.catalog-review-search input {
+  width: 100%;
+  padding-left: 2.25rem;
+}
+
+.catalog-review-search-icon {
+  position: absolute;
+  left: 0.65rem;
+  bottom: 0.72rem;
+  color: var(--neutral-500);
+  pointer-events: none;
+}
+
+.catalog-review-merge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.catalog-review-merge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.catalog-review-edit-actions {
+  margin-left: 0;
+  width: 100%;
+}
+
+.catalog-review-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .ranking-comparison-root .ranking-comparison-toolbar {
   padding: var(--space-4);
 }
