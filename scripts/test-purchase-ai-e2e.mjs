@@ -25,12 +25,13 @@ const baseUrl = (process.env.E2E_BASE_URL || "http://localhost:3333").replace(/\
 const apiRoot = baseUrl.includes("/api") ? baseUrl : `${baseUrl}/api`;
 const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const anonKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
-const email = process.env.E2E_MANAGER_EMAIL || "gerente.centro@lamego.com.br";
-const password = process.env.E2E_MANAGER_PASSWORD || "Gerente@2026!";
-const fixture = path.join(
-  root,
-  "scripts/fixtures/receipt-samples/WhatsApp_Image_2026-05-13_at_10.21.36-9f050192-56c5-4a78-bbb6-1e2567ea608e.png"
-);
+const email = process.env.E2E_MANAGER_EMAIL || "britorodrigues67@gmail.com";
+const password = process.env.E2E_MANAGER_PASSWORD || "BritoLeblon25";
+const fixtureCandidates = [
+  path.join(root, "WhatsApp Image 2026-05-20 at 13.27.35.jpeg"),
+  path.join(root, "scripts/fixtures/receipt-samples/WhatsApp_Image_2026-05-13_at_10.21.36-9f050192-56c5-4a78-bbb6-1e2567ea608e.png")
+];
+const fixture = fixtureCandidates.find((p) => fs.existsSync(p));
 const skipPurchase = process.argv.includes("--skip-purchase");
 
 function fail(step, err, extra = {}) {
@@ -86,7 +87,7 @@ async function apiFetch(token, method, pathname, { json, formData, timeoutMs = 1
 
 async function main() {
   console.log("E2E base:", apiRoot);
-  if (!fs.existsSync(fixture)) fail("fixture", new Error(`Imagem não encontrada: ${fixture}`));
+  if (!fixture) fail("fixture", new Error(`Imagem não encontrada. Tentou: ${fixtureCandidates.join(", ")}`));
 
   console.log("[1/5] Login gerente…");
   const token = await login();
@@ -107,8 +108,9 @@ async function main() {
 
   console.log("[3/5] Analisar nota (POST receipt-ai-parse)…");
   const form = new FormData();
-  const blob = new Blob([fs.readFileSync(fixture)], { type: "image/png" });
-  form.append("receipts", blob, "e2e-nota.png");
+  const mime = fixture.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+  const blob = new Blob([fs.readFileSync(fixture)], { type: mime });
+  form.append("receipts", blob, path.basename(fixture));
   form.append("supplierId", supplierId);
   const t0 = Date.now();
   const ai = await apiFetch(token, "POST", "/purchases/receipt-ai-parse", { formData: form, timeoutMs: 300_000 });
@@ -159,7 +161,7 @@ async function main() {
   const purchaseForm = new FormData();
   purchaseForm.append("invoiceNumber", `E2E-${Date.now()}`);
   purchaseForm.append("items", JSON.stringify(payloadItems));
-  purchaseForm.append("receipts", blob, "e2e-nota.png");
+  purchaseForm.append("receipts", blob, path.basename(fixture));
   const purch = await apiFetch(token, "POST", "/purchases", { formData: purchaseForm, timeoutMs: 120_000 });
   if (!purch.res.ok) fail("purchases", new Error("Registo falhou"), { status: purch.res.status, body: purch.data });
   console.log(`  OK purchaseId=${purch.data?.purchaseId}`);

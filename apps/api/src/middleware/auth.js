@@ -38,8 +38,14 @@ export function requireAdmin(req, res, next) {
   return next();
 }
 
+function readScopedStoreId(req) {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const query = req.query && typeof req.query === "object" ? req.query : {};
+  return req.params?.storeId || body.storeId || query.storeId || null;
+}
+
 export function checkStoreScope(req, res, next) {
-  const scopedStoreId = req.params.storeId || req.body.storeId || req.query.storeId;
+  const scopedStoreId = readScopedStoreId(req);
   if (req.user?.role === "admin" || !scopedStoreId || req.user?.storeId === scopedStoreId) {
     return next();
   }
@@ -51,6 +57,6 @@ export function resolveStoreScope(req, _res, next) {
     req.storeScopeId = req.user?.storeId;
     return next();
   }
-  req.storeScopeId = req.params.storeId || req.body.storeId || req.query.storeId || null;
+  req.storeScopeId = readScopedStoreId(req);
   return next();
 }

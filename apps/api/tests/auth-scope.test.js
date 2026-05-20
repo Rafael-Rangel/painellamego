@@ -33,6 +33,22 @@ test("checkStoreScope bloqueia gerente em outra loja", () => {
   assert.equal(res.code, 403);
 });
 
+test("checkStoreScope não falha com req.body indefinido (multipart antes do multer)", () => {
+  const req = {
+    user: { role: "manager", storeId: "store-a" },
+    params: {},
+    body: undefined,
+    query: {}
+  };
+  const res = createRes();
+  let nextCalled = false;
+  checkStoreScope(req, res, () => {
+    nextCalled = true;
+  });
+  assert.equal(nextCalled, true);
+  assert.equal(res.code, null);
+});
+
 test("resolveStoreScope força storeId do gerente", () => {
   const req = {
     user: { role: "manager", storeId: "store-a" },
