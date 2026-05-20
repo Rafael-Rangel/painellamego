@@ -1,0 +1,26 @@
+{
+  "description": "Mapeamento imagem → golden esperado (validação flexível no test-receipt-batch.mjs)",
+  "samples": [
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.44__3_-3138668c-04ba-4c16-8a0b-bdfc179f82ab.png",
+      "golden": "mj-moraes-guimaraes.json",
+      "notes": "MJ de Moraes / queijos"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.45-61355278-bc03-4706-9c85-8212a09edd42.png",
+      "golden": "arena1-farmex.json",
+      "notes": "Arena 1 hambúrguer"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.42__1_-e419e54d-758c-4a35-ae42-a4a1a78891af.png",
+      "golden": "nechio-acai.json",
+      "notes": "Nechio açaí"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.45__1_-f6888350-7d49-4bb9-a56b-c42b91004bd8.png",
+      "golden": "dape-pedido-venda.json",
+      "notes": "Pedido DAPE"
+    }
+  ],
+  "ungoldenImages": "Demais ficheiros em receipt-samples/ são processados sem assert (relatório só com contagem de itens)"
+}

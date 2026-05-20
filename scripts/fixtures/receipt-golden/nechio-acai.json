@@ -1,0 +1,16 @@
+{
+  "documentType": "danfe",
+  "supplierName": "Nechio",
+  "invoiceNumber": "0000082135",
+  "purchaseDate": "2026-04-30",
+  "minItems": 1,
+  "items": [
+    {
+      "productNameContains": ["acai", "lamego", "mix"],
+      "unitUsed": "cx",
+      "quantity": { "min": 5.5, "max": 6.5 },
+      "unitPrice": { "min": 169, "max": 170 },
+      "lineTotal": { "min": 1015, "max": 1025 }
+    }
+  ]
+}

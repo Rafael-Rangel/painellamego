@@ -1,0 +1,23 @@
+{
+  "documentType": "danfe",
+  "supplierName": "M.J de Moraes Guimarães",
+  "invoiceNumber": "000079031",
+  "purchaseDate": "2026-05-04",
+  "minItems": 2,
+  "items": [
+    {
+      "productNameContains": ["mussarela", "fatiado"],
+      "unitUsed": "kg",
+      "quantity": { "min": 55, "max": 56.5 },
+      "unitPrice": { "min": 34, "max": 35 },
+      "lineTotal": { "min": 1920, "max": 1940 }
+    },
+    {
+      "productNameContains": ["minas", "frescal", "bom gosto"],
+      "unitUsed": "kg",
+      "quantity": { "min": 13, "max": 34 },
+      "unitPrice": { "min": 24, "max": 25 },
+      "lineTotal": { "min": 800, "max": 850 }
+    }
+  ]
+}

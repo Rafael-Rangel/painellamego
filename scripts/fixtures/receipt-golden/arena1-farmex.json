@@ -1,0 +1,16 @@
+{
+  "documentType": "danfe",
+  "supplierName": "Arena 1",
+  "invoiceNumber": "887967",
+  "purchaseDate": "2026-05-02",
+  "minItems": 1,
+  "items": [
+    {
+      "productNameContains": ["farmex", "burger", "hamb"],
+      "unitUsed": "kg",
+      "quantity": { "min": 10, "max": 10.6 },
+      "unitPrice": { "min": 39.5, "max": 40.5 },
+      "lineTotal": { "min": 418, "max": 422 }
+    }
+  ]
+}

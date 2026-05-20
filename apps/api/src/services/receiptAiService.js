@@ -1,7 +1,9 @@
 import { config } from "../config.js";
 import { getActiveMeasurementUnits, normalizeUnitUsed } from "../lib/measurementUnits.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
+import { normalizeRawAiItem } from "../lib/receiptParseUtils.js";
 import { supabaseAdmin } from "../lib/supabase.js";
+import { buildReceiptAiPrompt } from "./receiptAiPrompt.js";
 import {
   AUTO_ALIAS_MIN_SCORE,
   MIN_PRODUCT_FUZZY,
@@ -137,17 +139,16 @@ async function fetchWithTimeout(url, init, timeoutMs) {
   }
 }
 
-/** Segundo modelo se o principal esgotar tentativas (ex.: Gemini com “Provider returned error” em algumas PNG). */
+/** Segundo modelo se o principal esgotar tentativas. */
 function openRouterFallbackModel() {
   if (process.env.OPENROUTER_FALLBACK_MODEL === "") return null;
-  const v = (process.env.OPENROUTER_FALLBACK_MODEL ?? "openai/gpt-4o-mini").trim();
+  const v = (process.env.OPENROUTER_FALLBACK_MODEL ?? "google/gemini-2.5-flash").trim();
   if (!v || /^(off|false|none|0)$/i.test(v)) return null;
   if (v === config.openRouterModel) return null;
   return v;
 }
 
 async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pdfPlugin, model }) {
-  // Mídia antes do texto: melhora compatibilidade com modelos de visão no OpenRouter.
   const userContent = [...visionPartsForMime(mimeType, dataUrl), { type: "text", text: prompt }];
 
   const body = {
@@ -246,10 +247,17 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
   };
 
   const itemMatchMeta = [];
+  const reconcileWarnings = [];
 
-  const items = rawItems.map((it) => {
-    const rawLabel = String(it?.productName || "").trim();
-    const normalizedLabel = String(it?.productNameNormalized || it?.productName || "").trim();
+  const items = rawItems.map((rawIt, idx) => {
+    const norm = normalizeRawAiItem(rawIt, allowedUnits);
+    for (const w of norm.reconcileWarnings || []) {
+      const label = norm.productName || `linha ${idx + 1}`;
+      reconcileWarnings.push(`${label}: ${w}`);
+    }
+
+    const rawLabel = norm.productName || "";
+    const normalizedLabel = norm.productNameNormalized || rawLabel;
     const matchKey = normalizeProductNameKey(normalizedLabel);
 
     const resolved = resolveOneProductLabel(rawLabel || normalizedLabel, products, resolveCtx);
@@ -262,29 +270,30 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
       matchKey
     });
 
-    let qty = it?.quantity == null ? null : Number(it.quantity);
-    const unitPrice = it?.unitPrice == null ? null : Number(it.unitPrice);
+    let qty = norm.quantity;
+    const unitPrice = norm.unitPrice;
     if ((!Number.isFinite(qty) || qty <= 0) && singleLine && Number.isFinite(unitPrice) && unitPrice > 0) {
       qty = 1;
     }
     let unitUsed = "un";
     if (best?.standard_unit) {
       unitUsed = normalizeUnitUsed(best.standard_unit, allowedUnits);
-    } else if (it?.unitUsed) {
-      unitUsed = normalizeUnitUsed(it.unitUsed, allowedUnits);
+    } else if (norm.unitUsed) {
+      unitUsed = norm.unitUsed;
     }
     const missing = [];
     if (!best || matchScore < MIN_PRODUCT_FUZZY) missing.push("produto");
     if (!Number.isFinite(qty) || qty <= 0) missing.push("quantidade");
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) missing.push("valor unitário");
     return {
-      rawProductName: it?.productName || null,
+      rawProductName: norm.productName,
       productId: best?.id || null,
       productName: best?.name || null,
       category: best?.category || null,
       quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
       unitUsed,
       unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : null,
+      lineTotal: norm.lineTotal,
       lineType: best?.type === "venda" ? "venda" : "insumo",
       missing,
       suggestedProductMatches: resolved.suggestedProductMatches,
@@ -297,14 +306,16 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
   const invoiceNormalized =
     invRaw == null || String(invRaw).trim() === "" ? null : String(invRaw).replace(/\s+/g, " ").trim();
 
-  const missingGlobal = [];
+  const missingGlobal = [...new Set(reconcileWarnings)];
   if (!invoiceNormalized) missingGlobal.push("número da nota");
   if (!parsed?.purchaseDate) missingGlobal.push("data da compra");
   if (!supplierMatch.best || supplierMatch.score < MIN_SUPPLIER_MATCH) missingGlobal.push("fornecedor");
 
   return {
+    documentType: parsed?.documentType || null,
     invoiceNumber: invoiceNormalized,
     purchaseDate: parsed?.purchaseDate || null,
+    supplierName: parsed?.supplierName ? String(parsed.supplierName).trim() : null,
     supplierSuggestion: supplierMatch.best
       ? { id: supplierMatch.best.id, name: supplierMatch.best.name, confidence: supplierMatch.score }
       : null,
@@ -346,36 +357,7 @@ export async function parseReceiptWithAI({
     allowedUnits = [];
   }
 
-  const prompt = [
-    "Extraia dados desta nota fiscal brasileira e retorne SOMENTE JSON válido.",
-    "Em NFS-e (serviço), supplierName deve ser o EMITENTE / PRESTADOR do serviço (quem emitiu a nota), não o tomador.",
-    "purchaseDate: use a data de emissão ou competência impressa na nota; converta DD/MM/AAAA para YYYY-MM-DD copiando o ANO exatamente como impresso (confunda 3 com 6: 2026 ≠ 2023).",
-    "Em cupons e notas brasileiras o formato de data costuma ser DIA/MÊS/ANO (DD/MM/AAAA): o primeiro grupo é o dia, o segundo é o mês (ex.: 10/11/2018 → 2018-11-10, não outubro).",
-    "Campos do JSON:",
-    "{",
-    '  "invoiceNumber": "string|null",',
-    '  "purchaseDate": "YYYY-MM-DD|null",',
-    '  "supplierName": "string|null",',
-    '  "items": [',
-    "    {",
-    '      "productName": "string",',
-    '      "productNameNormalized": "string|null",',
-    '      "quantity": number|null,',
-    '      "unitUsed": "unidade da nota (ex.: kg, un, cx, L, saco, fardo) ou null",',
-    '      "unitPrice": number|null',
-    "    }",
-    "  ]",
-    "}",
-    "Não invente valores.",
-    "Se não achar algum campo, use null.",
-    "Itens — productName: use o texto literal da nota quando não houver correspondência clara com o catálogo.",
-    "Itens — productNameNormalized: opcional; se preencher, deve ser uma forma limpa do nome (sem acentos desnecessários, espaços únicos) para casar com produtos cadastrados; pode repetir productName se já estiver limpo.",
-    "Se um item da nota for claramente o mesmo produto que um nome da lista de produtos cadastrados, copie EXATAMENTE esse nome da lista em productName (e o mesmo em productNameNormalized).",
-    "Em nota de serviço com um único valor, pode haver um item com productName = descrição do serviço e unitPrice = valor do serviço; quantity pode ser null ou 1.",
-    `Produtos cadastrados (reutilize um destes nomes quando for o mesmo produto): ${JSON.stringify(productNames)}`,
-    `Fornecedores cadastrados: ${JSON.stringify(supplierNames)}`,
-    `Unidades cadastradas na rede (prefira uma destas em unitUsed): ${JSON.stringify(allowedUnits)}`
-  ].join("\n");
+  const prompt = buildReceiptAiPrompt({ productNames, supplierNames, allowedUnits });
 
   const models = [config.openRouterModel];
   const fb = openRouterFallbackModel();
@@ -485,7 +467,8 @@ export async function parseReceiptWithAI({
         inputBytes,
         ms: Date.now() - parseStarted,
         items: mapped.items?.length ?? 0,
-        model
+        model,
+        documentType: mapped.documentType
       });
       return mapped;
     } catch (e) {

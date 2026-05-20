@@ -236,6 +236,8 @@ Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-u
 
 ### Leitura de nota com IA (OpenRouter) — “carrega para sempre”
 
+- **Modelo recomendado em produção:** `OPENROUTER_MODEL=google/gemini-2.5-pro` (visão + JSON). Fallback: `OPENROUTER_FALLBACK_MODEL=google/gemini-2.5-flash`.
+- **Regressão local (amostras WhatsApp):** `node scripts/test-receipt-batch.mjs --only golden` (requer `OPENROUTER_API_KEY`; imagens em `scripts/fixtures/receipt-samples/`).
 - **Causas frequentes:** pedido ao OpenRouter **sem timeout** (ficava pendente até o proxy cortar); **nginx** entre `web` e `api` com `proxy_read_timeout` curto (504); PDF/imagem muito grande; vários ficheiros em sequência; rede lenta.
 - **No código:** cada chamada HTTP ao OpenRouter tem timeout configurável (`OPENROUTER_FETCH_TIMEOUT_MS`, predefinido 120 s); o nginx interno do container `web` usa **300 s** para `/api/`; o browser usa **300 s** neste pedido.
 - **Na VPS:** `docker logs lamego-api-1 --tail 300` (erros OpenRouter, timeout, chave). Se usares **nginx-proxy** à frente (ex.: `jada-nginx-proxy`), pode ser preciso aumentar o timeout do *upstream* para o container Lamego (além do nginx dentro do `web`).

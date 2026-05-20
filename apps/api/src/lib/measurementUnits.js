@@ -1,4 +1,4 @@
-export const DEFAULT_MEASUREMENT_UNITS = ["un", "kg", "g", "L", "ml", "cx", "pct", "fardo"];
+export const DEFAULT_MEASUREMENT_UNITS = ["un", "kg", "g", "L", "ml", "cx", "pct", "fardo", "saco", "maço", "bdj"];
 
 export function unitCode(name = "") {
   return String(name).trim().toLowerCase();

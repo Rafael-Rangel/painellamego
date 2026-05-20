@@ -206,7 +206,7 @@ test("parseReceiptWithAI: esgota modelo principal e usa OPENROUTER_FALLBACK_MODE
         }
       };
     }
-    if (model === "openai/gpt-4o-mini") {
+    if (model === "google/gemini-2.5-flash") {
       return {
         ok: true,
         async json() {
@@ -239,7 +239,7 @@ test("parseReceiptWithAI: esgota modelo principal e usa OPENROUTER_FALLBACK_MODE
 
   process.env.OPENROUTER_API_KEY = "test-key";
   process.env.OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
-  process.env.OPENROUTER_FALLBACK_MODEL = "openai/gpt-4o-mini";
+  process.env.OPENROUTER_FALLBACK_MODEL = "google/gemini-2.5-flash";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
   const jpegBuf = Buffer.from("ff", "hex");

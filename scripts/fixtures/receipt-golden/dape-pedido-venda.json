@@ -1,0 +1,12 @@
+{
+  "documentType": "pedido_venda",
+  "supplierName": "DAPE",
+  "invoiceNumber": "8351",
+  "purchaseDate": "2026-05-04",
+  "minItems": 10,
+  "items": [
+    { "productNameContains": ["bobina", "picotada"], "unitUsed": "kg", "quantity": { "min": 7, "max": 8 } },
+    { "productNameContains": ["guardanapo"], "unitUsed": "fardo", "quantity": { "min": 1, "max": 2 } },
+    { "productNameContains": ["sabao", "pastoso"], "unitUsed": "un", "quantity": { "min": 15, "max": 20 } }
+  ]
+}
