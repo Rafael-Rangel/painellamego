@@ -292,7 +292,7 @@ export default function AdminPage() {
         name: storeEditor.name.trim(),
         location: storeEditor.location.trim(),
         storeNumber: sn,
-        managerName: (storeEditor.managerName || "").trim() || "—",
+        managerName: (storeEditor.managerName || "").trim() || "n/d",
         phone: storeEditor.phone?.trim() || null,
         openingHours: storeEditor.openingHours?.trim() || null,
         onboardingNotes: storeEditor.onboardingNotes?.trim() || null
@@ -818,7 +818,7 @@ export default function AdminPage() {
             <section className="span-12">
               <DataCard
                 title="Visão do produto no período"
-                subtitle="Quantidade, gastos e últimas compras — respeita todos os filtros acima"
+                subtitle="Quantidade, gastos e últimas compras  ·  respeita todos os filtros acima"
                 footer={`Últimas ${Math.min(8, dashboardSummary?.recentPurchases?.length || 0)} compras neste recorte.`}
               >
                 <div className="stats" style={{ marginBottom: "0.8rem" }}>
@@ -905,7 +905,7 @@ export default function AdminPage() {
           <section className="span-12">
             <DataCard title="Minha conta" subtitle="E-mail, nome de exibição e senha (Supabase Auth).">
               <p className="field-helper" style={{ marginTop: 0 }}>
-                ID utilizador: <code>{user?.id || "—"}</code>
+                ID utilizador: <code>{user?.id || "n/d"}</code>
               </p>
               <form className="grid" onSubmit={saveAdminSettings}>
                 <div className="field span-6">
@@ -962,7 +962,7 @@ export default function AdminPage() {
                     label: "ID",
                     render: (s) => (
                       <code style={{ fontSize: "0.72rem", wordBreak: "break-all" }} title={s.id}>
-                        {s.id ? `${String(s.id).slice(0, 8)}…` : "—"}
+                        {s.id ? `${String(s.id).slice(0, 8)}…` : "n/d"}
                       </code>
                     )
                   },
@@ -970,7 +970,7 @@ export default function AdminPage() {
                   { id: "name", label: "Nome" },
                   { id: "location", label: "Local" },
                   { id: "cnpj", label: "CNPJ", render: (s) => s.cnpj },
-                  { id: "manager_name", label: "Resp. loja", render: (s) => s.manager_name || "—" },
+                  { id: "manager_name", label: "Resp. loja", render: (s) => s.manager_name || "n/d" },
                   {
                     id: "actions",
                     label: "",
@@ -1011,7 +1011,7 @@ export default function AdminPage() {
                     label: "ID",
                     render: (r) => (
                       <code style={{ fontSize: "0.72rem", wordBreak: "break-all" }} title={r.id}>
-                        {r.id ? `${String(r.id).slice(0, 8)}…` : "—"}
+                        {r.id ? `${String(r.id).slice(0, 8)}…` : "n/d"}
                       </code>
                     )
                   },
@@ -1387,7 +1387,7 @@ export default function AdminPage() {
             </DataCard>
           </section>
           <section className="span-12">
-            <DataCard title="Fornecedores" subtitle="Fornecedores por loja — crie, edite ou remova (não remove se já usado em compras).">
+            <DataCard title="Fornecedores" subtitle="Fornecedores por loja  ·  crie, edite ou remova (não remove se já usado em compras).">
               <SupplierCrudPanel
                 token={token}
                 suppliers={suppliersAll}
@@ -1429,12 +1429,12 @@ export default function AdminPage() {
               <CompactTable
                 columns={[
                   { id: "supplier_name", label: "Fornecedor" },
-                  { id: "label_raw", label: "Texto", render: (r) => r.label_raw || r.label_normalized || "—" },
+                  { id: "label_raw", label: "Texto", render: (r) => r.label_raw || r.label_normalized || "n/d" },
                   { id: "product_name", label: "Produto sugerido" },
                   {
                     id: "confidence",
                     label: "Confiança",
-                    render: (r) => (r.confidence != null ? `${(Number(r.confidence) * 100).toFixed(0)}%` : "—")
+                    render: (r) => (r.confidence != null ? `${(Number(r.confidence) * 100).toFixed(0)}%` : "n/d")
                   },
                   {
                     id: "actions",
@@ -1505,14 +1505,14 @@ export default function AdminPage() {
                 columns={[
                   { id: "supplier_name", label: "Fornecedor" },
                   { id: "label_normalized", label: "Chave normalizada" },
-                  { id: "label_raw", label: "Texto original", render: (r) => r.label_raw || "—" },
+                  { id: "label_raw", label: "Texto original", render: (r) => r.label_raw || "n/d" },
                   { id: "product_name", label: "Produto" },
                   {
                     id: "source",
                     label: "Origem",
                     render: (r) => (
                       <span className={r.source === "admin" ? "badge badge-success" : "badge badge-info"}>
-                        {r.source === "admin" ? "Rede" : r.source === "manager" ? "Gerente" : r.source || "—"}
+                        {r.source === "admin" ? "Rede" : r.source === "manager" ? "Gerente" : r.source || "n/d"}
                       </span>
                     )
                   },

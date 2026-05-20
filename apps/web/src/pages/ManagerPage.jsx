@@ -363,12 +363,12 @@ export default function ManagerPage() {
               <KpiCardCompact label="Fornecedores utilizados" value={o.suppliersCount || 0} />
               <KpiCardCompact
                 label="Score de eficiência"
-                value={o.efficiencyScore != null ? Number(o.efficiencyScore).toFixed(1) : "—"}
+                value={o.efficiencyScore != null ? Number(o.efficiencyScore).toFixed(1) : "n/d"}
                 hint={o.storeName || "Sua loja"}
               />
               <KpiCardCompact
                 label="Loja"
-                value={o.storeCode != null ? o.storeCode : user?.storeId ? "—" : "nao definida"}
+                value={o.storeCode != null ? o.storeCode : user?.storeId ? "n/d" : "nao definida"}
                 hint={o.storeName || undefined}
               />
             </div>
@@ -516,7 +516,7 @@ export default function ManagerPage() {
               {
                 id: "items",
                 label: "Itens",
-                render: (p) => summarizePurchaseItems(p.purchase_items) || "—"
+                render: (p) => summarizePurchaseItems(p.purchase_items) || "n/d"
               },
               { id: "fiscal_receipts", label: "Nota fiscal", render: (p) => (p.fiscal_receipts?.length ? "Anexada" : "Nao anexada") }
             ]}
@@ -536,7 +536,7 @@ export default function ManagerPage() {
                 columns={[
                   { id: "name", label: "Nome" },
                   { id: "category", label: "Categoria" },
-                  { id: "type", label: "Tipo", render: (p) => p.type || "—" },
+                  { id: "type", label: "Tipo", render: (p) => p.type || "n/d" },
                   { id: "standard_unit", label: "Unidade" }
                 ]}
                 rows={products}
@@ -547,7 +547,7 @@ export default function ManagerPage() {
             </DataCard>
           </section>
           <section className="span-12">
-            <DataCard title="Fornecedores" subtitle="Fornecedores da sua loja — adicione, edite ou remova.">
+            <DataCard title="Fornecedores" subtitle="Fornecedores da sua loja  ·  adicione, edite ou remova.">
               <SupplierCrudPanel
                 token={token}
                 suppliers={suppliers}

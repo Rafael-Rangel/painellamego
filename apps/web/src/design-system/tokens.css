@@ -53,7 +53,7 @@
   --z-modal: 50;
   --z-toast: 60;
 
-  /* Motion — transições sutis e profissionais */
+  /* Motion: transições sutis e profissionais */
   --motion-duration-instant: 0.12s;
   --motion-duration-fast: 0.2s;
   --motion-duration-base: 0.38s;

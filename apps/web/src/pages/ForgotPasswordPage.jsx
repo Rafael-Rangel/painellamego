@@ -53,7 +53,7 @@ export default function ForgotPasswordPage() {
               do painel.
             </p>
             <p className="subtitle" style={{ marginTop: "0.6rem" }}>
-              Verifique também a caixa de spam. Se nada chegar, o limite de e-mails do projeto pode ter sido atingido — aguarde cerca de 1
+              Verifique também a caixa de spam. Se nada chegar, o limite de e-mails do projeto pode ter sido atingido  ·  aguarde cerca de 1
               hora ou peça ao administrador para configurar SMTP no Supabase.
             </p>
           </div>

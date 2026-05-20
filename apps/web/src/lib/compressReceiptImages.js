@@ -12,7 +12,7 @@ const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const RECEIPT_QUALITY_PRESET = {
   maxWidthOrHeight: 2560,
   initialQuality: 0.9,
-  /** Teto suave para o algoritmo — não força 1–2 MB como alvo. */
+  /** Teto suave para o algoritmo  ·  não força 1–2 MB como alvo. */
   maxSizeMB: 6,
   useWebWorker: true,
   fileType: "image/jpeg",
@@ -53,7 +53,7 @@ function toOutputFile(blob, originalName) {
 
 /**
  * Prepara fotos da câmera para upload: reduz peso na rede sem sacrificar leitura da IA.
- * Não há limite rígido em MB para o gerente — a app adapta-se ao ficheiro.
+ * Não há limite rígido em MB para o gerente  ·  a app adapta-se ao ficheiro.
  */
 export async function compressReceiptFiles(files, hooks = {}) {
   const list = Array.from(files || []).filter(Boolean);

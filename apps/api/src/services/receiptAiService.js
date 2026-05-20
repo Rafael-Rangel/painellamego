@@ -292,7 +292,7 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
     const unitClash = best?.standard_unit ? receiptUnitConflict(noteUnit, best.standard_unit, allowedUnits) : null;
     if (unitClash) {
       reconcileWarnings.push(
-        `${norm.productName || `linha ${idx + 1}`}: unidade na nota (${unitClash.noteUnit}) difere do catálogo (${unitClash.catalogUnit}) — confira quantidade e unidade`
+        `${norm.productName || `linha ${idx + 1}`}: unidade na nota (${unitClash.noteUnit}) difere do catálogo (${unitClash.catalogUnit}). Confira quantidade e unidade.`
       );
     }
 

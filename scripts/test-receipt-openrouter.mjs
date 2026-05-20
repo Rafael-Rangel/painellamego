@@ -8,7 +8,7 @@
  *   node scripts/test-receipt-openrouter.mjs nota.png --json
  * Catálogo opcional (para testar match com cadastro):
  *   RECEIPT_TEST_CATALOG='{"products":[...],"suppliers":[...]}' node scripts/test-receipt-openrouter.mjs nota.png --json
- * DANFE vazio (sem itens/fornecedores no prompt — evita match falso):
+ * DANFE vazio (sem itens/fornecedores no prompt; evita match falso):
  *   node scripts/test-receipt-openrouter.mjs scripts/fixtures/blank-danfe-template.png --empty-catalog --json
  * Requer OPENROUTER_API_KEY no .env (raiz ou apps/api).
  */
@@ -24,7 +24,7 @@ dotenv.config({ path: path.join(root, "apps", "api", ".env") });
 
 const { parseReceiptWithAI } = await import("../apps/api/src/services/receiptAiService.js");
 
-// JPEG 1×1 pixel (válido) — não é nota real; valida chamada, JSON e encadeamento.
+// JPEG 1×1 pixel (válido); não é nota real; valida chamada, JSON e encadeamento.
 const tinyJpeg = Buffer.from(
   "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=",
   "base64"

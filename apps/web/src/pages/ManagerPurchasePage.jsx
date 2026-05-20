@@ -9,6 +9,7 @@ import CompactTable from "../components/ui/CompactTable";
 import SingleSelectInput from "../components/ui/SingleSelectInput";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import UnitSelect from "../components/ui/UnitSelect";
+import { formatStoreReadonly } from "../lib/displayText";
 import { formatCurrency } from "../lib/formatters";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
 
@@ -71,14 +72,7 @@ export default function ManagerPurchasePage() {
       ? `Loja ${overview.storeCode}${overview.storeName ? ` · ${overview.storeName}` : ""}`
       : null;
 
-  const lojaReadonly =
-    overview === undefined
-      ? "Carregando…"
-      : overview?.storeCode != null
-        ? `Código ${overview.storeCode} — ${overview.storeName ?? "Sua loja"}`
-        : user?.storeId
-          ? "Loja vinculada ao seu acesso"
-          : "—";
+  const lojaReadonly = formatStoreReadonly(overview, user);
 
   return (
     <AppShell
@@ -151,7 +145,7 @@ export default function ManagerPurchasePage() {
                   <span className="field-helper">A IA na página Compra com IA pode sugerir este número; aqui pode editar à mão.</span>
                 </div>
                 <div className="field field-wizard">
-                  <label>Fotos / PDF da nota (obrigatório — mínimo 1 arquivo)</label>
+                  <label>Fotos / PDF da nota (obrigatório  ·  mínimo 1 arquivo)</label>
                   <FilePickButton
                     buttonText="Escolher arquivo(s) da nota"
                     multiple
@@ -267,7 +261,7 @@ export default function ManagerPurchasePage() {
                     id: "productId",
                     label: "Produto",
                     getTitle: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "",
-                    render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "—"
+                    render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "n/d"
                   },
                   {
                     id: "category",
@@ -344,7 +338,7 @@ export default function ManagerPurchasePage() {
                   <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="Ex.: 12345" />
                 </div>
                 <div className="field field-wizard">
-                  <label>Arquivo da nota (obrigatório — mínimo 1 arquivo)</label>
+                  <label>Arquivo da nota (obrigatório  ·  mínimo 1 arquivo)</label>
                   <FilePickButton
                     buttonText="Escolher arquivo(s) da nota"
                     multiple
@@ -371,20 +365,20 @@ export default function ManagerPurchasePage() {
               <dl className="wizard-review-dl">
                 <div>
                   <dt>Fornecedor</dt>
-                  <dd>{suppliers.find((s) => s.id === supplierId)?.name || "—"}</dd>
+                  <dd>{suppliers.find((s) => s.id === supplierId)?.name || "n/d"}</dd>
                 </div>
                 <div>
                   <dt>Data da compra</dt>
-                  <dd>{date ? new Date(date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</dd>
+                  <dd>{date ? new Date(date + "T12:00:00").toLocaleDateString("pt-BR") : "n/d"}</dd>
                 </div>
                 <div>
                   <dt>Loja</dt>
                   <dd>
                     {overview?.storeCode != null
-                      ? `${overview.storeCode} — ${overview.storeName ?? "—"}`
+                      ? `${overview.storeCode}  ·  ${overview.storeName ?? "n/d"}`
                       : overview === undefined
                         ? "…"
-                        : "—"}
+                        : "n/d"}
                   </dd>
                 </div>
                 <div>
@@ -405,9 +399,9 @@ export default function ManagerPurchasePage() {
               <ul className="purchase-review-list">
                 {items.map((item, idx) => (
                   <li key={`${item.productId || "pending"}-${idx}`}>
-                    <strong>{products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || item.productId || "—"}</strong>
+                    <strong>{products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || item.productId || "n/d"}</strong>
                     <span className="wizard-review-meta">
-                      {item.category || products.find((p) => p.id === item.productId)?.category || "—"} ·{" "}
+                      {item.category || products.find((p) => p.id === item.productId)?.category || "n/d"} ·{" "}
                       {item.lineType === "venda" ? "Venda" : "Insumo"} · {item.quantity} {item.unitUsed} ×{" "}
                       {formatCurrency(item.unitPrice)}
                     </span>

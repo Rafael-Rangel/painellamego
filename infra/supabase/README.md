@@ -1,4 +1,4 @@
-# Supabase — banco e migrations
+# Supabase : banco e migrations
 
 > A pasta canônica passou a ser `supabase/` na raiz do repositório (padrão Supabase CLI).
 > As migrations vivem em `supabase/migrations/*.sql`.

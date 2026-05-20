@@ -48,7 +48,7 @@ export default function CompactTable({
                   return (
                     <td key={col.id} className={col.cellClassName} data-col={col.id}>
                       <div className={cellClass} title={title || undefined}>
-                        {content ?? "—"}
+                        {content ?? "n/d"}
                       </div>
                     </td>
                   );

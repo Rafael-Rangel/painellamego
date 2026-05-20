@@ -15,7 +15,7 @@ export default function SingleSelectSearch({
   onChange,
   /** Quando não há resultados na pesquisa, permite criar entrada com o texto digitado (ex.: fornecedor). */
   allowCreate = false,
-  /** async (trimmedQuery) => void — o pai cria o registo e atualiza options/value. */
+  /** async (trimmedQuery) => void  ·  o pai cria o registo e atualiza options/value. */
   onCreateOption,
   createBusy = false,
   /** Texto do botão “Adicionar …” (ex.: fornecedor, produto). */

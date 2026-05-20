@@ -42,12 +42,12 @@ async function ensureCategoryExists(categoryName) {
  * @param {object} opts
  * @param {string} opts.displayName
  * @param {'insumo'|'venda'} [opts.lineType]
- * @param {string} [opts.category] — categoria do catálogo; padrão "Outros"
+ * @param {string} [opts.category] categoria do catálogo; padrão "Outros"
  * @param {string|null} [opts.supplierId]
  * @param {'admin'|'manager'|'ai_auto'} opts.createdBy
  * @param {string|null} [opts.userIdForAudit]
  * @param {boolean} [opts.needsCatalogReview]
- * @param {object|null} [opts.resolveCtx] — contexto já montado (ex.: parse NF); senão monta com catálogo completo.
+ * @param {object|null} [opts.resolveCtx] contexto já montado (ex.: parse NF); senão monta com catálogo completo.
  */
 export async function quickResolveOrCreateProduct(opts) {
   const displayName = String(opts.displayName || "").trim().replace(/\s+/g, " ");

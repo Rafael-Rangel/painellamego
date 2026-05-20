@@ -80,7 +80,7 @@ function approxEqual(a, b, tolerance = LINE_RECONCILE_TOLERANCE) {
   return Math.abs(a - b) <= scale * tolerance;
 }
 
-/** Tolerância só de arredondamento (centavos) — totais fiscais do rodapé. */
+/** Tolerância só de arredondamento (centavos) para totais fiscais do rodapé. */
 function approxDocMoneyEqual(a, b) {
   if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
   return Math.abs(a - b) <= 0.05;
@@ -164,7 +164,7 @@ export function buildDocumentTotalHints(parsed, lineTotals = []) {
   if (productsSubtotal != null && !approxDocMoneyEqual(linesSum, productsSubtotal)) {
     if (approxDocMoneyEqual(linesSum, documentTotal) && accessories > 0.01) {
       warnings.push(
-        "A soma dos itens coincide com o total da nota, mas há despesas no rodapé — confira se os V. TOTAL das linhas estão corretos (não use BC ICMS)."
+        "A soma dos itens coincide com o total da nota, mas há despesas no rodapé. Confira se os V. TOTAL das linhas estão corretos (não use BC ICMS)."
       );
     }
   }
@@ -186,7 +186,7 @@ export function buildDocumentTotalHints(parsed, lineTotals = []) {
     const extra = roundMoney(documentTotal - linesSum);
     const detail = parts.length ? ` (${parts.join(", ")})` : "";
     warnings.push(
-      `Total da nota R$ ${documentTotal.toFixed(2)} é R$ ${extra.toFixed(2)} acima da soma dos produtos R$ ${linesSum.toFixed(2)}${detail}. O lançamento usa só os itens da tabela — valor final da NF pode incluir taxas do rodapé.`
+      `Total da nota R$ ${documentTotal.toFixed(2)} é R$ ${extra.toFixed(2)} acima da soma dos produtos R$ ${linesSum.toFixed(2)}${detail}. O lançamento usa só os itens da tabela; o valor final da NF pode incluir taxas do rodapé.`
     );
     return warnings;
   }

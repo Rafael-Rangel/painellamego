@@ -257,7 +257,7 @@ export default function RankingComparisonTab({
         callbacks: {
           label: (ctx) => {
             const v = ctx.raw;
-            if (v == null) return `${ctx.dataset.label}: —`;
+            if (v == null) return `${ctx.dataset.label}:  · `;
             return `${ctx.dataset.label}: ${formatCurrency(v)}`;
           }
         }
@@ -442,7 +442,7 @@ export default function RankingComparisonTab({
                 render: (r) => {
                   const a = Number(r.avg_price || 0);
                   const n = Number(r.network_min_price || 0);
-                  if (!n) return "—";
+                  if (!n) return "n/d";
                   return <span className="badge badge-warning">{`${(((a - n) / n) * 100).toFixed(1)}%`}</span>;
                 }
               }

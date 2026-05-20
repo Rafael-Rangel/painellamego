@@ -11,6 +11,7 @@ import FilePickButton from "../components/ui/FilePickButton";
 import SingleSelectInput from "../components/ui/SingleSelectInput";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import UnitSelect from "../components/ui/UnitSelect";
+import { buildReceiptTotalDifferenceRows, formatStoreReadonly } from "../lib/displayText";
 import { formatCurrency } from "../lib/formatters";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
 
@@ -124,35 +125,14 @@ export default function ManagerPurchaseAiPage() {
       ? `Loja ${overview.storeCode}${overview.storeName ? ` · ${overview.storeName}` : ""}`
       : null;
 
-  const lojaReadonly =
-    overview === undefined
-      ? "Carregando…"
-      : overview?.storeCode != null
-        ? `Código ${overview.storeCode} — ${overview.storeName ?? "Sua loja"}`
-        : user?.storeId
-          ? "Loja vinculada ao seu acesso"
-          : "—";
+  const lojaReadonly = formatStoreReadonly(overview, user);
 
   const aiClass = (key) => (aiHighlightKeys?.has(key) ? "field-ai-suggested" : "");
 
-  const docTotalRows = useMemo(() => {
-    if (!documentTotals) return [];
-    const rows = [];
-    const add = (label, value, skipZero = false) => {
-      const n = Number(value);
-      if (!Number.isFinite(n)) return;
-      if (skipZero && n === 0) return;
-      rows.push({ label, value: formatCurrency(n) });
-    };
-    add("Total dos produtos", documentTotals.productsSubtotal);
-    add("Total da nota", documentTotals.documentTotal);
-    add("Frete", documentTotals.freightAmount, true);
-    add("Seguro", documentTotals.insuranceAmount, true);
-    add("Outras despesas", documentTotals.otherExpensesAmount, true);
-    add("ICMS ST", documentTotals.icmsStAmount, true);
-    add("Desconto", documentTotals.discountAmount, true);
-    return rows;
-  }, [documentTotals]);
+  const docTotalRows = useMemo(
+    () => buildReceiptTotalDifferenceRows(documentTotals, formatCurrency),
+    [documentTotals]
+  );
 
   return (
     <AppShell
@@ -199,7 +179,7 @@ export default function ManagerPurchaseAiPage() {
           <div className="card purchase-ai-optional-receipt">
             <p className="purchase-ai-optional-label">Anexo adicional (opcional)</p>
             <p className="field-helper purchase-ai-optional-hint">
-              Outros PDFs ou imagens que devam ficar no registro (ex.: verso, complemento). Não entram na leitura por IA — use o
+              Outros PDFs ou imagens que devam ficar no registro (ex.: verso, complemento). Não entram na leitura por IA; use o
               cartão acima para fotos da nota e o botão <strong>Analisar com IA</strong>.
             </p>
             <FilePickButton
@@ -532,10 +512,11 @@ export default function ManagerPurchaseAiPage() {
             </section>
 
             {docTotalRows.length ? (
-              <section className="card purchase-ai-section purchase-ai-doc-totals" aria-label="Totais lidos na nota fiscal">
-                <h4 className="purchase-ai-subheading">Totais da nota (leitura)</h4>
+              <section className="card purchase-ai-section purchase-ai-doc-totals" aria-label="Totais da nota fiscal">
+                <h4 className="purchase-ai-subheading">Totais da nota</h4>
                 <p className="field-helper purchase-ai-doc-totals-hint">
-                  Valores do rodapé da NF — o lançamento usa as linhas de produto acima; a diferença pode ser frete, ICMS ST ou outras despesas.
+                  O valor da compra na nota é maior (ou menor) que a soma dos produtos. O lançamento usa só as linhas acima; a diferença
+                  pode ser frete, ICMS ST ou outras despesas.
                 </p>
                 <dl className="purchase-ai-doc-totals-dl">
                   {docTotalRows.map((r) => (

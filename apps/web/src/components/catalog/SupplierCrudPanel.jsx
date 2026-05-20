@@ -26,14 +26,14 @@ export default function SupplierCrudPanel({
 
   const storeOptions = stores.map((s) => ({
     value: s.id,
-    label: s.store_number != null ? `Loja ${s.store_number} — ${s.name}` : s.name
+    label: s.store_number != null ? `Loja ${s.store_number}  ·  ${s.name}` : s.name
   }));
 
   const storeNameById = useCallback(
     (id) => {
       const s = stores.find((x) => x.id === id);
-      if (!s) return "—";
-      return s.store_number != null ? `Loja ${s.store_number} — ${s.name}` : s.name;
+      if (!s) return "n/d";
+      return s.store_number != null ? `Loja ${s.store_number}  ·  ${s.name}` : s.name;
     },
     [stores]
   );
@@ -151,7 +151,7 @@ export default function SupplierCrudPanel({
                 {
                   id: "store",
                   label: "Loja",
-                  render: (r) => (r.store_id ? storeNameById(r.store_id) : "—")
+                  render: (r) => (r.store_id ? storeNameById(r.store_id) : "n/d")
                 }
               ]
             : []),

@@ -102,7 +102,7 @@ export default function ReceiptAiDropzoneCard({
         <div className="purchase-ai-pick-actions">
           <button
             type="button"
-            className="btn btn-primary purchase-ai-camera-btn file-pick-btn"
+            className="btn btn-primary purchase-ai-pick-btn file-pick-btn"
             disabled={disabled || analyzing || atLimit}
             onClick={() => cameraInputRef.current?.click()}
           >
@@ -111,7 +111,7 @@ export default function ReceiptAiDropzoneCard({
           </button>
           <button
             type="button"
-            className="btn btn-secondary purchase-ai-select-btn file-pick-btn"
+            className="btn btn-secondary purchase-ai-pick-btn file-pick-btn"
             disabled={disabled || analyzing || atLimit}
             onClick={() => galleryInputRef.current?.click()}
           >

@@ -439,7 +439,7 @@
 <div class="flex justify-between items-start">
 <div>
 <p class="text-[10px] uppercase font-bold text-on-tertiary-container/60 tracking-widest">Horário</p>
-<p class="text-sm font-label text-on-tertiary-container">07:00 — 20:00</p>
+<p class="text-sm font-label text-on-tertiary-container">07:00 : 20:00</p>
 </div>
 <span class="material-symbols-outlined text-sm text-on-tertiary-container/40" data-icon="edit">edit</span>
 </div>
@@ -772,7 +772,7 @@
 <span class="text-[10px] font-bold text-error uppercase tracking-widest">Insumo Crítico</span>
 <span class="text-[10px] text-on-surface-variant font-medium">Há 2 horas</span>
 </div>
-<p class="text-on-surface font-semibold">Farinha de trigo — 18% acima da média</p>
+<p class="text-on-surface font-semibold">Farinha de trigo : 18% acima da média</p>
 <p class="text-xs text-on-surface-variant">O preço médio subiu de R$ 4,20 para R$ 4,95 no fornecedor principal. Recomendamos trocar para 'Moinho Real'.</p>
 </div>
 </div>
@@ -786,7 +786,7 @@
 <span class="text-[10px] font-bold text-on-tertiary-container uppercase tracking-widest">Oportunidade</span>
 <span class="text-[10px] text-on-surface-variant font-medium">Há 5 horas</span>
 </div>
-<p class="text-on-surface font-semibold">Açúcar refinado — Melhor preço disponível</p>
+<p class="text-on-surface font-semibold">Açúcar refinado : Melhor preço disponível</p>
 <p class="text-xs text-on-surface-variant">O fornecedor 'Distribuidora Doce' está com 15% de desconto no fardo de 20kg por tempo limitado.</p>
 </div>
 </div>

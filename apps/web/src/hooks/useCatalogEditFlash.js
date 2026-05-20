@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 
 /**
  * Destaque de edição: pisca ao abrir e mantém borda amarela até salvar/cancelar.
- * @param {boolean} isEditing — true enquanto um item está em modo edição
+ * @param {boolean} isEditing true enquanto um item está em modo edição
  */
 export function useCatalogEditFlash(isEditing) {
   const [flash, setFlash] = useState(false);

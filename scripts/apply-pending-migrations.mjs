@@ -68,7 +68,7 @@ try {
     console.log(`[migrations] OK ${file}`);
   }
 
-  if (!ran) console.log("[migrations] Nada pendente — remoto já está em dia.");
+  if (!ran) console.log("[migrations] Nada pendente; remoto já está em dia.");
   else console.log(`[migrations] ${ran} migration(s) aplicada(s).`);
 } finally {
   await client.end();

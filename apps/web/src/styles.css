@@ -2858,16 +2858,25 @@ tbody tr:last-child td {
 }
 
 .purchase-ai-pick-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: var(--space-2);
-  justify-content: center;
   width: 100%;
-  max-width: 22rem;
+  max-width: 28rem;
 }
 
-.purchase-ai-camera-btn {
-  flex: 1 1 9rem;
+.purchase-ai-pick-actions .purchase-ai-pick-btn {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.75rem 0.65rem;
+  font-size: var(--font-sm);
+  line-height: 1.25;
+  text-align: center;
+}
+
+.purchase-ai-pick-actions .purchase-ai-pick-btn span {
+  flex: 1;
+  min-width: 0;
 }
 
 .purchase-ai-receipt-queue {
