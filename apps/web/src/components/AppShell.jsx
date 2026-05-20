@@ -48,14 +48,6 @@ export default function AppShell({
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <button
-            className="btn btn-ghost sidebar-toggle"
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Abrir menu"
-          >
-            <FaBars />
-          </button>
           <img src={logoUrl} alt="Logo Lamego" />
           <div>
             <h1>{title}</h1>
@@ -75,10 +67,18 @@ export default function AppShell({
           >
             {theme === "dark" ? <FaSun /> : <FaMoon />}
           </button>
-          {storeLabel ? <span className="topbar-pill">{storeLabel}</span> : null}
-          <span className="topbar-user">{user?.email}</span>
-          <button className="btn btn-secondary" onClick={handleSignOut}>
+          {storeLabel ? <span className="topbar-pill topbar-pill--desktop">{storeLabel}</span> : null}
+          <span className="topbar-user topbar-user--desktop">{user?.email}</span>
+          <button className="btn btn-secondary topbar-signout--desktop" type="button" onClick={handleSignOut}>
             Sair
+          </button>
+          <button
+            className="btn btn-ghost sidebar-toggle"
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Abrir menu"
+          >
+            <FaBars />
           </button>
         </div>
       </header>
@@ -124,6 +124,13 @@ export default function AppShell({
           <div className="sidebar-footer">
             <small>Rede Lamego</small>
             <p>Painel interno de compras</p>
+          </div>
+          <div className="sidebar-account">
+            {storeLabel ? <span className="sidebar-account-pill">{storeLabel}</span> : null}
+            <span className="sidebar-account-email">{user?.email}</span>
+            <button className="btn btn-secondary sidebar-account-signout" type="button" onClick={handleSignOut}>
+              Sair
+            </button>
           </div>
         </aside>
         <section className="app-main-section" key={location.pathname}>
