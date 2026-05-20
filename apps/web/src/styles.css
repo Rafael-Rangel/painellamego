@@ -333,17 +333,13 @@ img {
   padding: 0.7rem 1rem;
   border: none;
   border-radius: 10px;
-  background: var(--brand-highlight);
+  background: #ff9800;
   color: #fff;
   font-size: var(--font-sm);
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgb(240 165 0 / 0.4);
-  transition:
-    background-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.15s ease;
+  transition: background-color 0.2s ease, transform 0.15s ease;
 }
 
 .btn-menu-signout svg {
@@ -353,8 +349,7 @@ img {
 }
 
 .btn-menu-signout:hover {
-  background: #d89400;
-  box-shadow: 0 6px 16px rgb(240 165 0 / 0.45);
+  background: #e68900;
 }
 
 .btn-menu-signout:active {
