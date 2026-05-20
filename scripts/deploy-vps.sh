@@ -39,4 +39,8 @@ fi
 "${COMPOSE[@]}" up -d
 "${COMPOSE[@]}" ps
 
+if [[ -x "${LAMEGO_DIR}/scripts/apply-nginx-proxy-timeouts-vps.sh" ]]; then
+  bash "${LAMEGO_DIR}/scripts/apply-nginx-proxy-timeouts-vps.sh" || echo "Aviso: timeouts nginx-proxy não aplicados (ver ops/deploy/nginx-proxy/)." >&2
+fi
+
 echo "Deploy concluído. Health: curl -sS https://painellamego.com.br/api/health"

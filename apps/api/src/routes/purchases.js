@@ -70,7 +70,7 @@ router.post(
 
   const { data: products, error: productsError } = await supabaseAdmin
     .from("products")
-    .select("*")
+    .select("id,name,normalized_name,category,standard_unit,type,is_active")
     .eq("is_active", true);
   if (productsError) return res.status(400).json({ message: productsError.message });
 
