@@ -205,15 +205,11 @@ img {
   transition: transform var(--motion-duration-base) var(--motion-ease-out);
   z-index: var(--z-modal);
   height: 100vh;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-drawer nav {
-  flex: 1 1 auto;
-  min-height: 0;
+  max-height: 100dvh;
+  overflow-x: hidden;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .sidebar-drawer-open {
@@ -241,12 +237,31 @@ img {
 }
 
 .sidebar-close {
-  width: 40px;
-  height: 40px;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 0;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.sidebar-close svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+  flex-shrink: 0;
+}
+
+.sidebar .sidebar-close.btn-ghost {
+  background: rgb(255 255 255 / 0.92);
+  border-color: rgb(255 255 255 / 0.45);
+  color: var(--brand-primary);
 }
 
 .sidebar h4 {
@@ -306,12 +321,10 @@ img {
   opacity: 0.95;
   border-top: 1px solid rgb(255 255 255 / 0.25);
   padding-top: var(--space-3);
-  flex-shrink: 0;
 }
 
 .sidebar-account {
   display: none;
-  flex-shrink: 0;
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid rgb(255 255 255 / 0.2);
@@ -1641,15 +1654,10 @@ img {
     inset: auto;
     width: auto;
     height: fit-content;
+    max-height: none;
     overflow: visible;
     transform: none;
     z-index: auto;
-    display: block;
-  }
-
-  .sidebar-drawer nav {
-    flex: none;
-    overflow: visible;
   }
 
   .sidebar-close {
