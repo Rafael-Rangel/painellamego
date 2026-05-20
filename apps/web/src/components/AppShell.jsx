@@ -11,8 +11,7 @@ export default function AppShell({
   children,
   links = [],
   activeLinkKey = "",
-  storeBadge,
-  sidebarTitle = "Admin tools"
+  storeBadge
 }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -78,7 +77,6 @@ export default function AppShell({
         />
         <aside className={sidebarOpen ? "sidebar sidebar-drawer sidebar-drawer-open" : "sidebar sidebar-drawer"}>
           <div className="sidebar-drawer-head">
-            <h4>{sidebarTitle}</h4>
             <button className="btn btn-ghost sidebar-close" type="button" onClick={() => setSidebarOpen(false)} aria-label="Fechar menu">
               <FaTimes />
             </button>

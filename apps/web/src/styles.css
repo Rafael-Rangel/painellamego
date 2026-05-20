@@ -214,13 +214,8 @@ img {
 .sidebar-drawer-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  justify-content: flex-end;
   margin-bottom: var(--space-3);
-}
-
-.sidebar-drawer-head h4 {
-  margin: 0;
 }
 
 .sidebar-close {
@@ -249,14 +244,6 @@ img {
   background: rgb(255 255 255 / 0.92);
   border-color: rgb(255 255 255 / 0.45);
   color: var(--brand-primary);
-}
-
-.sidebar h4 {
-  margin-top: 0;
-  color: #bcd3ff;
-  font-size: var(--font-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .nav {
@@ -1651,6 +1638,10 @@ img {
     overflow: visible;
     transform: none;
     z-index: auto;
+  }
+
+  .sidebar-drawer-head {
+    display: none;
   }
 
   .sidebar-close {
