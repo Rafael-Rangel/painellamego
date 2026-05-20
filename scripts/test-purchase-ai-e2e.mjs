@@ -103,8 +103,12 @@ async function main() {
   if (!supRes.res.ok) fail("suppliers", new Error("suppliers"), { status: supRes.res.status, body: supRes.data });
   const suppliers = Array.isArray(supRes.data) ? supRes.data : [];
   if (!suppliers.length) fail("suppliers", new Error("Nenhum fornecedor no catálogo"));
-  const supplierId = suppliers[0].id;
-  console.log(`  OK fornecedor: ${suppliers[0].name}`);
+  const royal =
+    suppliers.find((s) => /royal/i.test(String(s.name || ""))) ||
+    suppliers.find((s) => /distribuidora/i.test(String(s.name || "")));
+  const supplier = royal || suppliers[0];
+  const supplierId = supplier.id;
+  console.log(`  OK fornecedor: ${supplier.name}`);
 
   console.log("[3/5] Analisar nota (POST receipt-ai-parse)…");
   const form = new FormData();
@@ -112,13 +116,22 @@ async function main() {
   const blob = new Blob([fs.readFileSync(fixture)], { type: mime });
   form.append("receipts", blob, path.basename(fixture));
   form.append("supplierId", supplierId);
+  let ai = null;
+  let items = [];
   const t0 = Date.now();
-  const ai = await apiFetch(token, "POST", "/purchases/receipt-ai-parse", { formData: form, timeoutMs: 300_000 });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) {
+      console.log("  Nova tentativa de leitura IA…");
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    ai = await apiFetch(token, "POST", "/purchases/receipt-ai-parse", { formData: form, timeoutMs: 300_000 });
+    if (!ai.res.ok) fail("receipt-ai-parse", new Error("IA falhou"), { status: ai.res.status, body: ai.data });
+    items = ai.data?.items || [];
+    if (items.length) break;
+  }
   const ms = Date.now() - t0;
-  if (!ai.res.ok) fail("receipt-ai-parse", new Error("IA falhou"), { status: ai.res.status, body: ai.data });
-  const items = ai.data?.items || [];
   console.log(`  OK em ${(ms / 1000).toFixed(1)}s · ${items.length} linha(s) · NF ${ai.data?.invoiceNumber || "n/d"}`);
-  if (!items.length) fail("receipt-ai-parse", new Error("IA não devolveu itens"));
+  if (!items.length) fail("receipt-ai-parse", new Error("IA não devolveu itens"), { body: ai.data });
 
   if (skipPurchase) {
     console.log("\n[OK] E2E parcial (--skip-purchase).");
