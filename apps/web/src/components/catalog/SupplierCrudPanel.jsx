@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { FaEdit, FaTrash } from "react-icons/fa";
 import { api, withAuth } from "../../api";
+import { useCatalogEditFlash } from "../../hooks/useCatalogEditFlash";
 import CompactTable from "../ui/CompactTable";
 import SingleSelectSearch from "../ui/SingleSelectSearch";
 
@@ -21,6 +22,7 @@ export default function SupplierCrudPanel({
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
+  const { flashFormClass, triggerEditFlash } = useCatalogEditFlash();
 
   const storeOptions = stores.map((s) => ({
     value: s.id,
@@ -47,6 +49,7 @@ export default function SupplierCrudPanel({
       name: row.name || "",
       storeId: row.store_id || ""
     });
+    triggerEditFlash();
   }
 
   async function handleSubmit(e) {
@@ -101,7 +104,10 @@ export default function SupplierCrudPanel({
 
   return (
     <div className="supplier-crud">
-      <form className="admin-catalog-product-form supplier-crud-form" onSubmit={(ev) => void handleSubmit(ev)}>
+      <form
+        className={`admin-catalog-product-form supplier-crud-form ${flashFormClass}`.trim()}
+        onSubmit={(ev) => void handleSubmit(ev)}
+      >
         <div className="admin-catalog-product-form__row">
           <div className="field admin-catalog-product-form__field">
             <label>{editingId ? "Editar fornecedor" : "Novo fornecedor"}</label>

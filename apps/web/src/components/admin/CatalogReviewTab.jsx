@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaCheck, FaEdit, FaSearch, FaSync, FaTrash } from "react-icons/fa";
 import { MdAutoAwesome } from "react-icons/md";
 import { api, withAuth } from "../../api";
+import { useCatalogEditFlash } from "../../hooks/useCatalogEditFlash";
 import CompactTable from "../ui/CompactTable";
 import DataCard from "../ui/DataCard";
 import SingleSelectInput from "../ui/SingleSelectInput";
@@ -20,6 +21,8 @@ export default function CatalogReviewTab({ token, catalogProducts = [], category
   const [rows, setRows] = useState([]);
   const [filter, setFilter] = useState("");
   const [editingId, setEditingId] = useState(null);
+  const { flashFormClass, triggerEditFlash } = useCatalogEditFlash();
+  const prevEditingIdRef = useRef(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [mergeCanonicalId, setMergeCanonicalId] = useState("");
@@ -54,6 +57,13 @@ export default function CatalogReviewTab({ token, catalogProducts = [], category
   useEffect(() => {
     void loadPending();
   }, [loadPending]);
+
+  useEffect(() => {
+    if (editingId && editingId !== prevEditingIdRef.current) {
+      triggerEditFlash();
+    }
+    prevEditingIdRef.current = editingId;
+  }, [editingId, triggerEditFlash]);
 
   const filteredRows = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -303,7 +313,7 @@ export default function CatalogReviewTab({ token, catalogProducts = [], category
             subtitle={editingRow ? `A editar: ${editingRow.name}` : "Preencha os campos e guarde ou aprove."}
           >
             <form
-              className="admin-catalog-product-form"
+              className={`admin-catalog-product-form ${flashFormClass}`.trim()}
               onSubmit={(e) => {
                 e.preventDefault();
                 void saveProduct({ approve: true });

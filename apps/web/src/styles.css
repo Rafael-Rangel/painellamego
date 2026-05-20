@@ -566,6 +566,30 @@ img {
   font-size: var(--font-sm);
 }
 
+/* Destaque único ao entrar em modo edição (produto / fornecedor) */
+@keyframes catalog-edit-field-flash {
+  0% {
+    border-color: var(--brand-accent, #eca02f);
+    box-shadow: 0 0 0 3px rgb(236 160 47 / 0.5);
+  }
+  55% {
+    border-color: var(--brand-accent, #eca02f);
+    box-shadow: 0 0 0 2px rgb(236 160 47 / 0.28);
+  }
+  100% {
+    border-color: var(--neutral-200);
+    box-shadow: none;
+  }
+}
+
+.catalog-edit-flash .field input:not([type="checkbox"]):not([type="radio"]),
+.catalog-edit-flash .field select,
+.catalog-edit-flash .admin-catalog-product-form__field input,
+.catalog-edit-flash .admin-catalog-product-form__field select,
+.catalog-edit-flash .ms-root input {
+  animation: catalog-edit-field-flash 0.85s ease 1;
+}
+
 .ranking-comparison-root .ranking-comparison-toolbar {
   padding: var(--space-4);
 }

@@ -18,6 +18,7 @@ import AppShell from "../components/AppShell";
 import { api, withAuth } from "../api";
 import "../charts/chartSetup";
 import { useAuth } from "../auth/AuthProvider";
+import { useCatalogEditFlash } from "../hooks/useCatalogEditFlash";
 import BadgeValue from "../components/ui/BadgeValue";
 import ChartCard from "../components/ui/ChartCard";
 import CompactTable from "../components/ui/CompactTable";
@@ -106,6 +107,7 @@ export default function AdminPage() {
   const [activeProductId, setActiveProductId] = useState([]);
   const [monthsFilter, setMonthsFilter] = useState(6);
   const [editingProductId, setEditingProductId] = useState(null);
+  const { flashFormClass, triggerEditFlash } = useCatalogEditFlash();
   const [productForm, setProductForm] = useState({
     name: "",
     category: "",
@@ -1277,7 +1279,7 @@ export default function AdminPage() {
         <div className="grid catalog-page-grid">
           <section className="span-12">
             <DataCard title="Produtos" subtitle="Catálogo global da rede. Origem “Rede”, “Gerente” ou “IA”.">
-              <form className="admin-catalog-product-form" onSubmit={saveProduct}>
+              <form className={`admin-catalog-product-form ${flashFormClass}`.trim()} onSubmit={saveProduct}>
                 <div className="admin-catalog-product-form__row">
                   <div className="field admin-catalog-product-form__field">
                     <label>Nome</label>
@@ -1365,6 +1367,7 @@ export default function AdminPage() {
                               type: r.type || "insumo",
                               standardUnit: r.standard_unit || "un"
                             });
+                            triggerEditFlash();
                           }}
                         >
                           <FaEdit />
