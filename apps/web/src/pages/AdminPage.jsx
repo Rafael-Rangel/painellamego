@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   FaBalanceScale,
+  FaBook,
   FaBoxes,
   FaChartBar,
   FaChartLine,
@@ -29,6 +30,7 @@ import TableToolbar from "../components/ui/TableToolbar";
 import { formatCurrency } from "../lib/formatters";
 import { supabase } from "../supabase";
 import CatalogReviewTab from "../components/admin/CatalogReviewTab";
+import SupplierCrudPanel from "../components/catalog/SupplierCrudPanel";
 import RankingComparisonTab from "../components/admin/RankingComparisonTab";
 
 /** Limite de linhas na tabela do Mapa de oportunidades (sem controle na UI). */
@@ -463,7 +465,7 @@ export default function AdminPage() {
     { key: "opportunities", label: "Oportunidades", icon: <FaLightbulb />, onClick: () => setTab("opportunities") },
     { key: "products", label: "Análise", icon: <FaChartLine />, onClick: () => setTab("products") },
     { key: "ranking", label: "Comparação", icon: <FaBalanceScale />, onClick: () => setTab("ranking") },
-    { key: "products-admin", label: "Produtos", icon: <FaBoxes />, onClick: () => setTab("products-admin") },
+    { key: "catalog-admin", label: "Catálogo", icon: <FaBook />, onClick: () => setTab("catalog-admin") },
     { key: "catalog-review", label: "Revisão IA", icon: <FaSitemap />, onClick: () => setTab("catalog-review") },
     { key: "supplier-aliases", label: "Mapeamento NF", icon: <FaLink />, onClick: () => setTab("supplier-aliases") },
     { key: "settings", label: "Configurações", icon: <FaUserCog />, onClick: () => setTab("settings") }
@@ -1272,10 +1274,10 @@ export default function AdminPage() {
         </div>
       ) : null}
 
-      {tab === "products-admin" ? (
-        <div className="grid">
+      {tab === "catalog-admin" ? (
+        <div className="grid catalog-page-grid">
           <section className="span-12">
-            <DataCard title="Produtos" subtitle="Catálogo global da rede. Na tabela, origem “Rede” ou “Gerente”.">
+            <DataCard title="Produtos" subtitle="Catálogo global da rede. Origem “Rede”, “Gerente” ou “IA”.">
               <form className="admin-catalog-product-form" onSubmit={saveProduct}>
                 <div className="admin-catalog-product-form__row">
                   <div className="field admin-catalog-product-form__field">
@@ -1379,6 +1381,22 @@ export default function AdminPage() {
                 keyField="id"
                 loading={loading}
                 emptyMessage="Nenhum produto cadastrado."
+              />
+            </DataCard>
+          </section>
+          <section className="span-12">
+            <DataCard title="Fornecedores" subtitle="Fornecedores por loja — crie, edite ou remova (não remove se já usado em compras).">
+              <SupplierCrudPanel
+                token={token}
+                suppliers={suppliersAll}
+                stores={stores}
+                showStorePicker
+                loading={loading}
+                onRefresh={loadAll}
+                onToast={(msg) => {
+                  setToast(msg);
+                  setTimeout(() => setToast(""), 4000);
+                }}
               />
             </DataCard>
           </section>

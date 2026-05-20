@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import AppShell from "../components/AppShell";
@@ -13,6 +13,7 @@ import DataCard from "../components/ui/DataCard";
 import KpiCardCompact from "../components/ui/KpiCardCompact";
 import MultiSelectSearch from "../components/ui/MultiSelectSearch";
 import TableToolbar from "../components/ui/TableToolbar";
+import SupplierCrudPanel from "../components/catalog/SupplierCrudPanel";
 import { formatCurrency, formatDate } from "../lib/formatters";
 
 const CHART_COLORS = ["#4b0c0c", "#cd292d", "#eca02f", "#7a1919", "#d15555", "#3d6b2f", "#2c5282", "#6b4c9a"];
@@ -56,8 +57,7 @@ export default function ManagerPage() {
   const [dashboardMonths, setDashboardMonths] = useState(6);
   const [dashboardProductIds, setDashboardProductIds] = useState([]);
   const [dashboardSupplierIds, setDashboardSupplierIds] = useState([]);
-  const [newSupplierName, setNewSupplierName] = useState("");
-  const [savingSupplier, setSavingSupplier] = useState(false);
+  const [toast, setToast] = useState("");
 
   const emptyOverview = useMemo(
     () => ({
@@ -286,17 +286,15 @@ export default function ManagerPage() {
       ? `Loja ${o.storeCode}${o.storeName ? ` · ${o.storeName}` : ""}`
       : null;
 
-  async function createSupplier() {
-    if (!newSupplierName.trim()) return;
-    setSavingSupplier(true);
+  const refreshCatalog = useCallback(async () => {
+    if (!token) return;
     try {
-      await api.post("/catalog/suppliers", { name: newSupplierName.trim() }, withAuth(token));
-      setNewSupplierName("");
-      await loadAll();
-    } finally {
-      setSavingSupplier(false);
+      const suppliersRes = await api.get("/catalog/suppliers", withAuth(token));
+      setSuppliers(suppliersRes.data?.length ? suppliersRes.data : []);
+    } catch {
+      setSuppliers([]);
     }
-  }
+  }, [token]);
 
   return (
     <AppShell
@@ -306,6 +304,7 @@ export default function ManagerPage() {
       activeLinkKey={tab}
       storeBadge={storeBadge}
     >
+      {toast ? <p className="toast-banner">{toast}</p> : null}
       {loading ? <p className="empty">Carregando dados...</p> : null}
       {error ? <p className="field-error">{error}</p> : null}
 
@@ -530,10 +529,9 @@ export default function ManagerPage() {
       ) : null}
 
       {tab === "catalog" ? (
-        <DataCard title="Catálogo da sua loja">
-          <div className="grid">
-            <div className="span-6">
-              <h4>Produtos</h4>
+        <div className="grid catalog-page-grid">
+          <section className="span-12">
+            <DataCard title="Produtos" subtitle="Catálogo da rede (consulta). Para criar produto novo, use o registo de compra.">
               <CompactTable
                 columns={[
                   { id: "name", label: "Nome" },
@@ -541,31 +539,30 @@ export default function ManagerPage() {
                   { id: "type", label: "Tipo", render: (p) => p.type || "—" },
                   { id: "standard_unit", label: "Unidade" }
                 ]}
-                rows={products.slice(0, 30)}
+                rows={products}
                 keyField="id"
                 loading={loading}
+                emptyMessage="Nenhum produto no catálogo."
               />
-            </div>
-            <div className="span-6">
-              <h4>Fornecedores</h4>
-              <div className="field" style={{ marginBottom: "0.75rem" }}>
-                <label>Adicionar fornecedor da sua loja</label>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <input
-                    value={newSupplierName}
-                    onChange={(e) => setNewSupplierName(e.target.value)}
-                    placeholder="Ex.: Distribuidora Centro Sul"
-                  />
-                  <button className="btn btn-secondary" type="button" onClick={createSupplier} disabled={savingSupplier || !newSupplierName.trim()}>
-                    {savingSupplier ? "Salvando..." : "Adicionar"}
-                  </button>
-                </div>
-              </div>
-              <CompactTable columns={[{ id: "name", label: "Nome" }]} rows={suppliers.slice(0, 30)} keyField="id" loading={loading} />
-            </div>
-          </div>
-        </DataCard>
+            </DataCard>
+          </section>
+          <section className="span-12">
+            <DataCard title="Fornecedores" subtitle="Fornecedores da sua loja — adicione, edite ou remova.">
+              <SupplierCrudPanel
+                token={token}
+                suppliers={suppliers}
+                loading={loading}
+                onRefresh={refreshCatalog}
+                onToast={(msg) => {
+                  setToast(msg);
+                  setTimeout(() => setToast(""), 4000);
+                }}
+              />
+            </DataCard>
+          </section>
+        </div>
       ) : null}
+
     </AppShell>
   );
 }

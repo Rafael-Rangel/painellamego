@@ -389,6 +389,83 @@ router.post("/suppliers", requireAuth, async (req, res) => {
   return res.status(201).json(data);
 });
 
+async function getSupplierForUser(supplierId, user) {
+  const { data, error } = await supabaseAdmin.from("suppliers").select("*").eq("id", supplierId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  if (user.role === "admin") return data;
+  const storeIds = await getManagerStoreIds(user);
+  if (!data.store_id || !storeIds.includes(data.store_id)) return null;
+  return data;
+}
+
+router.put("/suppliers/:id", requireAuth, async (req, res) => {
+  const parsed = supplierSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+
+  try {
+    const existing = await getSupplierForUser(req.params.id, req.user);
+    if (!existing) return res.status(404).json({ message: "Fornecedor não encontrado." });
+
+    const payload = { name: parsed.data.name.trim() };
+    if (req.user.role === "admin" && parsed.data.storeId) {
+      payload.store_id = parsed.data.storeId;
+    }
+
+    let { data, error } = await supabaseAdmin.from("suppliers").update(payload).eq("id", req.params.id).select("*").single();
+    if (error && missingStoreIdColumn(error.message)) {
+      ({ data, error } = await supabaseAdmin
+        .from("suppliers")
+        .update({ name: payload.name })
+        .eq("id", req.params.id)
+        .select("*")
+        .single());
+    }
+    if (error) return res.status(400).json({ message: error.message });
+
+    await logAudit({
+      userId: req.user.id,
+      action: "update",
+      resource: "supplier",
+      payload: { supplierId: data.id }
+    });
+    return res.json(data);
+  } catch (e) {
+    return res.status(400).json({ message: String(e?.message || e) });
+  }
+});
+
+router.delete("/suppliers/:id", requireAuth, async (req, res) => {
+  try {
+    const existing = await getSupplierForUser(req.params.id, req.user);
+    if (!existing) return res.status(404).json({ message: "Fornecedor não encontrado." });
+
+    const { count, error: countErr } = await supabaseAdmin
+      .from("purchase_items")
+      .select("id", { count: "exact", head: true })
+      .eq("supplier_id", req.params.id);
+    if (countErr) return res.status(400).json({ message: countErr.message });
+    if ((count || 0) > 0) {
+      return res.status(400).json({
+        message: "Este fornecedor já foi usado em compras e não pode ser removido."
+      });
+    }
+
+    const { error } = await supabaseAdmin.from("suppliers").delete().eq("id", req.params.id);
+    if (error) return res.status(400).json({ message: error.message });
+
+    await logAudit({
+      userId: req.user.id,
+      action: "delete",
+      resource: "supplier",
+      payload: { supplierId: req.params.id }
+    });
+    return res.status(204).send();
+  } catch (e) {
+    return res.status(400).json({ message: String(e?.message || e) });
+  }
+});
+
 const supplierAliasBodySchema = z.object({
   supplierId: z.string().uuid(),
   labelRaw: z.string().min(2).max(400),

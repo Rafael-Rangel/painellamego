@@ -539,11 +539,31 @@ img {
   width: 100%;
 }
 
-.catalog-review-row-actions {
+.catalog-review-row-actions,
+.catalog-row-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
+}
+
+.catalog-page-grid {
+  gap: var(--space-4);
+}
+
+.supplier-crud-form {
+  margin-bottom: var(--space-3);
+}
+
+.toast-banner {
+  margin: 0 0 var(--space-3);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-md);
+  background: #fff8e6;
+  border: 1px solid #e8c96a;
+  color: var(--neutral-900);
+  font-weight: 600;
+  font-size: var(--font-sm);
 }
 
 .ranking-comparison-root .ranking-comparison-toolbar {
