@@ -299,7 +299,7 @@ export default function ManagerPage() {
   return (
     <AppShell
       title="Painel do Gerente"
-      subtitle="Visualize somente a sua loja e os seus lançamentos"
+      subtitle="Visualize a sua loja e os seus lançamentos"
       links={links}
       activeLinkKey={tab}
       storeBadge={storeBadge}
