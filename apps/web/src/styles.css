@@ -566,20 +566,26 @@ img {
   font-size: var(--font-sm);
 }
 
-/* Destaque único ao entrar em modo edição (produto / fornecedor) */
+/* Modo edição: borda amarela persistente + piscar ao abrir */
 @keyframes catalog-edit-field-flash {
-  0% {
-    border-color: var(--brand-accent, #eca02f);
-    box-shadow: 0 0 0 3px rgb(236 160 47 / 0.5);
-  }
-  55% {
-    border-color: var(--brand-accent, #eca02f);
-    box-shadow: 0 0 0 2px rgb(236 160 47 / 0.28);
-  }
+  0%,
   100% {
-    border-color: var(--neutral-200);
-    box-shadow: none;
+    border-color: var(--brand-accent, #eca02f);
+    box-shadow: 0 0 0 3px rgb(236 160 47 / 0.45);
   }
+  50% {
+    border-color: #f5c842;
+    box-shadow: 0 0 0 4px rgb(236 160 47 / 0.55);
+  }
+}
+
+.catalog-edit-active .field input:not([type="checkbox"]):not([type="radio"]),
+.catalog-edit-active .field select,
+.catalog-edit-active .admin-catalog-product-form__field input,
+.catalog-edit-active .admin-catalog-product-form__field select,
+.catalog-edit-active .ms-root input {
+  border-color: var(--brand-accent, #eca02f) !important;
+  box-shadow: 0 0 0 2px rgb(236 160 47 / 0.32);
 }
 
 .catalog-edit-flash .field input:not([type="checkbox"]):not([type="radio"]),
@@ -587,7 +593,7 @@ img {
 .catalog-edit-flash .admin-catalog-product-form__field input,
 .catalog-edit-flash .admin-catalog-product-form__field select,
 .catalog-edit-flash .ms-root input {
-  animation: catalog-edit-field-flash 0.85s ease 1;
+  animation: catalog-edit-field-flash 0.75s ease 2;
 }
 
 .ranking-comparison-root .ranking-comparison-toolbar {

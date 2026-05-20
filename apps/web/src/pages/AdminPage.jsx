@@ -107,7 +107,7 @@ export default function AdminPage() {
   const [activeProductId, setActiveProductId] = useState([]);
   const [monthsFilter, setMonthsFilter] = useState(6);
   const [editingProductId, setEditingProductId] = useState(null);
-  const { flashFormClass, triggerEditFlash } = useCatalogEditFlash();
+  const { formClass: productEditFormClass, triggerEditFlash } = useCatalogEditFlash(Boolean(editingProductId));
   const [productForm, setProductForm] = useState({
     name: "",
     category: "",
@@ -1279,7 +1279,7 @@ export default function AdminPage() {
         <div className="grid catalog-page-grid">
           <section className="span-12">
             <DataCard title="Produtos" subtitle="Catálogo global da rede. Origem “Rede”, “Gerente” ou “IA”.">
-              <form className={`admin-catalog-product-form ${flashFormClass}`.trim()} onSubmit={saveProduct}>
+              <form className={`admin-catalog-product-form ${productEditFormClass}`.trim()} onSubmit={saveProduct}>
                 <div className="admin-catalog-product-form__row">
                   <div className="field admin-catalog-product-form__field">
                     <label>Nome</label>

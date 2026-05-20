@@ -1,7 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 
-/** Dispara animação única de borda amarela nos campos do formulário de edição. */
-export function useCatalogEditFlash() {
+/**
+ * Destaque de edição: pisca ao abrir e mantém borda amarela até salvar/cancelar.
+ * @param {boolean} isEditing — true enquanto um item está em modo edição
+ */
+export function useCatalogEditFlash(isEditing) {
   const [flash, setFlash] = useState(false);
   const timerRef = useRef(null);
 
@@ -17,7 +20,9 @@ export function useCatalogEditFlash() {
     });
   }, []);
 
-  const flashFormClass = flash ? "catalog-edit-flash" : "";
+  const formClass = [isEditing ? "catalog-edit-active" : "", flash ? "catalog-edit-flash" : ""]
+    .filter(Boolean)
+    .join(" ");
 
-  return { flashFormClass, triggerEditFlash };
+  return { formClass, triggerEditFlash };
 }

@@ -22,7 +22,7 @@ export default function SupplierCrudPanel({
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
-  const { flashFormClass, triggerEditFlash } = useCatalogEditFlash();
+  const { formClass: editFormClass, triggerEditFlash } = useCatalogEditFlash(Boolean(editingId));
 
   const storeOptions = stores.map((s) => ({
     value: s.id,
@@ -105,7 +105,7 @@ export default function SupplierCrudPanel({
   return (
     <div className="supplier-crud">
       <form
-        className={`admin-catalog-product-form supplier-crud-form ${flashFormClass}`.trim()}
+        className={`admin-catalog-product-form supplier-crud-form ${editFormClass}`.trim()}
         onSubmit={(ev) => void handleSubmit(ev)}
       >
         <div className="admin-catalog-product-form__row">
