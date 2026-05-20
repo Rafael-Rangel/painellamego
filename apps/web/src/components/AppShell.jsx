@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { FaBars, FaTimes } from "react-icons/fa";
+import { FaBars, FaSignOutAlt, FaTimes } from "react-icons/fa";
 import { useAuth } from "../auth/AuthProvider";
 
 const logoUrl = import.meta.env.VITE_BRAND_LOGO_URL ?? "/logo.jpg";
@@ -114,8 +114,9 @@ export default function AppShell({
           <div className="sidebar-account">
             {storeLabel ? <span className="sidebar-account-pill">{storeLabel}</span> : null}
             <span className="sidebar-account-email">{user?.email}</span>
-            <button className="btn btn-secondary sidebar-account-signout" type="button" onClick={handleSignOut}>
-              Sair
+            <button className="btn btn-menu-signout sidebar-account-signout" type="button" onClick={handleSignOut}>
+              <FaSignOutAlt aria-hidden />
+              <span>Sair</span>
             </button>
           </div>
         </aside>

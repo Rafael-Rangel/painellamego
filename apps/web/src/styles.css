@@ -324,9 +324,50 @@ img {
   font-weight: 700;
 }
 
-.sidebar-account-signout {
+.btn-menu-signout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   width: 100%;
-  margin-top: var(--space-1);
+  padding: 0.7rem 1rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--brand-highlight);
+  color: #fff;
+  font-size: var(--font-sm);
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(240 165 0 / 0.4);
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.btn-menu-signout svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+}
+
+.btn-menu-signout:hover {
+  background: #d89400;
+  box-shadow: 0 6px 16px rgb(240 165 0 / 0.45);
+}
+
+.btn-menu-signout:active {
+  transform: scale(0.98);
+}
+
+.btn-menu-signout:focus-visible {
+  outline: 3px solid rgb(255 255 255 / 0.55);
+  outline-offset: 2px;
+}
+
+.sidebar-account-signout {
+  margin-top: var(--space-2);
 }
 
 .grid {
