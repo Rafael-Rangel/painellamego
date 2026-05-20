@@ -3,12 +3,17 @@ import { supabaseAdmin } from "../lib/supabase.js";
 export async function recalculateProductSnapshot(productId) {
   const { data, error } = await supabaseAdmin
     .from("purchase_items")
-    .select("unit_price, stores!inner(id,name)")
+    .select("unit_price")
     .eq("product_id", productId);
-  if (error) throw error;
-  if (!data?.length) return null;
+  if (error) {
+    console.error("[price-snapshot] leitura falhou", { productId, message: error.message });
+    return { ok: false, error: error.message };
+  }
+  if (!data?.length) return { ok: true, skipped: true };
 
-  const prices = data.map((row) => Number(row.unit_price));
+  const prices = data.map((row) => Number(row.unit_price)).filter((n) => Number.isFinite(n) && n > 0);
+  if (!prices.length) return { ok: true, skipped: true };
+
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
   const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
@@ -23,7 +28,10 @@ export async function recalculateProductSnapshot(productId) {
     },
     { onConflict: "product_id" }
   );
-  if (upsertError) throw upsertError;
+  if (upsertError) {
+    console.error("[price-snapshot] upsert falhou", { productId, message: upsertError.message });
+    return { ok: false, error: upsertError.message };
+  }
 
-  return { minPrice, maxPrice, avgPrice };
+  return { ok: true, minPrice, maxPrice, avgPrice };
 }

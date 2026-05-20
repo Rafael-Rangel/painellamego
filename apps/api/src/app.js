@@ -7,6 +7,7 @@ import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
 import catalogRoutes from "./routes/catalog.js";
 import purchaseRoutes from "./routes/purchases.js";
+import { errorHandler } from "./middleware/errors.js";
 
 const app = express();
 
@@ -40,5 +41,6 @@ app.use("/auth", authRoutes);
 app.use("/catalog", catalogRoutes);
 app.use("/purchases", purchaseRoutes);
 app.use("/", analyticsRoutes);
+app.use(errorHandler);
 
 export default app;

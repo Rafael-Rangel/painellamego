@@ -24,6 +24,20 @@ function gatherReceiptFiles(filesObj = {}) {
   return [...many, ...single];
 }
 
+function normalizePurchaseDate(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+async function deletePurchaseCascade(purchaseId) {
+  if (!purchaseId) return;
+  await supabaseAdmin.from("purchases").delete().eq("id", purchaseId);
+}
+
 router.post(
   "/receipt-ai-parse",
   requireAuth,
@@ -146,100 +160,148 @@ router.post(
     { name: "receipts", maxCount: 12 }
   ]),
   async (req, res) => {
-  const schema = z.object({
-    storeId: z.string().uuid().optional(),
-    invoiceNumber: z.string().min(1),
-    items: z.string().min(2)
-  });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
-
-  let items = [];
+  let purchaseId = null;
   try {
-    items = JSON.parse(parsed.data.items);
-  } catch {
-    return res.status(400).json({ message: "Formato inválido para itens da compra." });
-  }
-  if (!Array.isArray(items) || !items.length) {
-    return res.status(400).json({ message: "Itens da compra são obrigatórios." });
-  }
-
-  const itemsParsed = z.array(purchaseItemSchema).safeParse(items);
-  if (!itemsParsed.success) {
-    return res.status(400).json({ message: "Dados dos itens inválidos.", details: itemsParsed.error.flatten() });
-  }
-  items = itemsParsed.data;
-
-  const receiptFiles = gatherReceiptFiles(req.files || {});
-  if (!receiptFiles.length) {
-    return res.status(400).json({ message: "Arquivo da nota fiscal é obrigatório." });
-  }
-  for (const file of receiptFiles) {
-    if (!allowedMimeTypes.has(file.mimetype)) {
-      return res.status(400).json({ message: "Tipo de arquivo não permitido. Use JPG, PNG ou PDF." });
-    }
-  }
-
-  let storeId = req.storeScopeId;
-  if (req.user.role !== "admin") {
-    const storeIds = await getManagerStoreIds(req.user);
-    storeId = storeIds[0] || req.user.storeId;
-  }
-  if (!storeId) return res.status(400).json({ message: "Loja não encontrada no escopo do usuário." });
-
-  const { data: purchase, error: purchaseError } = await supabaseAdmin
-    .from("purchases")
-    .insert({
-      store_id: storeId,
-      invoice_number: parsed.data.invoiceNumber,
-      created_by: req.user.id
-    })
-    .select("*")
-    .single();
-  if (purchaseError) return res.status(400).json({ message: purchaseError.message });
-
-  const payloadItems = items.map((item) => ({
-    purchase_id: purchase.id,
-    store_id: storeId,
-    product_id: item.productId,
-    supplier_id: item.supplierId,
-    unit_price: item.unitPrice,
-    unit_used: item.unitUsed,
-    quantity: item.quantity,
-    purchase_date: item.purchaseDate,
-    week_of_month: item.weekOfMonth,
-    line_type: item.lineType
-  }));
-
-  const { error: itemsError } = await supabaseAdmin.from("purchase_items").insert(payloadItems);
-  if (itemsError) return res.status(400).json({ message: itemsError.message });
-
-  for (const file of receiptFiles) {
-    const filePath = `${purchase.id}/${Date.now()}-${file.originalname}`;
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from("fiscal-receipts")
-      .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: false });
-    if (uploadError) return res.status(400).json({ message: uploadError.message });
-    await supabaseAdmin.from("fiscal_receipts").insert({
-      purchase_id: purchase.id,
-      storage_path: filePath,
-      original_name: file.originalname,
-      mime_type: file.mimetype
+    const schema = z.object({
+      storeId: z.string().uuid().optional(),
+      invoiceNumber: z.string().min(1),
+      items: z.string().min(2)
     });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+
+    let items = [];
+    try {
+      items = JSON.parse(parsed.data.items);
+    } catch {
+      return res.status(400).json({ message: "Formato inválido para itens da compra." });
+    }
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(400).json({ message: "Itens da compra são obrigatórios." });
+    }
+
+    const itemsParsed = z.array(purchaseItemSchema).safeParse(items);
+    if (!itemsParsed.success) {
+      return res.status(400).json({ message: "Dados dos itens inválidos.", details: itemsParsed.error.flatten() });
+    }
+    items = itemsParsed.data.map((item) => {
+      const purchaseDate = normalizePurchaseDate(item.purchaseDate);
+      if (!purchaseDate) {
+        return { ...item, purchaseDate: null };
+      }
+      return { ...item, purchaseDate };
+    });
+    const badDate = items.find((item) => !item.purchaseDate);
+    if (badDate) {
+      return res.status(400).json({ message: "Data da compra inválida. Revise a data do lançamento." });
+    }
+
+    const receiptFiles = gatherReceiptFiles(req.files || {});
+    if (!receiptFiles.length) {
+      return res.status(400).json({ message: "Arquivo da nota fiscal é obrigatório." });
+    }
+    for (const file of receiptFiles) {
+      if (!allowedMimeTypes.has(file.mimetype)) {
+        return res.status(400).json({ message: "Tipo de arquivo não permitido. Use JPG, PNG ou PDF." });
+      }
+    }
+
+    let storeId = req.storeScopeId;
+    if (req.user.role !== "admin") {
+      const storeIds = await getManagerStoreIds(req.user);
+      storeId = storeIds[0] || req.user.storeId;
+    }
+    if (!storeId) return res.status(400).json({ message: "Loja não encontrada no escopo do usuário." });
+
+    const { data: purchase, error: purchaseError } = await supabaseAdmin
+      .from("purchases")
+      .insert({
+        store_id: storeId,
+        invoice_number: parsed.data.invoiceNumber.trim(),
+        created_by: req.user.id
+      })
+      .select("*")
+      .single();
+    if (purchaseError) {
+      const msg = String(purchaseError.message || "");
+      if (msg.toLowerCase().includes("unique_invoice_per_store") || msg.toLowerCase().includes("duplicate")) {
+        return res.status(400).json({ message: "Já existe uma compra com este número de nota nesta loja." });
+      }
+      return res.status(400).json({ message: purchaseError.message });
+    }
+    purchaseId = purchase.id;
+
+    const payloadItems = items.map((item) => ({
+      purchase_id: purchase.id,
+      store_id: storeId,
+      product_id: item.productId,
+      supplier_id: item.supplierId,
+      unit_price: item.unitPrice,
+      unit_used: item.unitUsed,
+      quantity: item.quantity,
+      purchase_date: item.purchaseDate,
+      week_of_month: item.weekOfMonth,
+      line_type: item.lineType
+    }));
+
+    const { error: itemsError } = await supabaseAdmin.from("purchase_items").insert(payloadItems);
+    if (itemsError) {
+      await deletePurchaseCascade(purchaseId);
+      purchaseId = null;
+      return res.status(400).json({ message: itemsError.message });
+    }
+
+    for (const file of receiptFiles) {
+      const safeName = String(file.originalname || "nota").replace(/[^\w.\-()+ ]/g, "_").slice(0, 180);
+      const filePath = `${purchase.id}/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from("fiscal-receipts")
+        .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: false });
+      if (uploadError) {
+        await deletePurchaseCascade(purchaseId);
+        purchaseId = null;
+        return res.status(400).json({ message: uploadError.message });
+      }
+      const { error: receiptRowError } = await supabaseAdmin.from("fiscal_receipts").insert({
+        purchase_id: purchase.id,
+        storage_path: filePath,
+        original_name: file.originalname,
+        mime_type: file.mimetype
+      });
+      if (receiptRowError) {
+        await supabaseAdmin.storage.from("fiscal-receipts").remove([filePath]);
+        await deletePurchaseCascade(purchaseId);
+        purchaseId = null;
+        return res.status(400).json({ message: receiptRowError.message });
+      }
+    }
+
+    const productIds = [...new Set(payloadItems.map((row) => row.product_id))];
+    for (const pid of productIds) {
+      const snap = await recalculateProductSnapshot(pid);
+      if (!snap.ok) {
+        console.warn("[purchases] snapshot ignorado", { purchaseId: purchase.id, productId: pid, error: snap.error });
+      }
+    }
+
+    await logAudit({
+      userId: req.user.id,
+      action: "create",
+      resource: "purchase",
+      payload: { purchaseId: purchase.id, storeId, items: payloadItems.length }
+    });
+
+    return res.status(201).json({ purchaseId: purchase.id, message: "Compra registrada com sucesso." });
+  } catch (err) {
+    console.error("[purchases] POST falhou", {
+      userId: req.user?.id,
+      purchaseId,
+      message: err?.message || String(err)
+    });
+    if (purchaseId) await deletePurchaseCascade(purchaseId);
+    const message = err?.message || "Não foi possível registar a compra.";
+    return res.status(500).json({ message });
   }
-
-  for (const item of payloadItems) {
-    await recalculateProductSnapshot(item.product_id);
-  }
-
-  await logAudit({
-    userId: req.user.id,
-    action: "create",
-    resource: "purchase",
-    payload: { purchaseId: purchase.id, storeId, items: payloadItems.length }
-  });
-
-  return res.status(201).json({ purchaseId: purchase.id, message: "Compra registrada com sucesso." });
 });
 
 router.get("/store/:storeId", requireAuth, checkStoreScope, resolveStoreScope, async (req, res) => {

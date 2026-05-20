@@ -102,21 +102,25 @@ export default function ReceiptAiDropzoneCard({
         <div className="purchase-ai-pick-actions">
           <button
             type="button"
-            className="btn btn-primary purchase-ai-pick-btn file-pick-btn"
+            className="btn btn-primary purchase-ai-pick-btn"
             disabled={disabled || analyzing || atLimit}
             onClick={() => cameraInputRef.current?.click()}
           >
-            <FaCamera className="file-pick-btn-icon" aria-hidden />
-            <span>Tirar foto</span>
+            <span className="purchase-ai-pick-btn-inner">
+              <FaCamera className="purchase-ai-pick-btn-icon" aria-hidden />
+              <span className="purchase-ai-pick-btn-text">Tirar foto</span>
+            </span>
           </button>
           <button
             type="button"
-            className="btn btn-secondary purchase-ai-pick-btn file-pick-btn"
+            className="btn btn-secondary purchase-ai-pick-btn"
             disabled={disabled || analyzing || atLimit}
             onClick={() => galleryInputRef.current?.click()}
           >
-            <FaFileAlt className="file-pick-btn-icon" aria-hidden />
-            <span>Galeria / ficheiros</span>
+            <span className="purchase-ai-pick-btn-inner">
+              <FaFileAlt className="purchase-ai-pick-btn-icon" aria-hidden />
+              <span className="purchase-ai-pick-btn-text">Galeria e ficheiros</span>
+            </span>
           </button>
         </div>
 

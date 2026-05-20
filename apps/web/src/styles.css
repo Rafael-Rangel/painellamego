@@ -2868,15 +2868,34 @@ tbody tr:last-child td {
 .purchase-ai-pick-actions .purchase-ai-pick-btn {
   width: 100%;
   min-height: 3rem;
-  padding: 0.75rem 0.65rem;
-  font-size: var(--font-sm);
-  line-height: 1.25;
-  text-align: center;
+  padding: 0.65rem 0.5rem;
+  font-size: clamp(0.72rem, 2.8vw, var(--font-sm));
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.purchase-ai-pick-actions .purchase-ai-pick-btn span {
-  flex: 1;
-  min-width: 0;
+.purchase-ai-pick-btn-inner {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.purchase-ai-pick-btn-icon {
+  flex-shrink: 0;
+  font-size: 1.05em;
+  line-height: 1;
+  opacity: 0.92;
+}
+
+.purchase-ai-pick-btn-text {
+  white-space: nowrap;
 }
 
 .purchase-ai-receipt-queue {

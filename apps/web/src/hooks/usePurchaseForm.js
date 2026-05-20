@@ -20,7 +20,29 @@ function isRetryableAiError(err) {
 
 export function toWeekOfMonth(dateStr) {
   const date = new Date(dateStr);
-  return Math.ceil(date.getDate() / 7);
+  if (Number.isNaN(date.getTime())) return 1;
+  return Math.min(5, Math.max(1, Math.ceil(date.getDate() / 7)));
+}
+
+/** Data enviada à API (coluna `date` no Postgres). */
+export function toPurchaseDatePayload(dateStr) {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+function purchaseApiErrorMessage(err) {
+  const d = err?.response?.data;
+  if (typeof d?.message === "string" && d.message.trim()) return d.message;
+  if (d?.details?.fieldErrors) {
+    const flat = Object.values(d.details.fieldErrors).flat().filter(Boolean);
+    if (flat.length) return `Dados inválidos: ${flat.slice(0, 2).join("; ")}`;
+  }
+  if (typeof d === "string" && d.trim() && !d.includes("<!DOCTYPE")) return d.trim();
+  const st = err?.response?.status;
+  if (st === 413) return "Arquivos da nota muito grandes. Tire fotos com menos resolução ou envie menos ficheiros.";
+  if (st === 500) return "Erro no servidor ao registar. Tente de novo; se persistir, contacte o suporte.";
+  return "Não foi possível registar a compra. Tente novamente.";
 }
 
 /** Normaliza número da NF vindo da IA (pode ser número ou string). */
@@ -462,14 +484,39 @@ export function usePurchaseForm(token, options = {}) {
     }
     setItems(workItems);
 
+    const purchaseDate = toPurchaseDatePayload(date);
+    if (!purchaseDate) {
+      setToast("Informe uma data válida para a compra.");
+      setTimeout(() => setToast(""), 4500);
+      setConfirming(false);
+      return;
+    }
+
+    for (const row of workItems) {
+      const unitPrice = Number(row.unitPrice);
+      const quantity = Number(row.quantity);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+        setToast("Revise quantidade e preço unitário em todas as linhas (valores numéricos maiores que zero).");
+        setTimeout(() => setToast(""), 5000);
+        setConfirming(false);
+        return;
+      }
+      if (!row.productId) {
+        setToast("Cada linha precisa de um produto associado antes de confirmar.");
+        setTimeout(() => setToast(""), 4500);
+        setConfirming(false);
+        return;
+      }
+    }
+
     try {
       const payload = workItems.map((item) => ({
         productId: item.productId,
         supplierId,
         unitPrice: Number(item.unitPrice),
-        unitUsed: item.unitUsed,
+        unitUsed: String(item.unitUsed || "").trim() || "un",
         quantity: Number(item.quantity),
-        purchaseDate: new Date(date).toISOString(),
+        purchaseDate,
         weekOfMonth: toWeekOfMonth(date),
         lineType: item.lineType === "venda" ? "venda" : "insumo"
       }));
@@ -490,11 +537,7 @@ export function usePurchaseForm(token, options = {}) {
       onAfterConfirm?.();
       setTimeout(() => setToast(""), 2600);
     } catch (err) {
-      const d = err?.response?.data;
-      let msg = "Não foi possível registar a compra. Tente novamente.";
-      if (typeof d?.message === "string") msg = d.message;
-      else if (d?.details) msg = "Dados inválidos. Revise quantidade, preço e produtos.";
-      setToast(msg);
+      setToast(purchaseApiErrorMessage(err));
       setTimeout(() => setToast(""), 5000);
     } finally {
       setConfirming(false);
