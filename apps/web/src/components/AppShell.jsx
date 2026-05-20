@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { FaBars, FaMoon, FaSun, FaTimes } from "react-icons/fa";
+import { FaBars, FaTimes } from "react-icons/fa";
 import { useAuth } from "../auth/AuthProvider";
 
 const logoUrl = import.meta.env.VITE_BRAND_LOGO_URL ?? "/logo.jpg";
@@ -18,11 +18,6 @@ export default function AppShell({
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem("lamego-theme");
-    if (saved === "dark" || saved === "light") return saved;
-    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
-  });
 
   const storeLabel = useMemo(() => {
     if (storeBadge !== undefined) return storeBadge ?? "Sua loja";
@@ -31,9 +26,9 @@ export default function AppShell({
   }, [storeBadge, user?.storeId]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("lamego-theme", theme);
-  }, [theme]);
+    document.documentElement.removeAttribute("data-theme");
+    localStorage.removeItem("lamego-theme");
+  }, []);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -55,31 +50,24 @@ export default function AppShell({
           </div>
         </div>
         <div className="topbar-actions">
-          <div className="topbar-search">
-            <input placeholder="Buscar no painel..." aria-label="Buscar no painel" />
-          </div>
-          <button
-            className="btn btn-ghost theme-toggle"
-            type="button"
-            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-            aria-label="Alternar tema"
-            title={theme === "dark" ? "Ativar modo claro" : "Ativar modo escuro"}
-          >
-            {theme === "dark" ? <FaSun /> : <FaMoon />}
-          </button>
           {storeLabel ? <span className="topbar-pill topbar-pill--desktop">{storeLabel}</span> : null}
           <span className="topbar-user topbar-user--desktop">{user?.email}</span>
           <button className="btn btn-secondary topbar-signout--desktop" type="button" onClick={handleSignOut}>
             Sair
           </button>
-          <button
-            className="btn btn-ghost sidebar-toggle"
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Abrir menu"
-          >
-            <FaBars />
-          </button>
+          <div className="topbar-toolbar">
+            <div className="topbar-search">
+              <input placeholder="Buscar no painel..." aria-label="Buscar no painel" />
+            </div>
+            <button
+              className="btn btn-ghost sidebar-toggle"
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Abrir menu"
+            >
+              <FaBars />
+            </button>
+          </div>
         </div>
       </header>
       <main className="container app-layout">
