@@ -54,19 +54,14 @@ export default function AppShell({
           <button className="btn btn-secondary topbar-signout--desktop" type="button" onClick={handleSignOut}>
             Sair
           </button>
-          <div className="topbar-toolbar">
-            <div className="topbar-search">
-              <input placeholder="Buscar no painel..." aria-label="Buscar no painel" />
-            </div>
-            <button
-              className="btn btn-ghost sidebar-toggle"
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Abrir menu"
-            >
-              <FaBars />
-            </button>
-          </div>
+          <button
+            className="btn btn-ghost sidebar-toggle"
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Abrir menu"
+          >
+            <FaBars />
+          </button>
         </div>
       </header>
       <main className="container app-layout">

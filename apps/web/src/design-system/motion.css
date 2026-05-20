@@ -159,8 +159,7 @@
 
 /* Campos */
 .field input,
-.field select,
-.topbar-search input {
+.field select {
   transition:
     border-color var(--motion-duration-fast) var(--motion-ease-in-out),
     box-shadow var(--motion-duration-fast) var(--motion-ease-in-out),
@@ -168,14 +167,12 @@
 }
 
 .field input:hover,
-.field select:hover,
-.topbar-search input:hover {
+.field select:hover {
   border-color: rgb(234 215 179 / 0.95);
 }
 
 .field input:focus,
-.field select:focus,
-.topbar-search input:focus {
+.field select:focus {
   box-shadow: 0 0 0 3px rgb(240 165 0 / 0.18);
 }
 
