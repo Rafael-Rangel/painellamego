@@ -122,6 +122,7 @@ export function usePurchaseForm(token, options = {}) {
   const [aiHighlightKeys, setAiHighlightKeys] = useState(() => new Set());
   const [supplierCreating, setSupplierCreating] = useState(false);
   const [productCreating, setProductCreating] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -165,6 +166,26 @@ export function usePurchaseForm(token, options = {}) {
     () => items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0),
     [items]
   );
+
+  const canConfirmPurchase = useMemo(() => {
+    if (aiLoading || confirming) return false;
+    if (!supplierId || !receipts.length || !items.length) return false;
+    return items.every((it) => {
+      const hasProduct = Boolean(it.productId) || String(it.aiRawProductName || "").trim().length >= 2;
+      const category = resolveItemCategory(it, products);
+      const qty = Number(it.quantity);
+      const price = Number(it.unitPrice);
+      return (
+        hasProduct &&
+        Boolean(category) &&
+        Number.isFinite(qty) &&
+        qty > 0 &&
+        Number.isFinite(price) &&
+        price > 0 &&
+        String(it.unitUsed || "").trim().length > 0
+      );
+    });
+  }, [aiLoading, confirming, supplierId, receipts.length, items, products]);
 
   const addItem = useCallback(() => {
     setDraftItem((d) => {
@@ -353,10 +374,21 @@ export function usePurchaseForm(token, options = {}) {
 
   const confirmPurchase = useCallback(async () => {
     if (!receipts.length) {
-      setToast("É obrigatório anexar pelo menos um arquivo da nota fiscal.");
+      setToast("É obrigatório anexar pelo menos um ficheiro da nota fiscal.");
       setTimeout(() => setToast(""), 4500);
       return;
     }
+    if (!supplierId) {
+      setToast("Selecione o fornecedor antes de confirmar.");
+      setTimeout(() => setToast(""), 4500);
+      return;
+    }
+    if (!items.length) {
+      setToast("Adicione pelo menos um item à compra.");
+      setTimeout(() => setToast(""), 4500);
+      return;
+    }
+    setConfirming(true);
     const workItems = [...items];
     for (let i = 0; i < workItems.length; i += 1) {
       const row = workItems[i];
@@ -364,6 +396,7 @@ export function usePurchaseForm(token, options = {}) {
       if (!category) {
         setToast("Informe a categoria em todas as linhas antes de confirmar.");
         setTimeout(() => setToast(""), 4500);
+        setConfirming(false);
         return;
       }
       if (row.productId) {
@@ -374,6 +407,7 @@ export function usePurchaseForm(token, options = {}) {
       if (!label) {
         setToast("Cada linha precisa de um produto do catálogo ou do texto da nota para criar o item automaticamente.");
         setTimeout(() => setToast(""), 4500);
+        setConfirming(false);
         return;
       }
       try {
@@ -397,37 +431,49 @@ export function usePurchaseForm(token, options = {}) {
         const msg = err?.response?.data?.message || "Não foi possível criar produto a partir da linha.";
         setToast(msg);
         setTimeout(() => setToast(""), 4500);
+        setConfirming(false);
         return;
       }
     }
     setItems(workItems);
 
-    const payload = workItems.map((item) => ({
-      productId: item.productId,
-      supplierId,
-      unitPrice: Number(item.unitPrice),
-      unitUsed: item.unitUsed,
-      quantity: Number(item.quantity),
-      purchaseDate: new Date(date).toISOString(),
-      weekOfMonth: toWeekOfMonth(date),
-      lineType: item.lineType === "venda" ? "venda" : "insumo"
-    }));
-    const form = new FormData();
-    form.append("invoiceNumber", invoiceNumber || `NF-${Date.now()}`);
-    form.append("items", JSON.stringify(payload));
-    const filesToUpload = await compressReceiptFiles([...receipts, ...receiptExtras]);
-    for (const file of filesToUpload) form.append("receipts", file);
-    await api.post("/purchases", form, {
-      headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
-    });
-    setToast("Lançamento confirmado com sucesso.");
-    setItems([]);
-    setInvoiceNumber("");
-    setReceipts([]);
-    setReceiptExtras([]);
-    setAiHighlightKeys(new Set());
-    onAfterConfirm?.();
-    setTimeout(() => setToast(""), 2600);
+    try {
+      const payload = workItems.map((item) => ({
+        productId: item.productId,
+        supplierId,
+        unitPrice: Number(item.unitPrice),
+        unitUsed: item.unitUsed,
+        quantity: Number(item.quantity),
+        purchaseDate: new Date(date).toISOString(),
+        weekOfMonth: toWeekOfMonth(date),
+        lineType: item.lineType === "venda" ? "venda" : "insumo"
+      }));
+      const form = new FormData();
+      form.append("invoiceNumber", invoiceNumber || `NF-${Date.now()}`);
+      form.append("items", JSON.stringify(payload));
+      const filesToUpload = await compressReceiptFiles([...receipts, ...receiptExtras]);
+      for (const file of filesToUpload) form.append("receipts", file);
+      await api.post("/purchases", form, {
+        headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
+      });
+      setToast("Lançamento confirmado com sucesso.");
+      setItems([]);
+      setInvoiceNumber("");
+      setReceipts([]);
+      setReceiptExtras([]);
+      setAiHighlightKeys(new Set());
+      onAfterConfirm?.();
+      setTimeout(() => setToast(""), 2600);
+    } catch (err) {
+      const d = err?.response?.data;
+      let msg = "Não foi possível registar a compra. Tente novamente.";
+      if (typeof d?.message === "string") msg = d.message;
+      else if (d?.details) msg = "Dados inválidos. Revise quantidade, preço e produtos.";
+      setToast(msg);
+      setTimeout(() => setToast(""), 5000);
+    } finally {
+      setConfirming(false);
+    }
   }, [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, onAfterConfirm]);
 
   const clearAnalyzeProgressTimer = useCallback(() => {
@@ -703,6 +749,8 @@ export function usePurchaseForm(token, options = {}) {
     updateItem,
     removeItem,
     confirmPurchase,
+    canConfirmPurchase,
+    confirming,
     parseReceiptsByAI,
     retryAiParse,
     aiHighlightKeys: recordAiHighlights ? aiHighlightKeys : null,

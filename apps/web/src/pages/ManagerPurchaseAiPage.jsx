@@ -59,6 +59,8 @@ export default function ManagerPurchaseAiPage() {
     updateItem,
     removeItem,
     confirmPurchase,
+    canConfirmPurchase,
+    confirming,
     parseReceiptsByAI,
     retryAiParse,
     aiHighlightKeys,
@@ -122,16 +124,6 @@ export default function ManagerPurchaseAiPage() {
     () => receipts.map((f) => `${f.name} (${formatFileSize(f.size)})`),
     [receipts]
   );
-
-  const canRegister =
-    !aiLoading &&
-    Boolean(supplierId) &&
-    receipts.length > 0 &&
-    items.length > 0 &&
-    items.every((it) => {
-      const hasProduct = Boolean(it.productId) || String(it.aiRawProductName || "").trim().length >= 2;
-      return hasProduct && it.quantity && Number(it.quantity) > 0 && it.unitPrice && Number(it.unitPrice) > 0;
-    });
 
   const aiClass = (key) => (aiHighlightKeys?.has(key) ? "field-ai-suggested" : "");
 
@@ -511,13 +503,22 @@ export default function ManagerPurchaseAiPage() {
             ) : null}
 
             <footer className="purchase-ai-footer card">
-              <button type="button" className="btn btn-primary purchase-ai-register-btn" disabled={!canRegister} onClick={() => void confirmPurchase()}>
-                Registrar compra
+              <button
+                type="button"
+                className="btn btn-primary purchase-ai-register-btn"
+                disabled={!canConfirmPurchase}
+                onClick={() => void confirmPurchase()}
+              >
+                {confirming ? "A registar…" : "Registrar compra"}
               </button>
               <p className="purchase-ai-footer-hint">
                 {aiLoading
                   ? "Aguarde a análise da IA…"
-                  : `É obrigatório pelo menos um ficheiro no cartão de análise acima. Anexos adicionais são opcionais. Total a enviar: ${receipts.length + receiptExtras.length} ficheiro(s). Confira fornecedor e itens antes de confirmar.`}
+                  : confirming
+                    ? "A guardar a compra e os anexos…"
+                    : !canConfirmPurchase
+                      ? "Para registar: nota no cartão de análise, fornecedor, itens com produto, categoria, quantidade e preço em todas as linhas."
+                      : `Pronto para registar. Total a enviar: ${receipts.length + receiptExtras.length} ficheiro(s).`}
               </p>
             </footer>
           </div>
