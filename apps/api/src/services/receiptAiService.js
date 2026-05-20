@@ -1,7 +1,12 @@
 import { config } from "../config.js";
 import { getActiveMeasurementUnits, normalizeUnitUsed } from "../lib/measurementUnits.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
-import { normalizeRawAiItem } from "../lib/receiptParseUtils.js";
+import { buildReceiptCatalogContext } from "../lib/receiptCatalogContext.js";
+import {
+  buildDocumentTotalHints,
+  normalizeRawAiItem,
+  receiptUnitConflict
+} from "../lib/receiptParseUtils.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { buildReceiptAiPrompt } from "./receiptAiPrompt.js";
 import {
@@ -258,9 +263,10 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
 
     const rawLabel = norm.productName || "";
     const normalizedLabel = norm.productNameNormalized || rawLabel;
+    const labelForMatch = norm.catalogProductName || rawLabel || normalizedLabel;
     const matchKey = normalizeProductNameKey(normalizedLabel);
 
-    const resolved = resolveOneProductLabel(rawLabel || normalizedLabel, products, resolveCtx);
+    const resolved = resolveOneProductLabel(labelForMatch || normalizedLabel, products, resolveCtx);
     const best = resolved.product;
     const matchScore = resolved.score;
     itemMatchMeta.push({
@@ -275,26 +281,41 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
     if ((!Number.isFinite(qty) || qty <= 0) && singleLine && Number.isFinite(unitPrice) && unitPrice > 0) {
       qty = 1;
     }
+    const noteUnit = norm.unitUsed;
     let unitUsed = "un";
     if (best?.standard_unit) {
       unitUsed = normalizeUnitUsed(best.standard_unit, allowedUnits);
-    } else if (norm.unitUsed) {
-      unitUsed = norm.unitUsed;
+    } else if (noteUnit) {
+      unitUsed = noteUnit;
     }
+
+    const unitClash = best?.standard_unit ? receiptUnitConflict(noteUnit, best.standard_unit, allowedUnits) : null;
+    if (unitClash) {
+      reconcileWarnings.push(
+        `${norm.productName || `linha ${idx + 1}`}: unidade na nota (${unitClash.noteUnit}) difere do catálogo (${unitClash.catalogUnit}) — confira quantidade e unidade`
+      );
+    }
+
+    const category =
+      String(best?.category || norm.categoryHint || "").trim() || null;
+    const lineType = best?.type === "venda" ? "venda" : norm.lineTypeHint === "venda" ? "venda" : "insumo";
+
     const missing = [];
     if (!best || matchScore < MIN_PRODUCT_FUZZY) missing.push("produto");
+    if (!category) missing.push("categoria");
     if (!Number.isFinite(qty) || qty <= 0) missing.push("quantidade");
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) missing.push("valor unitário");
     return {
       rawProductName: norm.productName,
       productId: best?.id || null,
       productName: best?.name || null,
-      category: best?.category || null,
+      category,
+      categoryHint: norm.categoryHint || null,
       quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
       unitUsed,
       unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : null,
       lineTotal: norm.lineTotal,
-      lineType: best?.type === "venda" ? "venda" : "insumo",
+      lineType,
       missing,
       suggestedProductMatches: resolved.suggestedProductMatches,
       matchKindResolved: resolved.matchKind,
@@ -306,7 +327,8 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
   const invoiceNormalized =
     invRaw == null || String(invRaw).trim() === "" ? null : String(invRaw).replace(/\s+/g, " ").trim();
 
-  const missingGlobal = [...new Set(reconcileWarnings)];
+  const docHints = buildDocumentTotalHints(parsed, items.map((it) => it.lineTotal));
+  const missingGlobal = [...new Set([...reconcileWarnings, ...docHints])];
   if (!invoiceNormalized) missingGlobal.push("número da nota");
   if (!parsed?.purchaseDate) missingGlobal.push("data da compra");
   if (!supplierMatch.best || supplierMatch.score < MIN_SUPPLIER_MATCH) missingGlobal.push("fornecedor");
@@ -321,6 +343,18 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
       : null,
     items,
     missingGlobal,
+    documentTotals:
+      parsed?.documentTotal != null || parsed?.productsSubtotal != null
+        ? {
+            productsSubtotal: parsed?.productsSubtotal ?? null,
+            documentTotal: parsed?.documentTotal ?? null,
+            freightAmount: parsed?.freightAmount ?? null,
+            insuranceAmount: parsed?.insuranceAmount ?? null,
+            otherExpensesAmount: parsed?.otherExpensesAmount ?? null,
+            discountAmount: parsed?.discountAmount ?? null,
+            icmsStAmount: parsed?.icmsStAmount ?? null
+          }
+        : null,
     _itemMatchMeta: itemMatchMeta
   };
 }
@@ -335,6 +369,7 @@ export async function parseReceiptWithAI({
   mimeType,
   products = [],
   suppliers = [],
+  categories = [],
   supplierIdHint = null,
   userId = null
 }) {
@@ -348,8 +383,8 @@ export async function parseReceiptWithAI({
 
   const base64 = imageBuffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
-  const productNames = truncateCatalogNames((products || []).map((p) => p.name).filter(Boolean), 150, 220);
   const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean), 120, 140);
+  const { catalogProducts, categoryNames } = buildReceiptCatalogContext(products, categories);
   let allowedUnits = [];
   try {
     allowedUnits = await getActiveMeasurementUnits(supabaseAdmin);
@@ -357,7 +392,12 @@ export async function parseReceiptWithAI({
     allowedUnits = [];
   }
 
-  const prompt = buildReceiptAiPrompt({ productNames, supplierNames, allowedUnits });
+  const prompt = buildReceiptAiPrompt({
+    catalogProducts,
+    categoryNames,
+    supplierNames,
+    allowedUnits
+  });
 
   const models = [config.openRouterModel];
   const fb = openRouterFallbackModel();

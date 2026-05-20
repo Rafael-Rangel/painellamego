@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaPlus, FaStore, FaTimes, FaTrash } from "react-icons/fa";
 import { MdAutoAwesome } from "react-icons/md";
 import AppShell from "../components/AppShell";
 import ReceiptAiDropzoneCard from "../components/purchase/ReceiptAiDropzoneCard";
 import ReceiptAiProgressPanel from "../components/purchase/ReceiptAiProgressPanel";
-import { formatFileSize } from "../lib/compressReceiptImages";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
 import FilePickButton from "../components/ui/FilePickButton";
@@ -38,9 +37,10 @@ export default function ManagerPurchaseAiPage() {
     invoiceNumber,
     setInvoiceNumber,
     receipts,
-    setReceipts,
+    appendReceipts,
+    removeReceiptAt,
+    clearReceipts,
     receiptExtras,
-    setReceiptExtras,
     appendReceiptExtras,
     removeReceiptExtraAt,
     items,
@@ -54,6 +54,7 @@ export default function ManagerPurchaseAiPage() {
     aiError,
     aiRetryCount,
     aiMissing,
+    documentTotals,
     total,
     addItem,
     updateItem,
@@ -72,26 +73,28 @@ export default function ManagerPurchaseAiPage() {
     productCreating
   } = usePurchaseForm(token, { recordAiHighlights: true, onAfterConfirm });
 
-  const handleDropzoneFiles = useCallback(
+  const handleAppendReceipts = useCallback(
     (files) => {
       lastAnalyzedSigRef.current = "";
-      setReceipts(files);
-      setReceiptExtras([]);
+      appendReceipts(files);
     },
-    [setReceipts, setReceiptExtras]
+    [appendReceipts]
   );
 
-  const handleOptionalReceiptChange = useCallback(
-    (list) => {
-      if (!list?.length) return;
-      appendReceiptExtras(list);
+  const handleRemoveReceipt = useCallback(
+    (index) => {
+      lastAnalyzedSigRef.current = "";
+      removeReceiptAt(index);
     },
-    [appendReceiptExtras]
+    [removeReceiptAt]
   );
 
-  const parseInFlightRef = useRef(false);
+  const handleClearReceipts = useCallback(() => {
+    lastAnalyzedSigRef.current = "";
+    clearReceipts();
+  }, [clearReceipts]);
 
-  useEffect(() => {
+  const handleAnalyzeReceipts = useCallback(() => {
     if (!receipts.length || aiLoading || parseInFlightRef.current) return;
     const sig = receipts.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join("|");
     if (sig === lastAnalyzedSigRef.current) return;
@@ -103,6 +106,16 @@ export default function ManagerPurchaseAiPage() {
       if (!ok) lastAnalyzedSigRef.current = "";
     })();
   }, [receipts, aiLoading, parseReceiptsByAI]);
+
+  const handleOptionalReceiptChange = useCallback(
+    (list) => {
+      if (!list?.length) return;
+      appendReceiptExtras(list);
+    },
+    [appendReceiptExtras]
+  );
+
+  const parseInFlightRef = useRef(false);
 
   const links = useMemo(() => buildManagerSidebarLinks(navigate), [navigate]);
 
@@ -120,12 +133,26 @@ export default function ManagerPurchaseAiPage() {
           ? "Loja vinculada ao seu acesso"
           : "—";
 
-  const fileNames = useMemo(
-    () => receipts.map((f) => `${f.name} (${formatFileSize(f.size)})`),
-    [receipts]
-  );
-
   const aiClass = (key) => (aiHighlightKeys?.has(key) ? "field-ai-suggested" : "");
+
+  const docTotalRows = useMemo(() => {
+    if (!documentTotals) return [];
+    const rows = [];
+    const add = (label, value, skipZero = false) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return;
+      if (skipZero && n === 0) return;
+      rows.push({ label, value: formatCurrency(n) });
+    };
+    add("Total dos produtos", documentTotals.productsSubtotal);
+    add("Total da nota", documentTotals.documentTotal);
+    add("Frete", documentTotals.freightAmount, true);
+    add("Seguro", documentTotals.insuranceAmount, true);
+    add("Outras despesas", documentTotals.otherExpensesAmount, true);
+    add("ICMS ST", documentTotals.icmsStAmount, true);
+    add("Desconto", documentTotals.discountAmount, true);
+    return rows;
+  }, [documentTotals]);
 
   return (
     <AppShell
@@ -145,8 +172,11 @@ export default function ManagerPurchaseAiPage() {
           <ReceiptAiDropzoneCard
             disabled={!token}
             analyzing={aiLoading}
-            fileNames={fileNames}
-            onFilesChange={handleDropzoneFiles}
+            receipts={receipts}
+            onAppendFiles={handleAppendReceipts}
+            onRemoveFile={handleRemoveReceipt}
+            onClearFiles={handleClearReceipts}
+            onAnalyze={handleAnalyzeReceipts}
           />
 
           <ReceiptAiProgressPanel
@@ -156,14 +186,21 @@ export default function ManagerPurchaseAiPage() {
             message={aiStatusMessage}
             error={!aiLoading ? aiError : ""}
             retryCount={aiRetryCount}
-            onRetry={aiError && receipts.length ? () => void retryAiParse() : undefined}
+            onRetry={
+              aiError && receipts.length
+                ? () => {
+                    lastAnalyzedSigRef.current = "";
+                    void retryAiParse();
+                  }
+                : undefined
+            }
           />
 
           <div className="card purchase-ai-optional-receipt">
             <p className="purchase-ai-optional-label">Anexo adicional (opcional)</p>
             <p className="field-helper purchase-ai-optional-hint">
-              Outros PDFs ou imagens que devam ficar no registro (ex.: verso, complemento). Não voltam a disparar a leitura por IA — para
-              analisar vários ficheiros de uma vez, use o botão no cartão acima na mesma seleção.
+              Outros PDFs ou imagens que devam ficar no registro (ex.: verso, complemento). Não entram na leitura por IA — use o
+              cartão acima para fotos da nota e o botão <strong>Analisar com IA</strong>.
             </p>
             <FilePickButton
               className="file-pick--full"
@@ -383,6 +420,9 @@ export default function ManagerPurchaseAiPage() {
                               updateItem(idx, { unitPrice: e.target.value });
                             }}
                           />
+                          {row.aiLineTotal != null ? (
+                            <span className="field-helper">Total na nota: {formatCurrency(row.aiLineTotal)}</span>
+                          ) : null}
                         </div>
                         <div className="purchase-ai-item-actions">
                           <button type="button" className="btn btn-ghost btn-icon" title="Remover linha" onClick={() => removeItem(idx)}>
@@ -490,6 +530,23 @@ export default function ManagerPurchaseAiPage() {
                 Total: <strong>{formatCurrency(total)}</strong>
               </p>
             </section>
+
+            {docTotalRows.length ? (
+              <section className="card purchase-ai-section purchase-ai-doc-totals" aria-label="Totais lidos na nota fiscal">
+                <h4 className="purchase-ai-subheading">Totais da nota (leitura)</h4>
+                <p className="field-helper purchase-ai-doc-totals-hint">
+                  Valores do rodapé da NF — o lançamento usa as linhas de produto acima; a diferença pode ser frete, ICMS ST ou outras despesas.
+                </p>
+                <dl className="purchase-ai-doc-totals-dl">
+                  {docTotalRows.map((r) => (
+                    <div key={r.label} className="purchase-ai-doc-totals-row">
+                      <dt>{r.label}</dt>
+                      <dd>{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ) : null}
 
             {aiMissing.length ? (
               <section className="card purchase-ai-section purchase-ai-warnings">

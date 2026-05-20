@@ -1,0 +1,14 @@
+{
+  "documentType": "danfe",
+  "supplierName": "Riofrio",
+  "minItems": 1,
+  "items": [
+    {
+      "productNameContains": ["presunto", "cozido", "imperio"],
+      "unitUsed": "kg",
+      "quantity": { "min": 40, "max": 41 },
+      "unitPrice": { "min": 16, "max": 16.5 },
+      "lineTotal": { "min": 658, "max": 662 }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "documentType": "danfe",
+  "supplierName": "Royal",
+  "minItems": 2,
+  "productsSubtotal": { "min": 1754, "max": 1756 },
+  "documentTotal": { "min": 1757, "max": 1759 },
+  "otherExpensesAmount": { "min": 2.5, "max": 3.5 },
+  "items": [
+    {
+      "productNameContains": ["picanha", "suina", "friella"],
+      "unitUsed": "kg",
+      "quantity": { "min": 10, "max": 10.4 },
+      "lineTotal": { "min": 410, "max": 412 }
+    },
+    {
+      "productNameContains": ["lagarto", "frigodias"],
+      "unitUsed": "kg",
+      "quantity": { "min": 23, "max": 23.3 },
+      "lineTotal": { "min": 1343, "max": 1346 }
+    }
+  ]
+}

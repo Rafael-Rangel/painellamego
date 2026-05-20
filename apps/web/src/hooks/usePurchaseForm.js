@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, withAuth } from "../api";
 import { buildUnitOptions, normalizeUnitUsed } from "../lib/catalogUnits";
 import { compressReceiptFiles, formatFileSize } from "../lib/compressReceiptImages";
+import { MAX_RECEIPT_FILES, mergeUniqueReceiptFiles, receiptFileKey } from "../lib/receiptFiles";
+
+export { MAX_RECEIPT_FILES };
 
 const AI_REQUEST_TIMEOUT_MS = 120_000;
 const AI_MAX_RETRIES = 2;
@@ -13,10 +16,6 @@ function sleep(ms) {
 function isRetryableAiError(err) {
   const st = err?.response?.status;
   return err?.code === "ECONNABORTED" || st === 502 || st === 503 || st === 504;
-}
-
-function receiptFileKey(f) {
-  return `${f?.name || ""}:${f?.size}:${f?.lastModified}`;
 }
 
 export function toWeekOfMonth(dateStr) {
@@ -61,11 +60,12 @@ function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
   }
   return {
     productId: it.productId,
-    category: String(it.category || "").trim(),
+    category: String(it.category || it.categoryHint || "").trim(),
     quantity: String(qty),
     unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
     unitPrice: String(priceNum),
-    lineType: it.lineType === "venda" ? "venda" : "insumo"
+    lineType: it.lineType === "venda" ? "venda" : "insumo",
+    aiLineTotal: Number.isFinite(Number(it.lineTotal)) ? Number(it.lineTotal) : undefined
   };
 }
 
@@ -80,12 +80,13 @@ function buildItemRowFromAiPartial(it, { singleLineInvoice, allowedUnits }) {
   const raw = String(it.rawProductName || it.productName || "").trim();
   return {
     productId: it.productId || "",
-    category: String(it.category || "").trim(),
+    category: String(it.category || it.categoryHint || "").trim(),
     aiRawProductName: raw || undefined,
     quantity: String(qty),
     unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
     unitPrice: String(priceNum),
-    lineType: it.lineType === "venda" ? "venda" : "insumo"
+    lineType: it.lineType === "venda" ? "venda" : "insumo",
+    aiLineTotal: Number.isFinite(Number(it.lineTotal)) ? Number(it.lineTotal) : undefined
   };
 }
 
@@ -118,6 +119,7 @@ export function usePurchaseForm(token, options = {}) {
   const [aiError, setAiError] = useState("");
   const [aiRetryCount, setAiRetryCount] = useState(0);
   const [aiMissing, setAiMissing] = useState([]);
+  const [documentTotals, setDocumentTotals] = useState(null);
   const analyzeProgressTimerRef = useRef(null);
   const [aiHighlightKeys, setAiHighlightKeys] = useState(() => new Set());
   const [supplierCreating, setSupplierCreating] = useState(false);
@@ -256,6 +258,29 @@ export function usePurchaseForm(token, options = {}) {
     },
     [recordAiHighlights]
   );
+
+  const appendReceipts = useCallback((fileList) => {
+    const added = Array.from(fileList || []).filter(Boolean);
+    if (!added.length) return;
+    setReceipts((prev) => {
+      const { files, skipped } = mergeUniqueReceiptFiles(prev, added);
+      if (skipped > 0) {
+        setToast(`Limite de ${MAX_RECEIPT_FILES} ficheiros. Alguns não foram adicionados.`);
+        setTimeout(() => setToast(""), 4000);
+      }
+      return files;
+    });
+  }, []);
+
+  const removeReceiptAt = useCallback((index) => {
+    setReceipts((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const clearReceipts = useCallback(() => {
+    setReceipts([]);
+    setReceiptExtras([]);
+    setDocumentTotals(null);
+  }, []);
 
   const appendReceiptExtras = useCallback(
     (fileList) => {
@@ -596,11 +621,13 @@ export function usePurchaseForm(token, options = {}) {
             if (!built) return null;
             const apiRow = all[idx];
             const category =
-              String(built.category || apiRow?.category || "").trim() ||
+              String(built.category || apiRow?.category || apiRow?.categoryHint || "").trim() ||
               (built.productId
                 ? String(products.find((p) => p.id === built.productId)?.category || "").trim()
                 : "");
-            return { ...built, category };
+            const lineType =
+              apiRow?.lineType === "venda" || built.lineType === "venda" ? "venda" : "insumo";
+            return { ...built, category, lineType };
           })
           .filter(Boolean);
 
@@ -637,6 +664,7 @@ export function usePurchaseForm(token, options = {}) {
         }
         for (const g of data?.missingGlobal || []) missingRows.push(`Nota: ${g}`);
         setAiMissing(missingRows);
+        setDocumentTotals(data?.documentTotals ?? null);
 
         if (recordAiHighlights) {
           const keys = new Set();
@@ -727,6 +755,9 @@ export function usePurchaseForm(token, options = {}) {
     setInvoiceNumber,
     receipts,
     setReceipts,
+    appendReceipts,
+    removeReceiptAt,
+    clearReceipts,
     receiptExtras,
     setReceiptExtras,
     appendReceiptExtras,
@@ -744,6 +775,7 @@ export function usePurchaseForm(token, options = {}) {
     aiError,
     aiRetryCount,
     aiMissing,
+    documentTotals,
     total,
     addItem,
     updateItem,

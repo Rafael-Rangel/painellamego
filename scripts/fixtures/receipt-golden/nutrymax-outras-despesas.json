@@ -1,0 +1,19 @@
+{
+  "documentType": "danfe",
+  "supplierName": "Nutrymax",
+  "minItems": 6,
+  "productsSubtotal": { "min": 2460, "max": 2464 },
+  "documentTotal": { "min": 2475, "max": 2479 },
+  "items": [
+    {
+      "productNameContains": ["acucar", "refinado"],
+      "unitUsed": "un",
+      "quantity": { "min": 18, "max": 22 }
+    },
+    {
+      "productNameContains": ["contra file", "boa carne"],
+      "unitUsed": "kg",
+      "quantity": { "min": 45, "max": 50 }
+    }
+  ]
+}

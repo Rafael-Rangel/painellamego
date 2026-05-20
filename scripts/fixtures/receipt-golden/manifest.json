@@ -4,22 +4,52 @@
     {
       "image": "WhatsApp_Image_2026-05-13_at_12.41.44__3_-3138668c-04ba-4c16-8a0b-bdfc179f82ab.png",
       "golden": "mj-moraes-guimaraes.json",
-      "notes": "MJ de Moraes / queijos"
+      "notes": "MJ de Moraes / queijos + outras despesas"
     },
     {
       "image": "WhatsApp_Image_2026-05-13_at_12.41.45-61355278-bc03-4706-9c85-8212a09edd42.png",
       "golden": "arena1-farmex.json",
-      "notes": "Arena 1 hambúrguer"
+      "notes": "Arena 1 hambúrguer CX/qty decimal"
     },
     {
       "image": "WhatsApp_Image_2026-05-13_at_12.41.42__1_-e419e54d-758c-4a35-ae42-a4a1a78891af.png",
       "golden": "nechio-acai.json",
-      "notes": "Nechio açaí"
+      "notes": "Nechio açaí 6 CAIXA"
     },
     {
       "image": "WhatsApp_Image_2026-05-13_at_12.41.45__1_-f6888350-7d49-4bb9-a56b-c42b91004bd8.png",
       "golden": "dape-pedido-venda.json",
-      "notes": "Pedido DAPE"
+      "notes": "Pedido DAPE FD/PCT/CX/KG"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.44__2_-796b0e2d-50cf-467a-a392-ca5b1f6303be.png",
+      "golden": "royal-outras-despesas.json",
+      "notes": "Royal DANFE outras despesas R$ 3"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.45__2_-886a9da6-1643-4146-a57f-0e9ff3760808.png",
+      "golden": "nutrymax-outras-despesas.json",
+      "notes": "Nutrymax total NF > produtos"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.45__3_-1518c55c-3725-4bde-9257-fd17ef590409.png",
+      "golden": "brf-icms-st.json",
+      "notes": "BRF ICMS ST no rodapé"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.42__2_-c43e3483-d131-4eab-813b-ce0bf043b7f4.png",
+      "golden": "riofrio-kg.json",
+      "notes": "Riofrio presunto KG 40,8"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.44__1_-0fac95b9-2cb3-40ac-b46c-f47373866fb9.png",
+      "golden": "capital-fardo.json",
+      "notes": "Capital café FARDO"
+    },
+    {
+      "image": "WhatsApp_Image_2026-05-13_at_12.41.44-c40f3bee-92b5-4f97-950c-212156452b3c.png",
+      "golden": "top-alto-icms-st.json",
+      "notes": "Top Alto ICMS ST"
     }
   ],
   "ungoldenImages": "Demais ficheiros em receipt-samples/ são processados sem assert (relatório só com contagem de itens)"

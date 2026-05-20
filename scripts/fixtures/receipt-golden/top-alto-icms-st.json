@@ -1,0 +1,20 @@
+{
+  "documentType": "danfe",
+  "supplierName": "Top Alto",
+  "minItems": 3,
+  "productsSubtotal": { "min": 774, "max": 778 },
+  "documentTotal": { "min": 804, "max": 808 },
+  "icmsStAmount": { "min": 28, "max": 31 },
+  "items": [
+    {
+      "productNameContains": ["maionese", "liza"],
+      "unitUsed": "un",
+      "quantity": { "min": 0.8, "max": 1.2 }
+    },
+    {
+      "productNameContains": ["polpa", "acerola"],
+      "unitUsed": "kg",
+      "quantity": { "min": 11, "max": 13 }
+    }
+  ]
+}

@@ -60,6 +60,16 @@ router.post(
     .eq("is_active", true);
   if (productsError) return res.status(400).json({ message: productsError.message });
 
+  let categories = [];
+  const { data: catRows, error: catError } = await supabaseAdmin
+    .from("categories")
+    .select("name")
+    .eq("is_active", true)
+    .order("name");
+  if (!catError && catRows?.length) {
+    categories = catRows;
+  }
+
     const reqStarted = Date.now();
     const fileMeta = receiptFiles.map((f) => ({
       name: f.originalname,
@@ -78,7 +88,8 @@ router.post(
       purchaseDate: null,
       supplierSuggestion: null,
       items: [],
-      missingGlobal: []
+      missingGlobal: [],
+      documentTotals: null
     };
     const supplierIdHint = req.body?.supplierId ? String(req.body.supplierId).trim() : "";
     const supplierIdForParse = supplierIdHint && /^[0-9a-f-]{36}$/i.test(supplierIdHint) ? supplierIdHint : null;
@@ -89,6 +100,7 @@ router.post(
         mimeType: file.mimetype,
         products: products || [],
         suppliers: suppliers || [],
+        categories,
         supplierIdHint: supplierIdForParse,
         userId: req.user?.id || null
       });
@@ -103,6 +115,9 @@ router.post(
       if (!aggregate.supplierSuggestion && parsed.supplierSuggestion) aggregate.supplierSuggestion = parsed.supplierSuggestion;
       aggregate.items.push(...(parsed.items || []));
       aggregate.missingGlobal.push(...(parsed.missingGlobal || []));
+      if (!aggregate.documentTotals && parsed.documentTotals) {
+        aggregate.documentTotals = parsed.documentTotals;
+      }
     }
     aggregate.missingGlobal = [...new Set(aggregate.missingGlobal)];
     console.info("[receipt-ai-parse] ok", {

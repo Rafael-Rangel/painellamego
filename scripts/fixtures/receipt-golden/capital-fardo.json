@@ -1,0 +1,14 @@
+{
+  "documentType": "danfe",
+  "supplierName": "Capital",
+  "minItems": 1,
+  "items": [
+    {
+      "productNameContains": ["cafe", "capital"],
+      "unitUsed": "fardo",
+      "quantity": { "min": 2.5, "max": 3.5 },
+      "unitPrice": { "min": 320, "max": 330 },
+      "lineTotal": { "min": 970, "max": 980 }
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "documentType": "danfe",
+  "supplierName": "BRF",
+  "minItems": 2,
+  "productsSubtotal": { "min": 1732, "max": 1736 },
+  "documentTotal": { "min": 1784, "max": 1788 },
+  "icmsStAmount": { "min": 50, "max": 53 },
+  "items": [
+    {
+      "productNameContains": ["hamburger", "sadia"],
+      "unitUsed": "cx",
+      "quantity": { "min": 2.5, "max": 3.5 }
+    },
+    {
+      "productNameContains": ["salame", "perdig"],
+      "unitUsed": "cx",
+      "quantity": { "min": 1.5, "max": 2.5 }
+    }
+  ]
+}

@@ -1,35 +1,65 @@
-import { useCallback, useRef } from "react";
-import { FaCloudUploadAlt, FaFileAlt } from "react-icons/fa";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FaCamera, FaCloudUploadAlt, FaFileAlt, FaTimes, FaTrash } from "react-icons/fa";
 import { MdAutoAwesome } from "react-icons/md";
+import { formatFileSize } from "../../lib/compressReceiptImages";
+import { MAX_RECEIPT_FILES } from "../../lib/receiptFiles";
 
 const ACCEPT = ".jpg,.jpeg,.png,.pdf";
 
 /**
- * Card de upload com drag-and-drop para análise de nota por IA.
- * Notifica o pai com a lista de ficheiros (o pai dispara a análise).
+ * Upload de notas para IA: acumula várias fotos (câmera uma a uma ou galeria) antes de analisar.
  */
-export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames = [], onFilesChange }) {
-  const inputRef = useRef(null);
+export default function ReceiptAiDropzoneCard({
+  disabled,
+  analyzing,
+  receipts = [],
+  onAppendFiles,
+  onRemoveFile,
+  onClearFiles,
+  onAnalyze
+}) {
+  const galleryInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const [previewUrls, setPreviewUrls] = useState([]);
 
-  const mergeFiles = useCallback(
-    (incoming) => {
-      const list = Array.from(incoming || []).filter(Boolean);
+  const atLimit = receipts.length >= MAX_RECEIPT_FILES;
+
+  useEffect(() => {
+    const urls = receipts.map((f) =>
+      f.type?.startsWith("image/") ? URL.createObjectURL(f) : null
+    );
+    setPreviewUrls(urls);
+    return () => {
+      for (const u of urls) {
+        if (u) URL.revokeObjectURL(u);
+      }
+    };
+  }, [receipts]);
+
+  const appendFromInput = useCallback(
+    (fileList) => {
+      const list = Array.from(fileList || []).filter(Boolean);
       if (!list.length) return;
-      onFilesChange(list);
+      onAppendFiles?.(list);
     },
-    [onFilesChange]
+    [onAppendFiles]
   );
 
-  const onInputChange = (e) => {
-    mergeFiles(e.target.files);
+  const onGalleryChange = (e) => {
+    appendFromInput(e.target.files);
+    e.target.value = "";
+  };
+
+  const onCameraChange = (e) => {
+    appendFromInput(e.target.files);
     e.target.value = "";
   };
 
   const onDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (disabled || analyzing) return;
-    mergeFiles(e.dataTransfer?.files);
+    if (disabled || analyzing || atLimit) return;
+    appendFromInput(e.dataTransfer?.files);
   };
 
   const onDragOver = (e) => {
@@ -46,8 +76,8 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
         <div>
           <h3 className="purchase-ai-upload-title">Analisar com IA</h3>
           <p className="purchase-ai-upload-lead">
-            Envie <strong>pelo menos um</strong> arquivo da nota (obrigatório). Pode selecionar vários de uma vez na área
-            principal. A leitura por IA inicia automaticamente após o envio.
+            Tire <strong>várias fotos</strong> da nota (uma de cada vez pela câmera) ou escolha ficheiros na galeria.
+            Quando tiver todas as páginas, toque em <strong>Analisar com IA</strong>.
           </p>
         </div>
       </div>
@@ -56,16 +86,9 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
         className="purchase-ai-dropzone"
         onDrop={onDrop}
         onDragOver={onDragOver}
-        role="button"
-        tabIndex={0}
+        role="region"
         aria-busy={analyzing}
-        aria-label="Área para soltar ficheiros da nota fiscal"
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            if (!disabled && !analyzing) inputRef.current?.click();
-          }
-        }}
+        aria-label="Área para adicionar ficheiros da nota fiscal"
       >
         {analyzing ? (
           <div className="purchase-ai-dropzone-overlay" aria-live="polite">
@@ -74,38 +97,118 @@ export default function ReceiptAiDropzoneCard({ disabled, analyzing, fileNames =
           </div>
         ) : null}
         <FaCloudUploadAlt className="purchase-ai-dropzone-graphic" aria-hidden />
-        <p className="purchase-ai-dropzone-hint">Solte os ficheiros aqui</p>
-        <button
-          type="button"
-          className="btn btn-secondary purchase-ai-select-btn file-pick-btn"
-          disabled={disabled || analyzing}
-          onClick={() => inputRef.current?.click()}
-        >
-          <FaFileAlt className="file-pick-btn-icon" aria-hidden />
-          <span>Selecionar arquivo(s)</span>
-        </button>
+        <p className="purchase-ai-dropzone-hint">Solte os ficheiros aqui (computador)</p>
+
+        <div className="purchase-ai-pick-actions">
+          <button
+            type="button"
+            className="btn btn-primary purchase-ai-camera-btn file-pick-btn"
+            disabled={disabled || analyzing || atLimit}
+            onClick={() => cameraInputRef.current?.click()}
+          >
+            <FaCamera className="file-pick-btn-icon" aria-hidden />
+            <span>Tirar foto</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary purchase-ai-select-btn file-pick-btn"
+            disabled={disabled || analyzing || atLimit}
+            onClick={() => galleryInputRef.current?.click()}
+          >
+            <FaFileAlt className="file-pick-btn-icon" aria-hidden />
+            <span>Galeria / ficheiros</span>
+          </button>
+        </div>
+
         <input
-          ref={inputRef}
+          ref={cameraInputRef}
+          type="file"
+          className="visually-hidden"
+          accept="image/*"
+          capture="environment"
+          onChange={onCameraChange}
+          disabled={disabled || analyzing || atLimit}
+        />
+        <input
+          ref={galleryInputRef}
           type="file"
           className="visually-hidden"
           accept={ACCEPT}
           multiple
-          onChange={onInputChange}
-          disabled={disabled || analyzing}
+          onChange={onGalleryChange}
+          disabled={disabled || analyzing || atLimit}
         />
+
         <p className="purchase-ai-dropzone-meta">
-          Tire ou escolha a foto da nota (JPG/PNG) · o sistema ajusta o envio automaticamente, sem precisar ver o tamanho em MB
+          No telemóvel, use <strong>Tirar foto</strong> para cada página; as imagens ficam na lista até analisar.
+          Máximo {MAX_RECEIPT_FILES} ficheiros (JPG, PNG ou PDF).
         </p>
       </div>
 
-      {fileNames.length > 0 ? (
-        <div className="purchase-ai-file-list" role="status">
-          <FaFileAlt aria-hidden style={{ marginRight: "0.35rem", opacity: 0.85 }} />
-          <span>
-            {fileNames.length} arquivo(s): {fileNames.join(", ")}
-          </span>
+      {receipts.length > 0 ? (
+        <div className="purchase-ai-receipt-queue" role="status" aria-live="polite">
+          <div className="purchase-ai-receipt-queue-head">
+            <span>
+              {receipts.length} foto(s)/ficheiro(s) na fila
+              {atLimit ? " (limite atingido)" : ""}
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm purchase-ai-clear-queue"
+              disabled={disabled || analyzing}
+              onClick={() => onClearFiles?.()}
+            >
+              <FaTrash aria-hidden style={{ marginRight: "0.25rem" }} />
+              Limpar tudo
+            </button>
+          </div>
+          <ul className="purchase-ai-receipt-thumbs">
+            {receipts.map((f, i) => (
+              <li key={`${f.name}-${f.size}-${f.lastModified}-${i}`} className="purchase-ai-receipt-thumb">
+                {previewUrls[i] ? (
+                  <img src={previewUrls[i]} alt="" className="purchase-ai-receipt-thumb-img" />
+                ) : (
+                  <span className="purchase-ai-receipt-thumb-pdf" aria-hidden>
+                    <FaFileAlt />
+                  </span>
+                )}
+                <span className="purchase-ai-receipt-thumb-label" title={f.name}>
+                  {f.name || `Foto ${i + 1}`}
+                  <small>{formatFileSize(f.size)}</small>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon purchase-ai-receipt-thumb-remove"
+                  title="Remover"
+                  disabled={disabled || analyzing}
+                  onClick={() => onRemoveFile?.(i)}
+                >
+                  <FaTimes aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
+
+      <div className="purchase-ai-analyze-action">
+        <button
+          type="button"
+          className="btn btn-primary purchase-ai-analyze-btn"
+          disabled={disabled || analyzing || !receipts.length}
+          onClick={() => onAnalyze?.()}
+        >
+          <MdAutoAwesome aria-hidden style={{ marginRight: "0.35rem" }} />
+          {receipts.length
+            ? `Analisar com IA (${receipts.length} ${receipts.length === 1 ? "ficheiro" : "ficheiros"})`
+            : "Analisar com IA"}
+        </button>
+        {receipts.length > 0 && !analyzing ? (
+          <p className="purchase-ai-analyze-hint field-helper">
+            Pode tirar mais fotos antes de analisar. Depois de analisar, novas fotos exigem tocar de novo neste botão.
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -4,7 +4,8 @@ import {
   parseBrDecimal,
   normalizeReceiptUnit,
   reconcileLineItem,
-  normalizeRawAiItem
+  normalizeRawAiItem,
+  buildDocumentTotalHints
 } from "../src/lib/receiptParseUtils.js";
 
 test("parseBrDecimal: formato brasileiro", () => {
@@ -56,4 +57,51 @@ test("normalizeRawAiItem: aplica reconciliação e unidade", () => {
   assert.equal(row.quantity, 55.99);
   assert.equal(row.unitPrice, 34.5);
   assert.equal(row.lineTotal, 1930.28);
+});
+
+test("buildDocumentTotalHints: total da nota maior por outras despesas (DANFE)", () => {
+  const hints = buildDocumentTotalHints(
+    {
+      productsSubtotal: 1755.42,
+      documentTotal: 1758.42,
+      otherExpensesAmount: 3,
+      freightAmount: 0,
+      insuranceAmount: 0,
+      discountAmount: 0
+    },
+    [411.1, 1344.32]
+  );
+  assert.ok(hints.some((h) => h.includes("Total da nota")));
+  assert.ok(hints.some((h) => h.includes("outras despesas")));
+});
+
+test("buildDocumentTotalHints: sem aviso quando total da nota = soma produtos", () => {
+  const hints = buildDocumentTotalHints({ documentTotal: 100, productsSubtotal: 100 }, [60, 40]);
+  assert.equal(hints.length, 0);
+});
+
+test("buildDocumentTotalHints: ICMS ST no rodapé (BRF)", () => {
+  const hints = buildDocumentTotalHints(
+    {
+      productsSubtotal: 1734.07,
+      documentTotal: 1786.06,
+      icmsStAmount: 51.99
+    },
+    [509.97, 736.36, 487.74]
+  );
+  assert.ok(hints.some((h) => h.includes("ICMS ST")));
+});
+
+test("normalizeReceiptUnit: LT e CAIXA", () => {
+  assert.equal(normalizeReceiptUnit("LT", ["L", "kg"]), "L");
+  assert.equal(normalizeReceiptUnit("CAIXA", ["cx", "un"]), "cx");
+  assert.equal(normalizeReceiptUnit("FARDO", ["fardo", "un"]), "fardo");
+});
+
+test("receiptUnitConflict: detecta cx vs kg", async () => {
+  const { receiptUnitConflict } = await import("../src/lib/receiptParseUtils.js");
+  const clash = receiptUnitConflict("cx", "kg", ["cx", "kg"]);
+  assert.ok(clash);
+  assert.equal(clash.noteUnit, "cx");
+  assert.equal(clash.catalogUnit, "kg");
 });
