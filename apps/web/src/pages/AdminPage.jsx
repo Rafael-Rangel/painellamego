@@ -731,7 +731,7 @@ export default function AdminPage() {
   return (
     <AppShell
       title="Painel do Administrador"
-      subtitle="Visao consolidada da rede e gestao de gerentes"
+      subtitle="Visão consolidada da rede e gestão dos gerentes"
       links={links}
       activeLinkKey={tab}
     >
