@@ -116,7 +116,9 @@ const productQuickSchema = z.object({
   name: z.string().min(2).max(400),
   type: z.enum(["insumo", "venda"]).optional(),
   category: z.string().min(2).max(120).optional(),
-  supplierId: z.string().uuid().optional()
+  supplierId: z.string().uuid().optional(),
+  /** Botão + Adicionar: grava o nome digitado; só reutiliza se já existir com o mesmo nome. */
+  exactNameOnly: z.boolean().optional()
 });
 
 /** Gerente ou admin: cria produto mínimo em "Outros" ou devolve existente (dedupe por nome normalizado). */
@@ -133,7 +135,8 @@ router.post("/products/quick", requireAuth, async (req, res) => {
       supplierId: parsed.data.supplierId || null,
       createdBy,
       userIdForAudit: req.user.id,
-      needsCatalogReview: createdBy === "manager"
+      needsCatalogReview: createdBy === "manager",
+      exactNameOnly: parsed.data.exactNameOnly === true
     });
     const status = reused ? 200 : 201;
     return res.status(status).json({ ...product, reused, resolvedVia });

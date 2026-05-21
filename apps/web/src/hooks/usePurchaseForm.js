@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, withAuth } from "../api";
 import { buildUnitOptions, normalizeUnitUsed } from "../lib/catalogUnits";
-import { compressReceiptFiles, formatFileSize } from "../lib/compressReceiptImages";
+import { compressReceiptFiles, compressReceiptFilesForAi, formatFileSize } from "../lib/compressReceiptImages";
 import { MAX_RECEIPT_FILES, mergeUniqueReceiptFiles, receiptFileKey } from "../lib/receiptFiles";
 
 export { MAX_RECEIPT_FILES };
@@ -348,6 +348,7 @@ export function usePurchaseForm(token, options = {}) {
             name: trimmed,
             type: lineType,
             category,
+            exactNameOnly: true,
             ...(supplierId ? { supplierId } : {})
           },
           withAuth(token)
@@ -576,7 +577,7 @@ export function usePurchaseForm(token, options = {}) {
         setAiStatusMessage("A preparar a foto para envio (mantendo nitidez para a IA)…");
 
         const originalBytes = receipts.reduce((s, f) => s + (f.size || 0), 0);
-        filesToSend = await compressReceiptFiles(receipts, {
+        filesToSend = await compressReceiptFilesForAi(receipts, {
           onFileStart: ({ name, index, total }) => {
             setAiStatusMessage(`Otimizando ${index + 1}/${total}: ${name}`);
             setAiProgress(4 + Math.round(((index + 1) / total) * 12));

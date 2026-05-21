@@ -159,7 +159,7 @@ async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pd
   const body = {
     model: model || config.openRouterModel,
     temperature: 0.1,
-    max_tokens: 8192,
+    max_tokens: config.openRouterMaxTokens,
     messages: [
       {
         role: "user",
@@ -364,6 +364,65 @@ async function finalizeReceiptItemsWithAutoProducts(mapped) {
   return mapped;
 }
 
+/** Tarefas de aprendizado de alias (executar após responder ao cliente). */
+export function collectReceiptAliasLearningTasks(mapped, supplierIdForLearn) {
+  const tasks = [];
+  if (!supplierIdForLearn || !mapped?._itemMatchMeta?.length) return tasks;
+
+  for (let i = 0; i < mapped._itemMatchMeta.length; i += 1) {
+    const m = mapped._itemMatchMeta[i];
+    const row = mapped.items[i];
+    if (!row?.productId) continue;
+    const rawLabel = m.rawLabel || row.rawProductName;
+    if (!rawLabel) continue;
+    if (m.matchKind === "alias" && m.matchKey) {
+      tasks.push(touchSupplierAlias(supabaseAdmin, supplierIdForLearn, m.matchKey).catch(() => {}));
+    } else if (m.matchKind === "fuzzy") {
+      if (m.score >= AUTO_ALIAS_MIN_SCORE) {
+        tasks.push(
+          maybeRecordAutoAlias(supabaseAdmin, {
+            supplierId: supplierIdForLearn,
+            rawLabel,
+            productId: row.productId,
+            score: m.score
+          }).catch(() => {})
+        );
+      } else if (m.score >= MIN_PRODUCT_FUZZY) {
+        tasks.push(
+          maybeRecordPendingAlias(supabaseAdmin, {
+            supplierId: supplierIdForLearn,
+            rawLabel,
+            productId: row.productId,
+            score: m.score
+          }).catch(() => {})
+        );
+      }
+    } else if (["global_alias", "exact", "aggressive"].includes(m.matchKind)) {
+      tasks.push(
+        maybeRecordAutoAlias(supabaseAdmin, {
+          supplierId: supplierIdForLearn,
+          rawLabel,
+          productId: row.productId,
+          score: 0.95
+        }).catch(() => {})
+      );
+    }
+  }
+  for (let i = 0; i < mapped.items.length; i += 1) {
+    const row = mapped.items[i];
+    if (!row?.autoCreated || !supplierIdForLearn || !row.productId || !row.rawProductName) continue;
+    tasks.push(
+      maybeRecordAutoAlias(supabaseAdmin, {
+        supplierId: supplierIdForLearn,
+        rawLabel: row.rawProductName,
+        productId: row.productId,
+        score: 0.9
+      }).catch(() => {})
+    );
+  }
+  return tasks;
+}
+
 export async function parseReceiptWithAI({
   imageBuffer,
   mimeType,
@@ -371,7 +430,9 @@ export async function parseReceiptWithAI({
   suppliers = [],
   categories = [],
   supplierIdHint = null,
-  userId = null
+  userId = null,
+  sharedParseCtx = null,
+  deferAliasLearning = false
 }) {
   if (!config.openRouterApiKey) {
     throw new Error("OPENROUTER_API_KEY não configurada.");
@@ -383,21 +444,59 @@ export async function parseReceiptWithAI({
 
   const base64 = imageBuffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
-  const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean), 120, 140);
-  const { catalogProducts, categoryNames } = buildReceiptCatalogContext(products, categories);
-  let allowedUnits = [];
-  try {
-    allowedUnits = await getActiveMeasurementUnits(supabaseAdmin);
-  } catch {
-    allowedUnits = [];
-  }
 
-  const prompt = buildReceiptAiPrompt({
-    catalogProducts,
-    categoryNames,
-    supplierNames,
-    allowedUnits
-  });
+  let prompt;
+  let allowedUnits;
+  let matchCtx;
+  let supplierIdForLearn;
+  let dbPrepMs = 0;
+
+  if (sharedParseCtx?.prompt) {
+    prompt = sharedParseCtx.prompt;
+    allowedUnits = sharedParseCtx.allowedUnits || [];
+    matchCtx = sharedParseCtx.matchCtx;
+    supplierIdForLearn = sharedParseCtx.supplierIdForLearn ?? null;
+  } else {
+    const prepStarted = Date.now();
+    const supplierNames = truncateCatalogNames((suppliers || []).map((s) => s.name).filter(Boolean), 120, 140);
+    const { catalogProducts, categoryNames } = buildReceiptCatalogContext(products, categories);
+    try {
+      allowedUnits = await getActiveMeasurementUnits(supabaseAdmin);
+    } catch {
+      allowedUnits = [];
+    }
+    prompt = buildReceiptAiPrompt({
+      catalogProducts,
+      categoryNames,
+      supplierNames,
+      allowedUnits
+    });
+    let globalAliasByKey = new Map();
+    try {
+      globalAliasByKey = await loadGlobalCanonicalAliasMap(supabaseAdmin);
+    } catch {
+      globalAliasByKey = new Map();
+    }
+    const hint = supplierIdHint && /^[0-9a-f-]{36}$/i.test(String(supplierIdHint)) ? supplierIdHint : null;
+    supplierIdForLearn = hint;
+    matchCtx = {
+      aliasByKey: new Map(),
+      candidateProducts: products,
+      globalAliasByKey,
+      receiptUseFullCatalog: true,
+      supplierBoostIds: null
+    };
+    if (hint) {
+      try {
+        const sup = await preloadSupplierMatchContext(supabaseAdmin, hint, products);
+        const supplierBoostIds = new Set((sup.candidateProducts || []).map((p) => p.id));
+        matchCtx = { ...sup, globalAliasByKey, receiptUseFullCatalog: true, supplierBoostIds };
+      } catch {
+        /* mantém matchCtx base */
+      }
+    }
+    dbPrepMs = Date.now() - prepStarted;
+  }
 
   const models = [config.openRouterModel];
   const fb = openRouterFallbackModel();
@@ -406,111 +505,42 @@ export async function parseReceiptWithAI({
   const errors = [];
   for (const model of models) {
     try {
+      const orStarted = Date.now();
       const payload = await fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, model });
+      const openRouterMs = Date.now() - orStarted;
       const content = payload?.choices?.[0]?.message?.content || "{}";
       const parsed = parseJsonFromModelContent(content);
 
       const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
-      const supplierIdForLearn = supplierIdHint || supplierMatch.best?.id || null;
+      const learnId = supplierIdForLearn || supplierIdHint || supplierMatch.best?.id || null;
 
-      let globalAliasByKey = new Map();
-      try {
-        globalAliasByKey = await loadGlobalCanonicalAliasMap(supabaseAdmin);
-      } catch {
-        globalAliasByKey = new Map();
-      }
-
-      let matchCtx = {
-        aliasByKey: new Map(),
-        candidateProducts: products,
-        globalAliasByKey,
-        receiptUseFullCatalog: true,
-        supplierBoostIds: null
-      };
-      if (supplierIdForLearn) {
-        try {
-          const sup = await preloadSupplierMatchContext(supabaseAdmin, supplierIdForLearn, products);
-          const supplierBoostIds = new Set((sup.candidateProducts || []).map((p) => p.id));
-          matchCtx = { ...sup, globalAliasByKey, receiptUseFullCatalog: true, supplierBoostIds };
-        } catch {
-          matchCtx = {
-            aliasByKey: new Map(),
-            candidateProducts: products,
-            globalAliasByKey,
-            receiptUseFullCatalog: true,
-            supplierBoostIds: null
-          };
-        }
-      }
-
+      const matchStarted = Date.now();
       const mapped = mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allowedUnits);
+      const matchMs = Date.now() - matchStarted;
       await finalizeReceiptItemsWithAutoProducts(mapped);
 
-      if (supplierIdForLearn && mapped._itemMatchMeta?.length) {
-        const tasks = [];
-        for (let i = 0; i < mapped._itemMatchMeta.length; i += 1) {
-          const m = mapped._itemMatchMeta[i];
-          const row = mapped.items[i];
-          if (!row?.productId) continue;
-          const rawLabel = m.rawLabel || row.rawProductName;
-          if (!rawLabel) continue;
-          if (m.matchKind === "alias" && m.matchKey) {
-            tasks.push(touchSupplierAlias(supabaseAdmin, supplierIdForLearn, m.matchKey).catch(() => {}));
-          } else if (m.matchKind === "fuzzy") {
-            if (m.score >= AUTO_ALIAS_MIN_SCORE) {
-              tasks.push(
-                maybeRecordAutoAlias(supabaseAdmin, {
-                  supplierId: supplierIdForLearn,
-                  rawLabel,
-                  productId: row.productId,
-                  score: m.score
-                }).catch(() => {})
-              );
-            } else if (m.score >= MIN_PRODUCT_FUZZY) {
-              tasks.push(
-                maybeRecordPendingAlias(supabaseAdmin, {
-                  supplierId: supplierIdForLearn,
-                  rawLabel,
-                  productId: row.productId,
-                  score: m.score
-                }).catch(() => {})
-              );
-            }
-          } else if (["global_alias", "exact", "aggressive"].includes(m.matchKind)) {
-            tasks.push(
-              maybeRecordAutoAlias(supabaseAdmin, {
-                supplierId: supplierIdForLearn,
-                rawLabel,
-                productId: row.productId,
-                score: 0.95
-              }).catch(() => {})
-            );
-          }
-        }
-        for (let i = 0; i < mapped.items.length; i += 1) {
-          const row = mapped.items[i];
-          if (!row?.autoCreated || !supplierIdForLearn || !row.productId || !row.rawProductName) continue;
-          tasks.push(
-            maybeRecordAutoAlias(supabaseAdmin, {
-              supplierId: supplierIdForLearn,
-              rawLabel: row.rawProductName,
-              productId: row.productId,
-              score: 0.9
-            }).catch(() => {})
-          );
-        }
-        await Promise.all(tasks);
+      const aliasTasks = collectReceiptAliasLearningTasks(mapped, learnId);
+      if (!deferAliasLearning && aliasTasks.length) {
+        const aliasStarted = Date.now();
+        await Promise.all(aliasTasks);
+        console.info("[receipt-ai] aliasMs", { ms: Date.now() - aliasStarted, count: aliasTasks.length });
       }
+
       delete mapped._itemMatchMeta;
+      const result = { ...mapped, _deferredAliasTasks: deferAliasLearning ? aliasTasks : [] };
       console.info("[receipt-ai] parse ok", {
         mimeType,
         inputBytes,
         ms: Date.now() - parseStarted,
+        dbPrepMs,
+        openRouterMs,
+        matchMs,
         items: mapped.items?.length ?? 0,
         model,
-        documentType: mapped.documentType
+        documentType: mapped.documentType,
+        aliasDeferred: deferAliasLearning ? aliasTasks.length : 0
       });
-      return mapped;
+      return result;
     } catch (e) {
       errors.push(String(e?.message || e));
     }

@@ -41,6 +41,16 @@ export const config = {
   openRouterFetchTimeoutMs: Math.min(
     300_000,
     Math.max(15_000, Number(process.env.OPENROUTER_FETCH_TIMEOUT_MS ?? 120_000) || 120_000)
+  ),
+  /** Limite de tokens na resposta da IA (notas típicas; reduz latência). */
+  openRouterMaxTokens: Math.min(
+    8192,
+    Math.max(2048, Number(process.env.OPENROUTER_MAX_TOKENS ?? 4096) || 4096)
+  ),
+  /** Máximo de ficheiros analisados em paralelo por pedido receipt-ai-parse. */
+  receiptAiParseConcurrency: Math.min(
+    4,
+    Math.max(1, Number(process.env.RECEIPT_AI_PARSE_CONCURRENCY ?? 2) || 2)
   )
 };
 

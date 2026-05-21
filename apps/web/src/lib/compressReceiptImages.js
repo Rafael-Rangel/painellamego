@@ -19,6 +19,27 @@ const RECEIPT_QUALITY_PRESET = {
   alwaysKeepResolution: false
 };
 
+/** Perfil para análise IA: upload mais rápido mantendo leitura legível. */
+export const RECEIPT_AI_QUALITY_PRESET = {
+  maxWidthOrHeight: 1920,
+  initialQuality: 0.84,
+  maxSizeMB: 2.5,
+  useWebWorker: true,
+  fileType: "image/jpeg",
+  alwaysKeepResolution: false
+};
+
+const RECEIPT_AI_GENTLE_PRESET = {
+  maxWidthOrHeight: 1800,
+  initialQuality: 0.8,
+  maxSizeMB: 2,
+  useWebWorker: true,
+  fileType: "image/jpeg",
+  alwaysKeepResolution: false
+};
+
+const AI_GENTLE_PASS_IF_ABOVE = 5 * 1024 * 1024;
+
 /** Só se a foto continuar muito pesada após o 1.º passe (ex.: 40 MB da câmera). */
 const RECEIPT_GENTLE_PRESET = {
   maxWidthOrHeight: 2400,
@@ -55,45 +76,61 @@ function toOutputFile(blob, originalName) {
  * Prepara fotos da câmera para upload: reduz peso na rede sem sacrificar leitura da IA.
  * Não há limite rígido em MB para o gerente  ·  a app adapta-se ao ficheiro.
  */
+async function compressOneReceiptFile(file, preset, gentlePreset, gentleAbove) {
+  if (file.type === "application/pdf") {
+    if (file.size > MAX_PDF_BYTES) {
+      throw new Error(
+        `O PDF "${file.name}" é muito grande para enviar (${formatFileSize(file.size)}). Tente fotografar a nota ou use um PDF mais curto.`
+      );
+    }
+    return file;
+  }
+
+  if (!IMAGE_TYPES.has(file.type)) {
+    throw new Error(`Formato não suportado em "${file.name}". Use foto (JPG/PNG) ou PDF.`);
+  }
+
+  const isJpeg = file.type === "image/jpeg" || file.type === "image/jpg";
+  if (isJpeg && file.size <= SKIP_REENCODE_JPEG_BELOW) {
+    return file;
+  }
+
+  let compressed = await imageCompression(file, preset);
+  if (gentlePreset && compressed.size > gentleAbove) {
+    const gentler = await imageCompression(file, gentlePreset);
+    if (gentler.size < compressed.size) compressed = gentler;
+  }
+
+  const smaller = compressed.size < file.size ? compressed : file;
+  return toOutputFile(smaller, file.name);
+}
+
 export async function compressReceiptFiles(files, hooks = {}) {
   const list = Array.from(files || []).filter(Boolean);
   if (!list.length) return [];
 
-  const out = [];
-  for (let i = 0; i < list.length; i += 1) {
-    const file = list[i];
-    hooks.onFileStart?.({ index: i, total: list.length, name: file.name });
+  return Promise.all(
+    list.map(async (file, i) => {
+      hooks.onFileStart?.({ index: i, total: list.length, name: file.name });
+      return compressOneReceiptFile(file, RECEIPT_QUALITY_PRESET, RECEIPT_GENTLE_PRESET, GENTLE_PASS_IF_ABOVE);
+    })
+  );
+}
 
-    if (file.type === "application/pdf") {
-      if (file.size > MAX_PDF_BYTES) {
-        throw new Error(
-          `O PDF "${file.name}" é muito grande para enviar (${formatFileSize(file.size)}). Tente fotografar a nota ou use um PDF mais curto.`
-        );
-      }
-      out.push(file);
-      continue;
-    }
+/** Compressão mais leve para o fluxo «Analisar com IA» (menos upload, OCR ainda legível). */
+export async function compressReceiptFilesForAi(files, hooks = {}) {
+  const list = Array.from(files || []).filter(Boolean);
+  if (!list.length) return [];
 
-    if (!IMAGE_TYPES.has(file.type)) {
-      throw new Error(`Formato não suportado em "${file.name}". Use foto (JPG/PNG) ou PDF.`);
-    }
-
-    const isJpeg = file.type === "image/jpeg" || file.type === "image/jpg";
-    if (isJpeg && file.size <= SKIP_REENCODE_JPEG_BELOW) {
-      out.push(file);
-      continue;
-    }
-
-    let compressed = await imageCompression(file, RECEIPT_QUALITY_PRESET);
-
-    if (compressed.size > GENTLE_PASS_IF_ABOVE) {
-      const gentler = await imageCompression(file, RECEIPT_GENTLE_PRESET);
-      if (gentler.size < compressed.size) compressed = gentler;
-    }
-
-    const smaller = compressed.size < file.size ? compressed : file;
-    out.push(toOutputFile(smaller, file.name));
-  }
-
-  return out;
+  return Promise.all(
+    list.map(async (file, i) => {
+      hooks.onFileStart?.({ index: i, total: list.length, name: file.name });
+      return compressOneReceiptFile(
+        file,
+        RECEIPT_AI_QUALITY_PRESET,
+        RECEIPT_AI_GENTLE_PRESET,
+        AI_GENTLE_PASS_IF_ABOVE
+      );
+    })
+  );
 }

@@ -4,17 +4,32 @@
 
 export function buildReceiptCatalogContext(products = [], categories = [], opts = {}) {
   const maxProducts = opts.maxProducts ?? 150;
+  const maxSupplierProducts = opts.maxSupplierProducts ?? 65;
   const maxNameLen = opts.maxNameLen ?? 80;
   const maxCategories = opts.maxCategories ?? 80;
+  const supplierProductIds = opts.supplierProductIds;
 
   const categoryNames = (categories || [])
     .map((c) => String(c?.name ?? c).trim())
     .filter(Boolean)
     .slice(0, maxCategories);
 
-  const catalogProducts = (products || [])
-    .filter((p) => p?.is_active !== false)
-    .slice(0, maxProducts)
+  let active = (products || []).filter((p) => p?.is_active !== false);
+
+  if (supplierProductIds instanceof Set && supplierProductIds.size > 0) {
+    const preferred = [];
+    const rest = [];
+    for (const p of active) {
+      if (supplierProductIds.has(p.id)) preferred.push(p);
+      else rest.push(p);
+    }
+    const restCap = Math.max(0, maxProducts - maxSupplierProducts);
+    active = [...preferred.slice(0, maxSupplierProducts), ...rest.slice(0, restCap)];
+  } else {
+    active = active.slice(0, maxProducts);
+  }
+
+  const catalogProducts = active
     .map((p) => ({
       name: String(p.name || "").trim().slice(0, maxNameLen),
       category: String(p.category || "").trim().slice(0, 48) || null,

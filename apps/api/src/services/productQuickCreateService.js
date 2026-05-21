@@ -48,6 +48,7 @@ async function ensureCategoryExists(categoryName) {
  * @param {string|null} [opts.userIdForAudit]
  * @param {boolean} [opts.needsCatalogReview]
  * @param {object|null} [opts.resolveCtx] contexto já montado (ex.: parse NF); senão monta com catálogo completo.
+ * @param {boolean} [opts.exactNameOnly] true = só reutiliza produto com o mesmo nome normalizado (botão + Adicionar); sem fuzzy/agressivo.
  */
 export async function quickResolveOrCreateProduct(opts) {
   const displayName = String(opts.displayName || "").trim().replace(/\s+/g, " ");
@@ -66,65 +67,76 @@ export async function quickResolveOrCreateProduct(opts) {
     (opts.needsCatalogReview !== false && (opts.createdBy === "manager" || opts.createdBy === "ai_auto"));
   const userIdForAudit = opts.userIdForAudit || null;
 
+  const exactNameOnly = opts.exactNameOnly === true;
+
   const { data: allProducts, error: pAllErr } = await supabaseAdmin.from("products").select("*").eq("is_active", true);
   if (pAllErr) throw new Error(pAllErr.message);
   const products = allProducts || [];
 
-  const globalAliasByKey =
-    opts.resolveCtx?.globalAliasByKey instanceof Map && opts.resolveCtx.globalAliasByKey.size > 0
-      ? opts.resolveCtx.globalAliasByKey
-      : await loadGlobalCanonicalAliasMap(supabaseAdmin);
+  if (!exactNameOnly) {
+    const globalAliasByKey =
+      opts.resolveCtx?.globalAliasByKey instanceof Map && opts.resolveCtx.globalAliasByKey.size > 0
+        ? opts.resolveCtx.globalAliasByKey
+        : await loadGlobalCanonicalAliasMap(supabaseAdmin);
 
-  let ctx = opts.resolveCtx;
-  if (!ctx) {
-    if (supplierIdQuick) {
-      const sup = await preloadSupplierMatchContext(supabaseAdmin, supplierIdQuick, products);
-      const supplierBoostIds = new Set((sup.candidateProducts || []).map((p) => p.id));
-      ctx = { ...sup, globalAliasByKey, receiptUseFullCatalog: true, supplierBoostIds };
+    let ctx = opts.resolveCtx;
+    if (!ctx) {
+      if (supplierIdQuick) {
+        const sup = await preloadSupplierMatchContext(supabaseAdmin, supplierIdQuick, products);
+        const supplierBoostIds = new Set((sup.candidateProducts || []).map((p) => p.id));
+        ctx = { ...sup, globalAliasByKey, receiptUseFullCatalog: true, supplierBoostIds };
+      } else {
+        ctx = { aliasByKey: new Map(), candidateProducts: products, globalAliasByKey, receiptUseFullCatalog: true, supplierBoostIds: null };
+      }
     } else {
-      ctx = { aliasByKey: new Map(), candidateProducts: products, globalAliasByKey, receiptUseFullCatalog: true, supplierBoostIds: null };
+      ctx = {
+        ...ctx,
+        globalAliasByKey,
+        receiptUseFullCatalog: ctx.receiptUseFullCatalog ?? true,
+        supplierBoostIds: ctx.supplierBoostIds ?? null
+      };
     }
-  } else {
-    ctx = {
-      ...ctx,
-      globalAliasByKey,
-      receiptUseFullCatalog: ctx.receiptUseFullCatalog ?? true,
-      supplierBoostIds: ctx.supplierBoostIds ?? null
-    };
-  }
 
-  const resMatch = resolveOneProductLabel(displayName, products, ctx);
-  if (resMatch.product) {
-    if (supplierIdQuick) {
-      if (resMatch.matchKind === "alias") {
-        await touchSupplierAlias(supabaseAdmin, supplierIdQuick, keyStrong).catch(() => {});
-      } else if (resMatch.matchKind === "fuzzy") {
-        const sc = Number(resMatch.score || 0);
-        if (sc >= AUTO_ALIAS_MIN_SCORE) {
+    const resMatch = resolveOneProductLabel(displayName, products, ctx);
+    if (resMatch.product) {
+      if (supplierIdQuick) {
+        if (resMatch.matchKind === "alias") {
+          await touchSupplierAlias(supabaseAdmin, supplierIdQuick, keyStrong).catch(() => {});
+        } else if (resMatch.matchKind === "fuzzy") {
+          const sc = Number(resMatch.score || 0);
+          if (sc >= AUTO_ALIAS_MIN_SCORE) {
+            await maybeRecordAutoAlias(supabaseAdmin, {
+              supplierId: supplierIdQuick,
+              rawLabel: displayName,
+              productId: resMatch.product.id,
+              score: sc
+            }).catch(() => {});
+          } else if (sc >= MIN_PRODUCT_FUZZY) {
+            await maybeRecordPendingAlias(supabaseAdmin, {
+              supplierId: supplierIdQuick,
+              rawLabel: displayName,
+              productId: resMatch.product.id,
+              score: sc
+            }).catch(() => {});
+          }
+        } else if (["global_alias", "exact", "aggressive"].includes(resMatch.matchKind)) {
           await maybeRecordAutoAlias(supabaseAdmin, {
             supplierId: supplierIdQuick,
             rawLabel: displayName,
             productId: resMatch.product.id,
-            score: sc
-          }).catch(() => {});
-        } else if (sc >= MIN_PRODUCT_FUZZY) {
-          await maybeRecordPendingAlias(supabaseAdmin, {
-            supplierId: supplierIdQuick,
-            rawLabel: displayName,
-            productId: resMatch.product.id,
-            score: sc
+            score: 0.95
           }).catch(() => {});
         }
-      } else if (["global_alias", "exact", "aggressive"].includes(resMatch.matchKind)) {
-        await maybeRecordAutoAlias(supabaseAdmin, {
-          supplierId: supplierIdQuick,
-          rawLabel: displayName,
-          productId: resMatch.product.id,
-          score: 0.95
-        }).catch(() => {});
       }
+      return { product: resMatch.product, reused: true, resolvedVia: resMatch.matchKind };
     }
-    return { product: resMatch.product, reused: true, resolvedVia: resMatch.matchKind };
+  } else {
+    const exactInCatalog = products.find(
+      (p) => p.is_active !== false && normalizeProductNameKey(p.name) === keyStrong
+    );
+    if (exactInCatalog) {
+      return { product: exactInCatalog, reused: true, resolvedVia: "exact_name" };
+    }
   }
 
   const { data: byStrong, error: e1 } = await supabaseAdmin
