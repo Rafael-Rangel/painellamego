@@ -360,10 +360,12 @@ export function usePurchaseForm(token, options = {}) {
         );
         const catHint = usedDefaultCategory ? " (categoria Outros)" : "";
         setToast(
-          data.reused ? `Produto já existia: “${data.name}”.` : `Produto “${data.name}” adicionado${catHint}.`
+          data.reused
+            ? `Produto já existia: “${data.name}”.`
+            : `Produto “${data.name}” adicionado ao catálogo${catHint}.`
         );
         setTimeout(() => setToast(""), 2800);
-        return data;
+        return { ...data, displayName: data.name };
       } catch (err) {
         const d = err?.response?.data;
         let msg = "Não foi possível criar o produto.";
