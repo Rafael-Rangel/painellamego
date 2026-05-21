@@ -1292,6 +1292,7 @@ export default function AdminPage() {
                       options={categoryOptions}
                       value={productForm.category}
                       onChange={(next) => setProductForm((p) => ({ ...p, category: next }))}
+                      createEntityLabel="categoria"
                     />
                   </div>
                 </div>
@@ -1310,6 +1311,7 @@ export default function AdminPage() {
                       options={unitOptions}
                       value={productForm.standardUnit}
                       onChange={(next) => setProductForm((p) => ({ ...p, standardUnit: next }))}
+                      createEntityLabel="unidade"
                     />
                   </div>
                   <div className="admin-catalog-product-form__actions">

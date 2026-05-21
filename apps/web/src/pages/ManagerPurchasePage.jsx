@@ -171,6 +171,14 @@ export default function ManagerPurchasePage() {
 
               <div className="grid wizard-item-grid">
                 <div className="span-5 wizard-product-col wizard-product-card">
+                  <SingleSelectInput
+                    label="Categoria"
+                    placeholder="Digite para buscar ou criar…"
+                    options={categoryOptions}
+                    value={draftItem.category}
+                    onChange={(next) => setDraftItem({ ...draftItem, category: next })}
+                    createEntityLabel="categoria"
+                  />
                   <SingleSelectSearch
                     label="Produto"
                     placeholder="Digite para buscar ou adicionar…"
@@ -185,13 +193,6 @@ export default function ManagerPurchasePage() {
                       if (!data) return;
                       pickDraftProduct(data.id);
                     }}
-                  />
-                  <SingleSelectInput
-                    label="Categoria"
-                    placeholder="Digite para buscar ou criar…"
-                    options={categoryOptions}
-                    value={draftItem.category}
-                    onChange={(next) => setDraftItem({ ...draftItem, category: next })}
                   />
                   <div className="purchase-line-type-block purchase-line-type-block--nested">
                     <span className="purchase-line-type-label">Esta linha é insumo ou venda?</span>
@@ -272,6 +273,7 @@ export default function ManagerPurchasePage() {
                         options={categoryOptions}
                         value={item.category || ""}
                         onChange={(next) => updateItem(idx, { category: next })}
+                        createEntityLabel="categoria"
                       />
                     )
                   },

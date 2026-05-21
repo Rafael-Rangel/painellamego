@@ -336,12 +336,9 @@ export function usePurchaseForm(token, options = {}) {
         setTimeout(() => setToast(""), 3200);
         return null;
       }
-      const category = String(categoryOpt || "").trim();
-      if (category.length < 2) {
-        setToast("Selecione a categoria antes de criar o produto.");
-        setTimeout(() => setToast(""), 3200);
-        return null;
-      }
+      const categoryRaw = String(categoryOpt || "").trim();
+      const usedDefaultCategory = categoryRaw.length < 2;
+      const category = usedDefaultCategory ? "Outros" : categoryRaw;
       const lineType = lineTypeOpt === "venda" ? "venda" : "insumo";
       setProductCreating(true);
       try {
@@ -360,7 +357,10 @@ export function usePurchaseForm(token, options = {}) {
             String(a.name).localeCompare(String(b.name), "pt-BR")
           )
         );
-        setToast(data.reused ? `Produto já existia: “${data.name}”.` : `Produto “${data.name}” adicionado.`);
+        const catHint = usedDefaultCategory ? " (categoria Outros)" : "";
+        setToast(
+          data.reused ? `Produto já existia: “${data.name}”.` : `Produto “${data.name}” adicionado${catHint}.`
+        );
         setTimeout(() => setToast(""), 2800);
         return data;
       } catch (err) {

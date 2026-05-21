@@ -288,6 +288,17 @@ export default function ManagerPurchaseAiPage() {
                     <li key={`line-${idx}`} className={`purchase-ai-item-row card ${aiHighlightKeys?.has(`item.${idx}`) ? "purchase-ai-item-suggested" : ""}`}>
                       <div className="purchase-ai-item-grid">
                         <div className="purchase-ai-item-product">
+                          <SingleSelectInput
+                            label="Categoria"
+                            placeholder="Digite para buscar ou criar…"
+                            options={categoryOptions}
+                            value={row.category || ""}
+                            onChange={(next) => {
+                              clearItemRowAiHighlight(idx);
+                              updateItem(idx, { category: next });
+                            }}
+                            createEntityLabel="categoria"
+                          />
                           <SingleSelectSearch
                             label="Produto"
                             placeholder="Buscar ou adicionar produto…"
@@ -319,16 +330,6 @@ export default function ManagerPurchaseAiPage() {
                               });
                             }}
                             inputClassName="purchase-ai-input"
-                          />
-                          <SingleSelectInput
-                            label="Categoria"
-                            placeholder="Digite para buscar ou criar…"
-                            options={categoryOptions}
-                            value={row.category || ""}
-                            onChange={(next) => {
-                              clearItemRowAiHighlight(idx);
-                              updateItem(idx, { category: next });
-                            }}
                           />
                           <div className="purchase-ai-product-line-type">
                             <span className="purchase-ai-mini-label">Insumo ou venda (esta linha)</span>
@@ -419,6 +420,14 @@ export default function ManagerPurchaseAiPage() {
                 <h4 className="purchase-ai-subheading">Adicionar outro item</h4>
                 <div className="purchase-ai-item-grid">
                   <div className="purchase-ai-item-product">
+                    <SingleSelectInput
+                      label="Categoria"
+                      placeholder="Digite para buscar ou criar…"
+                      options={categoryOptions}
+                      value={draftItem.category}
+                      onChange={(next) => setDraftItem({ ...draftItem, category: next })}
+                      createEntityLabel="categoria"
+                    />
                     <SingleSelectSearch
                       label="Produto"
                       placeholder="Buscar ou adicionar…"
@@ -433,13 +442,6 @@ export default function ManagerPurchaseAiPage() {
                         if (!data) return;
                         pickDraftProduct(data.id);
                       }}
-                    />
-                    <SingleSelectInput
-                      label="Categoria"
-                      placeholder="Digite para buscar ou criar…"
-                      options={categoryOptions}
-                      value={draftItem.category}
-                      onChange={(next) => setDraftItem({ ...draftItem, category: next })}
                     />
                     <div className="purchase-ai-product-line-type">
                       <span className="purchase-ai-mini-label">Insumo ou venda (esta linha)</span>

@@ -13,7 +13,7 @@ export default function SingleSelectSearch({
   options = [],
   value = "",
   onChange,
-  /** Quando não há resultados na pesquisa, permite criar entrada com o texto digitado (ex.: fornecedor). */
+  /** Quando o texto não coincide com nenhuma opção, permite criar entrada (ex.: fornecedor, produto). */
   allowCreate = false,
   /** async (trimmedQuery) => void  ·  o pai cria o registo e atualiza options/value. */
   onCreateOption,
@@ -39,11 +39,18 @@ export default function SingleSelectSearch({
   }, [options, q]);
 
   const trimmedQ = (q || "").trim();
+
+  const hasExactMatch = useMemo(() => {
+    const nq = normalize(trimmedQ);
+    if (!nq) return false;
+    return (options || []).some((o) => normalize(o.label) === nq);
+  }, [options, trimmedQ]);
+
   const canOfferCreate =
     allowCreate &&
     typeof onCreateOption === "function" &&
     trimmedQ.length >= minCreateLength &&
-    !filtered.length &&
+    !hasExactMatch &&
     !createBusy;
 
   useEffect(() => {
@@ -61,6 +68,8 @@ export default function SingleSelectSearch({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
+  const showEmptyHint = !filtered.length && !canOfferCreate;
+
   return (
     <div className="field field-styled ms-root" ref={rootRef}>
       <label>{label}</label>
@@ -77,22 +86,21 @@ export default function SingleSelectSearch({
       {open ? (
         <div className="ms-popover" role="listbox">
           <div className="ms-options">
-            {filtered.length ? (
-              filtered.map((o) => (
-                <button
-                  type="button"
-                  key={o.value}
-                  className="ss-option-btn"
-                  onClick={() => {
-                    onChange(o.value);
-                    setQ(o.label);
-                    setOpen(false);
-                  }}
-                >
-                  {o.label}
-                </button>
-              ))
-            ) : canOfferCreate ? (
+            {filtered.map((o) => (
+              <button
+                type="button"
+                key={o.value}
+                className="ss-option-btn"
+                onClick={() => {
+                  onChange(o.value);
+                  setQ(o.label);
+                  setOpen(false);
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+            {canOfferCreate ? (
               <button
                 type="button"
                 className="ss-option-btn ss-option-create"
@@ -110,15 +118,17 @@ export default function SingleSelectSearch({
               >
                 {createBusy ? "A guardar…" : `+ Adicionar ${createEntityLabel} “${trimmedQ}”`}
               </button>
-            ) : trimmedQ.length > 0 && trimmedQ.length < minCreateLength ? (
+            ) : null}
+            {showEmptyHint && trimmedQ.length > 0 && trimmedQ.length < minCreateLength ? (
               <p className="empty" style={{ margin: 0, padding: "0.6rem 0.7rem" }}>
                 Digite pelo menos {minCreateLength} caracteres para adicionar.
               </p>
-            ) : (
+            ) : null}
+            {showEmptyHint && (!trimmedQ || trimmedQ.length >= minCreateLength) ? (
               <p className="empty" style={{ margin: 0, padding: "0.6rem 0.7rem" }}>
-                Nenhum resultado.
+                {trimmedQ ? "Nenhum resultado." : "Digite para buscar."}
               </p>
-            )}
+            ) : null}
           </div>
         </div>
       ) : null}

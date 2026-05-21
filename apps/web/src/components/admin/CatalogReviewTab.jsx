@@ -283,6 +283,7 @@ export default function CatalogReviewTab({ token, catalogProducts = [], category
               options={categoryOptions}
               value={mergeNewCategory}
               onChange={setMergeNewCategory}
+              createEntityLabel="categoria"
             />
           </div>
           <div className="catalog-review-merge-actions">
@@ -327,6 +328,7 @@ export default function CatalogReviewTab({ token, catalogProducts = [], category
                     options={categoryOptions}
                     value={form.category}
                     onChange={(next) => setForm((f) => ({ ...f, category: next }))}
+                    createEntityLabel="categoria"
                   />
                 </div>
               </div>
@@ -345,6 +347,7 @@ export default function CatalogReviewTab({ token, catalogProducts = [], category
                     options={unitOptions}
                     value={form.standardUnit}
                     onChange={(next) => setForm((f) => ({ ...f, standardUnit: next }))}
+                    createEntityLabel="unidade"
                   />
                 </div>
                 <div className="admin-catalog-product-form__actions catalog-review-edit-actions">
