@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { catalogNotFoundOnBlur, logCatalog } from "../../lib/catalogFeedback";
+import RequiredLabel, { FieldValidationMessage } from "./RequiredLabel";
 
 function normalize(s) {
   return String(s || "")
@@ -17,8 +19,14 @@ export default function SingleSelectSearch({
   onCreateOption,
   createBusy = false,
   createEntityLabel = "fornecedor",
+  catalogField = "supplier",
   minCreateLength = 2,
-  inputClassName = ""
+  inputClassName = "",
+  onNotify,
+  required = false,
+  showValidationError = false,
+  validationMessage = "",
+  onFieldBlur
 }) {
   const rootRef = useRef(null);
   const inputRef = useRef(null);
@@ -26,6 +34,7 @@ export default function SingleSelectSearch({
   const [inputText, setInputText] = useState("");
   /** Texto fixo no input enquanto cria no catálogo (não limpar durante o loading). */
   const [pendingCreateLabel, setPendingCreateLabel] = useState(null);
+  const [inlineError, setInlineError] = useState("");
   const lastValueRef = useRef(value);
 
   const selected = useMemo(() => (options || []).find((o) => o.value === value) || null, [options, value]);
@@ -80,29 +89,59 @@ export default function SingleSelectSearch({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [isLocked]);
 
+  const notify = (message, type = "error") => {
+    if (!message) return;
+    setInlineError(message);
+    onNotify?.(message, type);
+  };
+
   const handleCreate = async () => {
     if (!trimmedQ || isLocked) return;
     const labelToCreate = trimmedQ;
     setPendingCreateLabel(labelToCreate);
     setInputText(labelToCreate);
     setOpen(true);
+    setInlineError("");
+    logCatalog("create_start", catalogField, { value: labelToCreate });
     try {
-      await onCreateOption(labelToCreate);
+      const result = await onCreateOption(labelToCreate);
+      if (result === false || result?.ok === false) {
+        const msg =
+          result?.message ||
+          `Não foi possível adicionar ${createEntityLabel} ${quote(labelToCreate)}. Verifique os dados e tente de novo.`;
+        notify(msg, "error");
+        logCatalog("create_failed", catalogField, { value: labelToCreate, result });
+        return;
+      }
+      logCatalog("create_ok", catalogField, { value: labelToCreate });
+      setInlineError("");
       setOpen(false);
-    } catch {
-      /* toast no pai */
+    } catch (err) {
+      const msg =
+        err?.message ||
+        `Não foi possível adicionar ${createEntityLabel} ${quote(labelToCreate)}. Tente de novo ou escolha da lista.`;
+      notify(msg, "error");
+      logCatalog("create_error", catalogField, { value: labelToCreate, error: msg });
     } finally {
       setPendingCreateLabel(null);
     }
   };
 
+  function quote(s) {
+    const t = String(s || "").trim();
+    return t ? `“${t}”` : "";
+  }
+
+  const showRequiredError = showValidationError && validationMessage && !value;
+  const inputInvalid = inlineError || showRequiredError;
+
   return (
     <div
-      className={`field field-styled ms-root${isLocked ? " ms-root--busy" : ""}`}
+      className={`field field-styled ms-root${isLocked ? " ms-root--busy" : ""}${showRequiredError ? " field--invalid" : ""}`}
       ref={rootRef}
       aria-busy={isLocked}
     >
-      {label ? <label>{label}</label> : null}
+      {label ? <RequiredLabel required={required}>{label}</RequiredLabel> : null}
       <div className="ms-input-wrap">
         <input
           ref={inputRef}
@@ -116,8 +155,38 @@ export default function SingleSelectSearch({
             if (isLocked) return;
             const next = e.target.value;
             setInputText(next);
-            if (value) onChange("");
+            if (inlineError) setInlineError("");
+            if (!value) return;
+            const stillMatches =
+              selected && normalize(next) === normalize(selected.label);
+            if (!stillMatches) onChange("");
           }}
+          onBlur={() => {
+            if (isLocked) return;
+            setOpen(false);
+            onFieldBlur?.();
+            if (value) return;
+            if (!trimmedQ) {
+              setInlineError("");
+              return;
+            }
+            const exact = (options || []).find((o) => normalize(o.label) === normalize(trimmedQ));
+            if (exact) {
+              onChange(exact.value);
+              setInputText(exact.label);
+              setInlineError("");
+              return;
+            }
+            if (trimmedQ.length >= minCreateLength) {
+              const msg = catalogNotFoundOnBlur(catalogField, trimmedQ);
+              notify(msg, "warning");
+            } else {
+              const msg = `Digite pelo menos ${minCreateLength} caracteres ou escolha um item da lista.`;
+              notify(msg, "warning");
+            }
+          }}
+          aria-invalid={inputInvalid ? "true" : undefined}
+          aria-describedby={inputInvalid ? `${catalogField}-hint` : undefined}
         />
         {isLocked ? <span className="ms-input-spinner" aria-hidden /> : null}
       </div>
@@ -163,12 +232,24 @@ export default function SingleSelectSearch({
                   <p className="ms-hint-empty">Digite pelo menos {minCreateLength} caracteres para adicionar.</p>
                 ) : null}
                 {!filtered.length && !canOfferCreate && (!trimmedQ || trimmedQ.length >= minCreateLength) ? (
-                  <p className="ms-hint-empty">{trimmedQ ? "Nenhum resultado." : "Digite para buscar."}</p>
+                  <p className="ms-hint-empty">
+                    {trimmedQ
+                      ? `Nenhum ${createEntityLabel} encontrado com esse nome. Use «+ Adicionar» ou corrija a digitação.`
+                      : "Digite para buscar."}
+                  </p>
                 ) : null}
               </>
             )}
           </div>
         </div>
+      ) : null}
+      {showRequiredError ? (
+        <FieldValidationMessage id={`${catalogField}-hint`}>{validationMessage}</FieldValidationMessage>
+      ) : null}
+      {inlineError ? (
+        <p className="ms-field-error" id={showRequiredError ? undefined : `${catalogField}-hint`} role="alert">
+          {inlineError}
+        </p>
       ) : null}
     </div>
   );

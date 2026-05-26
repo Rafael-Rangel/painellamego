@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { logCatalog } from "../../lib/catalogFeedback";
+import RequiredLabel, { FieldValidationMessage } from "./RequiredLabel";
 
 function normalize(s) {
   return String(s || "")
@@ -14,13 +16,26 @@ export default function SingleSelectInput({
   value = "",
   onChange,
   createEntityLabel = "valor",
-  minCreateLength = 2
+  catalogField = "category",
+  minCreateLength = 2,
+  onNotify,
+  required = false,
+  showValidationError = false,
+  validationMessage = "",
+  onFieldBlur
 }) {
   const rootRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [inputText, setInputText] = useState(value || "");
   const [pendingApplyLabel, setPendingApplyLabel] = useState(null);
+  const [inlineError, setInlineError] = useState("");
   const lastValueRef = useRef(value);
+
+  const notify = (message, type = "warning") => {
+    if (!message) return;
+    setInlineError(message);
+    onNotify?.(message, type);
+  };
 
   const isLocked = !!pendingApplyLabel;
   const displayText = isLocked ? pendingApplyLabel : inputText;
@@ -68,6 +83,8 @@ export default function SingleSelectInput({
     setPendingApplyLabel(labelToApply);
     setInputText(labelToApply);
     setOpen(true);
+    setInlineError("");
+    logCatalog("apply_custom", catalogField, { value: labelToApply });
     onChange(labelToApply);
     requestAnimationFrame(() => {
       setPendingApplyLabel(null);
@@ -75,9 +92,16 @@ export default function SingleSelectInput({
     });
   };
 
+  const showRequiredError = showValidationError && validationMessage && !value;
+  const inputInvalid = inlineError || showRequiredError;
+
   return (
-    <div className={`field ms-root${isLocked ? " ms-root--busy" : ""}`} ref={rootRef} aria-busy={isLocked}>
-      {label ? <label>{label}</label> : null}
+    <div
+      className={`field ms-root${isLocked ? " ms-root--busy" : ""}${showRequiredError ? " field--invalid" : ""}`}
+      ref={rootRef}
+      aria-busy={isLocked}
+    >
+      {label ? <RequiredLabel required={required}>{label}</RequiredLabel> : null}
       <div className="ms-input-wrap">
         <input
           className={isLocked ? "ms-input-locked" : undefined}
@@ -90,8 +114,32 @@ export default function SingleSelectInput({
             const next = e.target.value;
             setInputText(next);
             onChange(next);
+            if (inlineError) setInlineError("");
             setOpen(true);
           }}
+          onBlur={() => {
+            if (isLocked) return;
+            setOpen(false);
+            onFieldBlur?.();
+            if (value || !trimmedQ) {
+              if (!trimmedQ) setInlineError("");
+              return;
+            }
+            if (hasExactMatch) {
+              setInlineError("");
+              return;
+            }
+            if (trimmedQ.length >= minCreateLength) {
+              notify(
+                `A ${createEntityLabel} “${trimmedQ}” não está na lista. Use «+ Usar ${createEntityLabel}» ou escolha uma opção.`,
+                "warning"
+              );
+              logCatalog("not_found_on_blur", catalogField, { value: trimmedQ });
+            } else {
+              notify(`Digite pelo menos ${minCreateLength} caracteres ou escolha da lista.`, "warning");
+            }
+          }}
+          aria-invalid={inputInvalid ? "true" : undefined}
         />
         {isLocked ? <span className="ms-input-spinner" aria-hidden /> : null}
       </div>
@@ -137,7 +185,7 @@ export default function SingleSelectInput({
                     {trimmedQ.length > 0 && trimmedQ.length < minCreateLength
                       ? `Digite pelo menos ${minCreateLength} caracteres.`
                       : trimmedQ
-                        ? "Sem opções salvas. Use o botão acima ou continue a digitar."
+                        ? `Nenhuma ${createEntityLabel} encontrada. Use «+ Usar ${createEntityLabel}» para aplicar o texto digitado.`
                         : "Digite para buscar ou criar."}
                   </p>
                 ) : null}
@@ -145,6 +193,12 @@ export default function SingleSelectInput({
             )}
           </div>
         </div>
+      ) : null}
+      {showRequiredError ? <FieldValidationMessage>{validationMessage}</FieldValidationMessage> : null}
+      {inlineError ? (
+        <p className="ms-field-error" role="alert">
+          {inlineError}
+        </p>
       ) : null}
     </div>
   );

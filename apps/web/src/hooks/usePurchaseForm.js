@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, withAuth } from "../api";
 import { buildUnitOptions, normalizeUnitUsed } from "../lib/catalogUnits";
-import { compressReceiptFiles, compressReceiptFilesForAi, formatFileSize } from "../lib/compressReceiptImages";
+import {
+  compressReceiptFilesForAi,
+  compressReceiptFilesForSubmit,
+  formatFileSize
+} from "../lib/compressReceiptImages";
+import { catalogMessageFromApiError, catalogUserMessage, logCatalog } from "../lib/catalogFeedback";
+import { purchaseApiErrorMessage } from "../lib/purchaseErrors";
+import {
+  isBonificationOnlyLine,
+  purchaseTotalsFromItems,
+  validateInstallmentsAgainstPayable
+} from "../lib/purchaseTotals";
 import { MAX_RECEIPT_FILES, mergeUniqueReceiptFiles, receiptFileKey } from "../lib/receiptFiles";
 
 export { MAX_RECEIPT_FILES };
@@ -31,20 +42,6 @@ export function toPurchaseDatePayload(dateStr) {
   return date.toISOString().slice(0, 10);
 }
 
-function purchaseApiErrorMessage(err) {
-  const d = err?.response?.data;
-  if (typeof d?.message === "string" && d.message.trim()) return d.message;
-  if (d?.details?.fieldErrors) {
-    const flat = Object.values(d.details.fieldErrors).flat().filter(Boolean);
-    if (flat.length) return `Dados inválidos: ${flat.slice(0, 2).join("; ")}`;
-  }
-  if (typeof d === "string" && d.trim() && !d.includes("<!DOCTYPE")) return d.trim();
-  const st = err?.response?.status;
-  if (st === 413) return "Arquivos da nota muito grandes. Tire fotos com menos resolução ou envie menos ficheiros.";
-  if (st === 500) return "Erro no servidor ao registar. Tente de novo; se persistir, contacte o suporte.";
-  return "Não foi possível registar a compra. Tente novamente.";
-}
-
 /** Normaliza número da NF vindo da IA (pode ser número ou string). */
 export function invoiceNumberFromAi(value) {
   if (value == null) return "";
@@ -69,7 +66,10 @@ const EMPTY_DRAFT_ITEM = {
   quantity: "",
   unitUsed: "kg",
   unitPrice: "",
-  lineType: "insumo"
+  lineType: "insumo",
+  isBonificationOnly: false,
+  bonusQuantity: "",
+  bonusUnitValue: ""
 };
 
 function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
@@ -133,6 +133,8 @@ export function usePurchaseForm(token, options = {}) {
   const [receiptExtras, setReceiptExtras] = useState([]);
   const [items, setItems] = useState([]);
   const [draftItem, setDraftItem] = useState({ ...EMPTY_DRAFT_ITEM });
+  const [editingItemIndex, setEditingItemIndex] = useState(null);
+  const [installments, setInstallments] = useState([]);
   const [toast, setToast] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiStage, setAiStage] = useState(null);
@@ -186,10 +188,7 @@ export function usePurchaseForm(token, options = {}) {
     [products, unitOptions]
   );
 
-  const total = useMemo(
-    () => items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0),
-    [items]
-  );
+  const total = useMemo(() => purchaseTotalsFromItems(items).totalPayable, [items]);
 
   const canConfirmPurchase = useMemo(() => {
     if (aiLoading || confirming) return false;
@@ -212,22 +211,101 @@ export function usePurchaseForm(token, options = {}) {
   }, [aiLoading, confirming, supplierId, receipts.length, items, products]);
 
   const addItem = useCallback(() => {
-    setDraftItem((d) => {
-      const category = resolveItemCategory(d, products);
-      if (!d.productId || !d.quantity || !d.unitPrice) {
-        setToast("Preencha produto, quantidade e valor unitário.");
+    const d = draftItem;
+    const category = resolveItemCategory(d, products);
+    const qty = Number(d.quantity);
+    const price = Number(d.unitPrice);
+    const bonusQty = Number(d.bonusQuantity) || 0;
+    const bonusVal = Number(d.bonusUnitValue) || 0;
+
+    if (!d.productId) {
+      setToast("Selecione o produto na lista (toque no nome após buscar).");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (isBonificationOnlyLine(d)) {
+      if (bonusQty <= 0 && qty <= 0) {
+        setToast("Informe a quantidade bonificada.");
         setTimeout(() => setToast(""), 3200);
-        return d;
+        return;
       }
-      if (!category) {
-        setToast("Informe a categoria do item.");
+    } else {
+      if (!Number.isFinite(qty) || qty <= 0) {
+        setToast("Informe a quantidade comprada.");
         setTimeout(() => setToast(""), 3200);
-        return d;
+        return;
       }
-      setItems((prev) => [...prev, { ...d, category }]);
-      return { ...EMPTY_DRAFT_ITEM };
+      if (!Number.isFinite(price) || price <= 0) {
+        setToast("Informe o valor unitário.");
+        setTimeout(() => setToast(""), 3200);
+        return;
+      }
+    }
+    if (!category) {
+      setToast("Informe a categoria do item.");
+      setTimeout(() => setToast(""), 3200);
+      return;
+    }
+
+    const bonusOnly = isBonificationOnlyLine(d);
+    const newRow = {
+      productId: d.productId,
+      category,
+      lineType: d.lineType === "venda" ? "venda" : "insumo",
+      isBonificationOnly: bonusOnly,
+      quantity: bonusOnly ? String(bonusQty || qty) : String(qty),
+      unitUsed: d.unitUsed || "kg",
+      unitPrice: bonusOnly ? String(bonusVal || price) : String(price),
+      bonusQuantity: String(bonusQty),
+      bonusUnitValue: String(bonusVal)
+    };
+
+    const editIdx = editingItemIndex;
+    setItems((prev) => {
+      if (editIdx !== null) {
+        return prev.map((row, i) => (i === editIdx ? newRow : row));
+      }
+      return [...prev, newRow];
     });
-  }, [products]);
+
+    if (editIdx !== null) {
+      setEditingItemIndex(null);
+      setToast("Item atualizado na nota.");
+    } else {
+      setToast("Item adicionado à nota.");
+    }
+    setTimeout(() => setToast(""), 2800);
+    setDraftItem({ ...EMPTY_DRAFT_ITEM, unitUsed: d.unitUsed || EMPTY_DRAFT_ITEM.unitUsed });
+  }, [draftItem, products, editingItemIndex]);
+
+  const loadItemForEdit = useCallback(
+    (index) => {
+      const row = items[index];
+      if (!row) return;
+      const product = products.find((p) => p.id === row.productId);
+      setDraftItem({
+        productId: row.productId || "",
+        category: row.category || product?.category || "",
+        quantity: String(row.quantity ?? ""),
+        unitUsed: row.unitUsed || "kg",
+        unitPrice: String(row.unitPrice ?? ""),
+        lineType: row.lineType === "venda" ? "venda" : "insumo",
+        isBonificationOnly: isBonificationOnlyLine(row),
+        bonusQuantity: String(row.bonusQuantity ?? ""),
+        bonusUnitValue: String(row.bonusUnitValue ?? "")
+      });
+      setEditingItemIndex(index);
+      const label = product?.name || row.aiRawProductName || "item";
+      setToast(`A editar «${label}». Altere os campos e toque em «Guardar alteração».`);
+      setTimeout(() => setToast(""), 4500);
+    },
+    [items, products]
+  );
+
+  const cancelItemEdit = useCallback(() => {
+    setEditingItemIndex(null);
+    setDraftItem({ ...EMPTY_DRAFT_ITEM });
+  }, []);
 
   const updateItem = useCallback((index, patch) => {
     setItems((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -255,6 +333,21 @@ export function usePurchaseForm(token, options = {}) {
       });
     },
     [recordAiHighlights]
+  );
+
+  const removeItemAt = useCallback(
+    (index) => {
+      setEditingItemIndex((editIdx) => {
+        if (editIdx === index) {
+          setDraftItem({ ...EMPTY_DRAFT_ITEM });
+          return null;
+        }
+        if (editIdx !== null && editIdx > index) return editIdx - 1;
+        return editIdx;
+      });
+      removeItem(index);
+    },
+    [removeItem]
   );
 
   const clearAiHighlight = useCallback(
@@ -332,9 +425,10 @@ export function usePurchaseForm(token, options = {}) {
     async (name, lineTypeOpt, categoryOpt) => {
       const trimmed = String(name || "").trim();
       if (trimmed.length < 2) {
-        setToast("O nome do produto deve ter pelo menos 2 caracteres.");
-        setTimeout(() => setToast(""), 3200);
-        return null;
+        const msg = catalogUserMessage("product", { reason: "too_short", value: trimmed });
+        setToast(msg);
+        setTimeout(() => setToast(""), 4200);
+        return { ok: false, message: msg };
       }
       const categoryRaw = String(categoryOpt || "").trim();
       const usedDefaultCategory = categoryRaw.length < 2;
@@ -365,14 +459,13 @@ export function usePurchaseForm(token, options = {}) {
             : `Produto “${data.name}” adicionado ao catálogo${catHint}.`
         );
         setTimeout(() => setToast(""), 2800);
-        return { ...data, displayName: data.name };
+        logCatalog("create_ok", "product", { value: trimmed, reused: data.reused });
+        return { ok: true, ...data, displayName: data.name };
       } catch (err) {
-        const d = err?.response?.data;
-        let msg = "Não foi possível criar o produto.";
-        if (typeof d?.message === "string") msg = d.message;
+        const msg = catalogMessageFromApiError("product", trimmed, err, "create");
         setToast(msg);
-        setTimeout(() => setToast(""), 4200);
-        return null;
+        setTimeout(() => setToast(""), 5500);
+        return { ok: false, message: msg };
       } finally {
         setProductCreating(false);
       }
@@ -384,9 +477,10 @@ export function usePurchaseForm(token, options = {}) {
     async (name) => {
       const trimmed = String(name || "").trim();
       if (trimmed.length < 2) {
-        setToast("O nome do fornecedor deve ter pelo menos 2 caracteres.");
-        setTimeout(() => setToast(""), 3200);
-        return;
+        const msg = catalogUserMessage("supplier", { reason: "too_short", value: trimmed });
+        setToast(msg);
+        setTimeout(() => setToast(""), 4200);
+        return { ok: false, message: msg };
       }
       setSupplierCreating(true);
       try {
@@ -396,9 +490,10 @@ export function usePurchaseForm(token, options = {}) {
           storeId = stores?.[0]?.id;
         }
         if (!storeId) {
-          setToast("Não há loja cadastrada. Crie uma loja no painel admin antes de adicionar fornecedor.");
-          setTimeout(() => setToast(""), 4500);
-          return;
+          const msg = catalogUserMessage("supplier", { reason: "no_store", value: trimmed });
+          setToast(msg);
+          setTimeout(() => setToast(""), 5500);
+          return { ok: false, message: msg };
         }
         const { data } = await api.post("/catalog/suppliers", { name: trimmed, storeId }, withAuth(token));
         setSuppliers((prev) =>
@@ -408,13 +503,13 @@ export function usePurchaseForm(token, options = {}) {
         clearAiHighlight("supplierId");
         setToast(`Fornecedor “${data.name}” adicionado.`);
         setTimeout(() => setToast(""), 2800);
+        logCatalog("create_ok", "supplier", { value: trimmed, id: data.id });
+        return { ok: true, data };
       } catch (err) {
-        const d = err?.response?.data;
-        let msg = "Não foi possível criar o fornecedor.";
-        if (typeof d?.message === "string") msg = d.message;
-        else if (Array.isArray(d?.formErrors?.fieldErrors?.name)) msg = d.formErrors.fieldErrors.name[0];
+        const msg = catalogMessageFromApiError("supplier", trimmed, err, "create");
         setToast(msg);
-        setTimeout(() => setToast(""), 4200);
+        setTimeout(() => setToast(""), 5500);
+        return { ok: false, message: msg };
       } finally {
         setSupplierCreating(false);
       }
@@ -422,9 +517,167 @@ export function usePurchaseForm(token, options = {}) {
     [token, overview, clearAiHighlight]
   );
 
-  const confirmPurchase = useCallback(async () => {
-    if (!receipts.length) {
-      setToast("É obrigatório anexar pelo menos um ficheiro da nota fiscal.");
+  const resetAfterSubmit = useCallback(() => {
+    setItems([]);
+    setInstallments([]);
+    setInvoiceNumber("");
+    setReceipts([]);
+    setReceiptExtras([]);
+    setDraftItem({ ...EMPTY_DRAFT_ITEM });
+    setSupplierId("");
+    setAiHighlightKeys(new Set());
+    onAfterConfirm?.();
+  }, [onAfterConfirm]);
+
+  const savePurchaseDraft = useCallback(
+    async ({ draftId = null, createDraft, persistDraft, uploadDraftReceipts } = {}) => {
+      if (!supplierId) {
+        setToast("Selecione o fornecedor antes de guardar.");
+        setTimeout(() => setToast(""), 4500);
+        return null;
+      }
+      if (!items.length) {
+        setToast("Adicione pelo menos um item antes de guardar.");
+        setTimeout(() => setToast(""), 4500);
+        return null;
+      }
+      setConfirming(true);
+      const workItems = [...items];
+      for (let i = 0; i < workItems.length; i += 1) {
+        const row = workItems[i];
+        const category = resolveItemCategory(row, products);
+        if (!category) {
+          setToast("Informe a categoria em todas as linhas.");
+          setTimeout(() => setToast(""), 4500);
+          setConfirming(false);
+          return null;
+        }
+        if (row.productId) {
+          workItems[i] = { ...row, category };
+          continue;
+        }
+        const label = String(row.aiRawProductName || "").trim();
+        if (!label) {
+          setToast("Cada linha precisa de um produto associado.");
+          setTimeout(() => setToast(""), 4500);
+          setConfirming(false);
+          return null;
+        }
+        try {
+          const { data } = await api.post(
+            "/catalog/products/quick",
+            {
+              name: label,
+              type: row.lineType === "venda" ? "venda" : "insumo",
+              category,
+              ...(supplierId ? { supplierId } : {})
+            },
+            withAuth(token)
+          );
+          workItems[i] = { ...row, productId: data.id, aiRawProductName: undefined };
+          setProducts((prev) =>
+            [...prev.filter((p) => p.id !== data.id), data].sort((a, b) =>
+              String(a.name).localeCompare(String(b.name), "pt-BR")
+            )
+          );
+        } catch (err) {
+          const msg = err?.response?.data?.message || "Não foi possível criar produto.";
+          setToast(msg);
+          setTimeout(() => setToast(""), 4500);
+          setConfirming(false);
+          return null;
+        }
+      }
+      setItems(workItems);
+
+      const purchaseDate = toPurchaseDatePayload(date);
+      if (!purchaseDate) {
+        setToast("Informe uma data válida para a compra.");
+        setTimeout(() => setToast(""), 4500);
+        setConfirming(false);
+        return null;
+      }
+
+      for (const row of workItems) {
+        const unitPrice = Number(row.unitPrice);
+        const quantity = Number(row.quantity);
+        const bonusQty = Number(row.bonusQuantity) || 0;
+        if (isBonificationOnlyLine(row)) {
+          if (bonusQty <= 0 && quantity <= 0) {
+            setToast("Revise as linhas de bonificação.");
+            setTimeout(() => setToast(""), 5000);
+            setConfirming(false);
+            return null;
+          }
+        } else if (
+          (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(quantity) || quantity <= 0) &&
+          bonusQty <= 0
+        ) {
+          setToast("Revise quantidade e preço nas linhas de compra.");
+          setTimeout(() => setToast(""), 5000);
+          setConfirming(false);
+          return null;
+        }
+        if (!row.productId) {
+          setToast("Cada linha precisa de um produto associado.");
+          setTimeout(() => setToast(""), 4500);
+          setConfirming(false);
+          return null;
+        }
+      }
+
+      try {
+        let activeDraftId = draftId;
+        if (!activeDraftId && createDraft) activeDraftId = await createDraft();
+        if (!activeDraftId) {
+          setToast("Não foi possível criar o rascunho.");
+          setTimeout(() => setToast(""), 4500);
+          setConfirming(false);
+          return null;
+        }
+        if (uploadDraftReceipts && receipts.length) await uploadDraftReceipts(receipts, activeDraftId);
+        await persistDraft(
+          {
+            supplierId: supplierId || null,
+            purchaseDate: date,
+            invoiceNumber,
+            wizardStep: 5,
+            items: workItems,
+            installments
+          },
+          activeDraftId
+        );
+        setToast("Rascunho guardado. Veja em Histórico para editar ou publicar.");
+        resetAfterSubmit();
+        setTimeout(() => setToast(""), 3200);
+        return activeDraftId;
+      } catch (err) {
+        const msg = err?.response?.data?.message || "Não foi possível guardar o rascunho.";
+        setToast(msg);
+        setTimeout(() => setToast(""), 6000);
+        return null;
+      } finally {
+        setConfirming(false);
+      }
+    },
+    [
+      token,
+      items,
+      products,
+      supplierId,
+      date,
+      invoiceNumber,
+      receipts,
+      installments,
+      resetAfterSubmit
+    ]
+  );
+
+  const confirmPurchase = useCallback(
+    async ({ draftId = null, serverReceiptCount = 0, uploadDraftReceipts, createDraft, persistDraft } = {}) => {
+    const hasReceipts = receipts.length > 0 || serverReceiptCount > 0;
+    if (!hasReceipts) {
+      setToast("Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 4 ou ao editar o rascunho).");
       setTimeout(() => setToast(""), 4500);
       return;
     }
@@ -495,11 +748,35 @@ export function usePurchaseForm(token, options = {}) {
       return;
     }
 
+    const { totalPayable } = purchaseTotalsFromItems(workItems);
+    if (installments.length > 0) {
+      const instCheck = validateInstallmentsAgainstPayable(installments, totalPayable);
+      if (!instCheck.ok && totalPayable > 0) {
+        setToast(
+          `A soma das parcelas (${instCheck.sum}) deve igualar o total da nota (${totalPayable}).`
+        );
+        setTimeout(() => setToast(""), 5500);
+        setConfirming(false);
+        return;
+      }
+    }
+
     for (const row of workItems) {
       const unitPrice = Number(row.unitPrice);
       const quantity = Number(row.quantity);
-      if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
-        setToast("Revise quantidade e preço unitário em todas as linhas (valores numéricos maiores que zero).");
+      const bonusQty = Number(row.bonusQuantity) || 0;
+      if (isBonificationOnlyLine(row)) {
+        if (bonusQty <= 0 && quantity <= 0) {
+          setToast("Revise as linhas de bonificação (quantidade).");
+          setTimeout(() => setToast(""), 5000);
+          setConfirming(false);
+          return;
+        }
+      } else if (
+        (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(quantity) || quantity <= 0) &&
+        bonusQty <= 0
+      ) {
+        setToast("Revise quantidade e preço nas linhas de compra.");
         setTimeout(() => setToast(""), 5000);
         setConfirming(false);
         return;
@@ -515,37 +792,83 @@ export function usePurchaseForm(token, options = {}) {
     try {
       const payload = workItems.map((item) => ({
         productId: item.productId,
-        supplierId,
-        unitPrice: Number(item.unitPrice),
+        supplierId: item.supplierId || supplierId,
+        unitPrice: Number(item.unitPrice) || 0,
         unitUsed: String(item.unitUsed || "").trim() || "un",
-        quantity: Number(item.quantity),
+        quantity: Number(item.quantity) || 0,
         purchaseDate,
         weekOfMonth: toWeekOfMonth(date),
-        lineType: item.lineType === "venda" ? "venda" : "insumo"
+        lineType: item.lineType === "venda" ? "venda" : "insumo",
+        isBonificationOnly: isBonificationOnlyLine(item),
+        bonusQuantity: Number(item.bonusQuantity) || 0,
+        bonusUnitValue: Number(item.bonusUnitValue) || 0
       }));
+
+      const instPayload = installments.map((row) => ({
+        dueDate: row.dueDate,
+        amount: Number(row.amount),
+        notes: row.notes || ""
+      }));
+
+      let activeDraftId = draftId;
+      if (!activeDraftId && createDraft) {
+        activeDraftId = await createDraft();
+        if (persistDraft) {
+          await persistDraft(
+            {
+              supplierId: supplierId || null,
+              purchaseDate: date,
+              invoiceNumber,
+              wizardStep: 5,
+              items: workItems,
+              installments
+            },
+            activeDraftId
+          );
+        }
+      }
+      if (uploadDraftReceipts && receipts.length) {
+        await uploadDraftReceipts(receipts, activeDraftId);
+      }
+
       const form = new FormData();
       form.append("invoiceNumber", invoiceNumber || `NF-${Date.now()}`);
       form.append("items", JSON.stringify(payload));
-      const filesToUpload = await compressReceiptFiles([...receipts, ...receiptExtras]);
+      if (instPayload.length) form.append("installments", JSON.stringify(instPayload));
+      if (draftId) form.append("draftId", draftId);
+
+      setToast("A enviar nota e itens…");
+      const filesToUpload = await compressReceiptFilesForSubmit([...receipts, ...receiptExtras]);
+      const totalBytes = filesToUpload.reduce((s, f) => s + (f.size || 0), 0);
+      if (totalBytes > 22 * 1024 * 1024) {
+        setToast(
+          `Os ficheiros somam ${formatFileSize(totalBytes)}; o limite é cerca de 22 MB. Remova anexos ou use fotos mais leves.`
+        );
+        setTimeout(() => setToast(""), 6000);
+        setConfirming(false);
+        return;
+      }
       for (const file of filesToUpload) form.append("receipts", file);
-      await api.post("/purchases", form, {
-        headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
+
+      const postUrl = activeDraftId ? `/purchases/drafts/${activeDraftId}/finalize` : "/purchases";
+      await api.post(postUrl, form, {
+        headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" },
+        timeout: 120_000
       });
-      setToast("Lançamento confirmado com sucesso.");
-      setItems([]);
-      setInvoiceNumber("");
-      setReceipts([]);
-      setReceiptExtras([]);
-      setAiHighlightKeys(new Set());
-      onAfterConfirm?.();
+      setToast("Nota publicada com sucesso.");
+      resetAfterSubmit();
       setTimeout(() => setToast(""), 2600);
     } catch (err) {
-      setToast(purchaseApiErrorMessage(err));
-      setTimeout(() => setToast(""), 5000);
+      const msg = purchaseApiErrorMessage(err);
+      console.warn("[confirmPurchase]", err?.response?.status, msg, err?.response?.data);
+      setToast(msg);
+      setTimeout(() => setToast(""), 8000);
     } finally {
       setConfirming(false);
     }
-  }, [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, onAfterConfirm]);
+  },
+    [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, installments, resetAfterSubmit]
+  );
 
   const clearAnalyzeProgressTimer = useCallback(() => {
     if (analyzeProgressTimerRef.current) {
@@ -810,6 +1133,8 @@ export function usePurchaseForm(token, options = {}) {
     removeReceiptExtraAt,
     items,
     setItems,
+    installments,
+    setInstallments,
     draftItem,
     setDraftItem,
     toast,
@@ -826,6 +1151,11 @@ export function usePurchaseForm(token, options = {}) {
     addItem,
     updateItem,
     removeItem,
+    removeItemAt,
+    editingItemIndex,
+    loadItemForEdit,
+    cancelItemEdit,
+    savePurchaseDraft,
     confirmPurchase,
     canConfirmPurchase,
     confirming,

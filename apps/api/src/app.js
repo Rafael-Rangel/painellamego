@@ -4,6 +4,7 @@ import express from "express";
 import helmet from "helmet";
 import { config } from "./config.js";
 import analyticsRoutes from "./routes/analytics.js";
+import managerAnalyticsRoutes from "./routes/managerAnalytics.js";
 import authRoutes from "./routes/auth.js";
 import catalogRoutes from "./routes/catalog.js";
 import purchaseRoutes from "./routes/purchases.js";
@@ -41,6 +42,7 @@ app.use("/auth", authRoutes);
 app.use("/catalog", catalogRoutes);
 app.use("/purchases", purchaseRoutes);
 app.use("/", analyticsRoutes);
+app.use("/", managerAnalyticsRoutes);
 app.use(errorHandler);
 
 export default app;

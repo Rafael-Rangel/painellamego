@@ -516,4 +516,123 @@ router.get("/manager/overview", requireAuth, async (req, res) => {
   });
 });
 
+/** Parcelas / vencimentos da loja do gerente. */
+router.get("/finance/payables", requireAuth, async (req, res) => {
+  const storeIds = await getManagerStoreIds(req.user);
+  if (!storeIds.length) return res.json({ installments: [], summary: { pending: 0, overdue: 0 } });
+
+  const days = Math.min(365, Math.max(7, Number(req.query.days) || 120));
+  const today = new Date().toISOString().slice(0, 10);
+  const end = new Date();
+  end.setDate(end.getDate() + days);
+  const endStr = end.toISOString().slice(0, 10);
+
+  const { data, error } = await supabaseAdmin
+    .from("purchase_payment_installments")
+    .select(
+      "id, purchase_id, installment_number, due_date, amount, status, paid_at, notes, purchases(invoice_number, created_at), stores(name)"
+    )
+    .in("store_id", storeIds)
+    .eq("status", "pending")
+    .gte("due_date", today)
+    .lte("due_date", endStr)
+    .order("due_date", { ascending: true });
+
+  if (error) return res.status(400).json({ message: error.message });
+
+  const { data: overdue } = await supabaseAdmin
+    .from("purchase_payment_installments")
+    .select(
+      "id, purchase_id, installment_number, due_date, amount, status, notes, purchases(invoice_number)"
+    )
+    .in("store_id", storeIds)
+    .eq("status", "pending")
+    .lt("due_date", today)
+    .order("due_date", { ascending: true });
+
+  const pending = (data || []).reduce((s, r) => s + Number(r.amount), 0);
+  const overdueSum = (overdue || []).reduce((s, r) => s + Number(r.amount), 0);
+
+  return res.json({
+    installments: data || [],
+    overdue: overdue || [],
+    summary: {
+      pending: Math.round(pending * 100) / 100,
+      overdue: Math.round(overdueSum * 100) / 100,
+      count: (data || []).length,
+      overdueCount: (overdue || []).length
+    }
+  });
+});
+
+router.patch("/finance/installments/:id", requireAuth, async (req, res) => {
+  const storeIds = await getManagerStoreIds(req.user);
+  const status = req.body?.status === "paid" ? "paid" : null;
+  if (!status) return res.status(400).json({ message: "Status inválido." });
+
+  const { data: row } = await supabaseAdmin
+    .from("purchase_payment_installments")
+    .select("id, store_id")
+    .eq("id", req.params.id)
+    .maybeSingle();
+  if (!row || !storeIds.includes(row.store_id)) {
+    return res.status(404).json({ message: "Parcela não encontrada." });
+  }
+
+  const { error } = await supabaseAdmin
+    .from("purchase_payment_installments")
+    .update({ status: "paid", paid_at: new Date().toISOString() })
+    .eq("id", row.id);
+  if (error) return res.status(400).json({ message: error.message });
+  return res.json({ ok: true });
+});
+
+/** Relatório mensal de bonificação. */
+router.get("/finance/bonification", requireAuth, async (req, res) => {
+  const storeIds = await getManagerStoreIds(req.user);
+  if (!storeIds.length) return res.json({ rows: [], totalBonusValue: 0 });
+
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const month = Number(req.query.month) || new Date().getMonth() + 1;
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endDate = new Date(year, month, 0);
+  const end = endDate.toISOString().slice(0, 10);
+
+  const { data, error } = await supabaseAdmin
+    .from("purchase_items")
+    .select(
+      "bonus_quantity, bonus_unit_value, is_bonification_only, quantity, unit_price, purchase_date, products(name, category), purchases(invoice_number)"
+    )
+    .in("store_id", storeIds)
+    .gte("purchase_date", start)
+    .lte("purchase_date", end)
+    .or("bonus_quantity.gt.0,is_bonification_only.eq.true");
+
+  if (error) return res.status(400).json({ message: error.message });
+
+  let totalBonusValue = 0;
+  const rows = (data || []).map((r) => {
+    const bq = Number(r.bonus_quantity) || (r.is_bonification_only ? Number(r.quantity) : 0);
+    const bv = Number(r.bonus_unit_value) || (r.is_bonification_only ? Number(r.unit_price) : 0);
+    const value = bq * bv;
+    totalBonusValue += value;
+    return {
+      productName: r.products?.name,
+      category: r.products?.category,
+      invoiceNumber: r.purchases?.invoice_number,
+      purchaseDate: r.purchase_date,
+      bonusQuantity: bq,
+      bonusUnitValue: bv,
+      totalValue: Math.round(value * 100) / 100
+    };
+  });
+
+  return res.json({
+    year,
+    month,
+    rows,
+    totalBonusValue: Math.round(totalBonusValue * 100) / 100
+  });
+});
+
 export default router;

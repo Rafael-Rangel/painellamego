@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REMOTE_HOST="${REMOTE_HOST:-root@2.24.87.222}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/lamego}"
-COMPOSE_FILES="${COMPOSE_FILES:--f docker-compose.yml}"
+COMPOSE_FILES="${COMPOSE_FILES:--f docker-compose.yml -f docker-compose.nginxproxy.yml}"
 SSH_PASS="${SSH_PASS:-}"
 
 if [[ -z "${SSH_PASS}" ]]; then

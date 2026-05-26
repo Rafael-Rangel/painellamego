@@ -1,4 +1,6 @@
 # Incluído pelo jada-nginx-proxy em location / (volume jada_vhostd).
+# Fotos/PDF da nota no registo de compra (multipart pode passar de 3 MB).
+client_max_body_size 25m;
 # Leitura de NF com IA pode levar 1–3 min; predefinição do proxy é ~60s (502).
 proxy_read_timeout 300s;
 proxy_send_timeout 300s;

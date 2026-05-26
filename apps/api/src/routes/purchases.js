@@ -1,12 +1,14 @@
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
-import { purchaseItemSchema } from "@lamego/shared";
+import { purchaseItemSchema, purchaseInstallmentSchema } from "@lamego/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { checkStoreScope, requireAuth, resolveStoreScope } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
-import { recalculateProductSnapshot } from "../services/comparisonService.js";
+import { finalizePurchase, deletePurchaseCascade } from "../services/purchaseFinalizeService.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
+import purchaseDraftRoutes from "./purchaseDrafts.js";
+import { gatherReceiptFiles, normalizePurchaseDate } from "./purchaseRouteUtils.js";
 import { mapWithConcurrency } from "../lib/mapWithConcurrency.js";
 import { config } from "../config.js";
 import { buildReceiptParseContext } from "../services/receiptParseContext.js";
@@ -21,25 +23,32 @@ const allowedMimeTypes = new Set(["image/jpeg", "image/png", "application/pdf"])
 const missingStoreIdColumn = (msg = "") =>
   String(msg).toLowerCase().includes("store_id") && String(msg).toLowerCase().includes("suppliers");
 
-function gatherReceiptFiles(filesObj = {}) {
-  const many = Array.isArray(filesObj.receipts) ? filesObj.receipts : [];
-  const single = Array.isArray(filesObj.receipt) ? filesObj.receipt : [];
-  return [...many, ...single];
+function formatZodItemsMessage(zodError) {
+  const flat = zodError.flatten();
+  const parts = [];
+  const labels = {
+    productId: "produto",
+    supplierId: "fornecedor",
+    unitPrice: "preço unitário",
+    unitUsed: "unidade",
+    quantity: "quantidade",
+    purchaseDate: "data da compra",
+    weekOfMonth: "semana do mês",
+    lineType: "tipo (insumo/venda)"
+  };
+  for (const [key, msgs] of Object.entries(flat.fieldErrors || {})) {
+    const list = Array.isArray(msgs) ? msgs : [msgs];
+    for (const m of list) {
+      if (m) parts.push(`${labels[key] || key}: ${m}`);
+    }
+  }
+  for (const m of flat.formErrors || []) {
+    if (m) parts.push(String(m));
+  }
+  return parts.length ? parts.join("; ") : "Dados dos itens inválidos.";
 }
 
-function normalizePurchaseDate(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
-
-async function deletePurchaseCascade(purchaseId) {
-  if (!purchaseId) return;
-  await supabaseAdmin.from("purchases").delete().eq("id", purchaseId);
-}
+router.use(purchaseDraftRoutes);
 
 router.post(
   "/receipt-ai-parse",
@@ -198,14 +207,33 @@ router.post(
   ]),
   async (req, res) => {
   let purchaseId = null;
+  const contentLength = Number(req.headers["content-length"] || 0);
   try {
     const schema = z.object({
       storeId: z.string().uuid().optional(),
       invoiceNumber: z.string().min(1),
-      items: z.string().min(2)
+      items: z.string().min(2),
+      installments: z.string().optional(),
+      draftId: z.string().uuid().optional()
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+    if (!parsed.success) {
+      const flat = parsed.error.flatten();
+      const msg =
+        flat.formErrors?.[0] ||
+        Object.values(flat.fieldErrors || {})
+          .flat()
+          .filter(Boolean)[0] ||
+        "Dados do formulário inválidos.";
+      return res.status(400).json({ message: msg, details: flat });
+    }
+
+    console.info("[purchases] POST início", {
+      userId: req.user?.id,
+      role: req.user?.role,
+      invoiceNumber: String(parsed.data.invoiceNumber || "").slice(0, 40),
+      contentLength
+    });
 
     let items = [];
     try {
@@ -219,7 +247,10 @@ router.post(
 
     const itemsParsed = z.array(purchaseItemSchema).safeParse(items);
     if (!itemsParsed.success) {
-      return res.status(400).json({ message: "Dados dos itens inválidos.", details: itemsParsed.error.flatten() });
+      return res.status(400).json({
+        message: formatZodItemsMessage(itemsParsed.error),
+        details: itemsParsed.error.flatten()
+      });
     }
     items = itemsParsed.data.map((item) => {
       const purchaseDate = normalizePurchaseDate(item.purchaseDate);
@@ -231,6 +262,25 @@ router.post(
     const badDate = items.find((item) => !item.purchaseDate);
     if (badDate) {
       return res.status(400).json({ message: "Data da compra inválida. Revise a data do lançamento." });
+    }
+
+    let installments = [];
+    if (parsed.data.installments) {
+      try {
+        installments = JSON.parse(parsed.data.installments);
+      } catch {
+        return res.status(400).json({ message: "Formato inválido das parcelas de pagamento." });
+      }
+      const instParsed = z.array(purchaseInstallmentSchema).safeParse(
+        installments.map((row) => ({
+          ...row,
+          dueDate: normalizePurchaseDate(row.dueDate) || row.dueDate
+        }))
+      );
+      if (!instParsed.success) {
+        return res.status(400).json({ message: "Parcelas de pagamento inválidas." });
+      }
+      installments = instParsed.data;
     }
 
     const receiptFiles = gatherReceiptFiles(req.files || {});
@@ -250,94 +300,37 @@ router.post(
     }
     if (!storeId) return res.status(400).json({ message: "Loja não encontrada no escopo do usuário." });
 
-    const { data: purchase, error: purchaseError } = await supabaseAdmin
-      .from("purchases")
-      .insert({
-        store_id: storeId,
-        invoice_number: parsed.data.invoiceNumber.trim(),
-        created_by: req.user.id
-      })
-      .select("*")
-      .single();
-    if (purchaseError) {
-      const msg = String(purchaseError.message || "");
-      if (msg.toLowerCase().includes("unique_invoice_per_store") || msg.toLowerCase().includes("duplicate")) {
-        return res.status(400).json({ message: "Já existe uma compra com este número de nota nesta loja." });
-      }
-      return res.status(400).json({ message: purchaseError.message });
-    }
-    purchaseId = purchase.id;
-
-    const payloadItems = items.map((item) => ({
-      purchase_id: purchase.id,
-      store_id: storeId,
-      product_id: item.productId,
-      supplier_id: item.supplierId,
-      unit_price: item.unitPrice,
-      unit_used: item.unitUsed,
-      quantity: item.quantity,
-      purchase_date: item.purchaseDate,
-      week_of_month: item.weekOfMonth,
-      line_type: item.lineType
-    }));
-
-    const { error: itemsError } = await supabaseAdmin.from("purchase_items").insert(payloadItems);
-    if (itemsError) {
-      await deletePurchaseCascade(purchaseId);
-      purchaseId = null;
-      return res.status(400).json({ message: itemsError.message });
-    }
-
-    for (const file of receiptFiles) {
-      const safeName = String(file.originalname || "nota").replace(/[^\w.\-()+ ]/g, "_").slice(0, 180);
-      const filePath = `${purchase.id}/${Date.now()}-${safeName}`;
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from("fiscal-receipts")
-        .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: false });
-      if (uploadError) {
-        await deletePurchaseCascade(purchaseId);
-        purchaseId = null;
-        return res.status(400).json({ message: uploadError.message });
-      }
-      const { error: receiptRowError } = await supabaseAdmin.from("fiscal_receipts").insert({
-        purchase_id: purchase.id,
-        storage_path: filePath,
-        original_name: file.originalname,
-        mime_type: file.mimetype
-      });
-      if (receiptRowError) {
-        await supabaseAdmin.storage.from("fiscal-receipts").remove([filePath]);
-        await deletePurchaseCascade(purchaseId);
-        purchaseId = null;
-        return res.status(400).json({ message: receiptRowError.message });
-      }
-    }
-
-    const productIds = [...new Set(payloadItems.map((row) => row.product_id))];
-    for (const pid of productIds) {
-      const snap = await recalculateProductSnapshot(pid);
-      if (!snap.ok) {
-        console.warn("[purchases] snapshot ignorado", { purchaseId: purchase.id, productId: pid, error: snap.error });
-      }
-    }
+    const result = await finalizePurchase({
+      storeId,
+      userId: req.user.id,
+      invoiceNumber: parsed.data.invoiceNumber,
+      items,
+      installments,
+      receiptFiles,
+      draftId: parsed.data.draftId || null
+    });
+    purchaseId = result.purchaseId;
 
     await logAudit({
       userId: req.user.id,
       action: "create",
       resource: "purchase",
-      payload: { purchaseId: purchase.id, storeId, items: payloadItems.length }
+      payload: { purchaseId, storeId, items: items.length, draftId: parsed.data.draftId || null }
     });
 
-    return res.status(201).json({ purchaseId: purchase.id, message: "Compra registrada com sucesso." });
+    console.info("[purchases] POST ok", { userId: req.user?.id, purchaseId, items: items.length });
+    return res.status(201).json({ purchaseId, message: "Compra registrada com sucesso." });
   } catch (err) {
     console.error("[purchases] POST falhou", {
       userId: req.user?.id,
       purchaseId,
+      contentLength,
       message: err?.message || String(err)
     });
     if (purchaseId) await deletePurchaseCascade(purchaseId);
+    const status = err.statusCode || 500;
     const message = err?.message || "Não foi possível registar a compra.";
-    return res.status(500).json({ message });
+    return res.status(status).json({ message });
   }
 });
 
@@ -367,6 +360,91 @@ router.get("/me", requireAuth, async (req, res) => {
     .order("created_at", { ascending: false });
   if (error) return res.status(400).json({ message: error.message });
   return res.json(data);
+});
+
+/** Histórico unificado: compras publicadas + rascunhos abertos. */
+router.get("/me/ledger", requireAuth, async (req, res) => {
+  if (req.user.role === "admin") {
+    return res.status(400).json({ message: "Use /purchases/store/:storeId para admin." });
+  }
+  const storeIds = await getManagerStoreIds(req.user);
+  if (!storeIds.length) return res.json([]);
+
+  const [purchasesRes, draftsRes] = await Promise.all([
+    supabaseAdmin
+      .from("purchases")
+      .select("*, purchase_items(*, products(name), suppliers(name)), fiscal_receipts(*)")
+      .in("store_id", storeIds)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabaseAdmin
+      .from("purchase_drafts")
+      .select(
+        "id, supplier_id, purchase_date, invoice_number, wizard_step, updated_at, items_json, installments_json, suppliers(name)"
+      )
+      .in("store_id", storeIds)
+      .eq("status", "open")
+      .order("updated_at", { ascending: false })
+      .limit(50)
+  ]);
+
+  if (purchasesRes.error) return res.status(400).json({ message: purchasesRes.error.message });
+  if (draftsRes.error) return res.status(400).json({ message: draftsRes.error.message });
+
+  const draftIds = (draftsRes.data || []).map((d) => d.id);
+  let receiptCount = {};
+  if (draftIds.length) {
+    const { data: recData } = await supabaseAdmin
+      .from("purchase_draft_receipts")
+      .select("draft_id")
+      .in("draft_id", draftIds);
+    for (const r of recData || []) {
+      receiptCount[r.draft_id] = (receiptCount[r.draft_id] || 0) + 1;
+    }
+  }
+
+  const purchases = (purchasesRes.data || []).map((p) => ({
+    kind: "published",
+    id: p.id,
+    date: p.created_at,
+    invoiceNumber: p.invoice_number,
+    supplierName:
+      p.purchase_items?.[0]?.suppliers?.name ||
+      (Array.isArray(p.purchase_items?.[0]?.suppliers)
+        ? p.purchase_items[0].suppliers[0]?.name
+        : null),
+    itemCount: p.purchase_items?.length || 0,
+    receiptCount: p.fiscal_receipts?.length || 0,
+    purchase: p
+  }));
+
+  const drafts = (draftsRes.data || []).map((d) => {
+    const supplier = Array.isArray(d.suppliers) ? d.suppliers[0] : d.suppliers;
+    return {
+      kind: "draft",
+      id: d.id,
+      date: d.updated_at,
+      invoiceNumber: d.invoice_number,
+      supplierName: supplier?.name || null,
+      itemCount: Array.isArray(d.items_json) ? d.items_json.length : 0,
+      receiptCount: receiptCount[d.id] || 0,
+      purchaseDate: d.purchase_date,
+      draft: {
+        id: d.id,
+        supplierId: d.supplier_id,
+        purchaseDate: d.purchase_date,
+        invoiceNumber: d.invoice_number,
+        wizardStep: d.wizard_step,
+        items: d.items_json || [],
+        installments: d.installments_json || []
+      }
+    };
+  });
+
+  const merged = [...drafts, ...purchases].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+  return res.json(merged);
 });
 
 export default router;

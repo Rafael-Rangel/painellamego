@@ -19,7 +19,12 @@ const productSchema = z.object({
   category: z.string().min(2),
   type: z.enum(["insumo", "venda"]),
   standardUnit: z.string().min(1),
-  needsCatalogReview: z.boolean().optional()
+  needsCatalogReview: z.boolean().optional(),
+  salePrice: z.number().nonnegative().nullable().optional()
+});
+
+const salePricePatchSchema = z.object({
+  salePrice: z.number().nonnegative().nullable()
 });
 
 const supplierSchema = z.object({
@@ -141,7 +146,9 @@ router.post("/products/quick", requireAuth, async (req, res) => {
     const status = reused ? 200 : 201;
     return res.status(status).json({ ...product, reused, resolvedVia });
   } catch (e) {
-    return res.status(400).json({ message: String(e?.message || e) });
+    const msg = String(e?.message || e);
+    console.warn("[catalog/products/quick]", { name: parsed.data?.name, message: msg });
+    return res.status(400).json({ message: msg });
   }
 });
 
@@ -176,6 +183,9 @@ router.post("/products", requireAuth, requireAdmin, async (req, res) => {
     standard_unit: parsed.data.standardUnit,
     created_by: "admin"
   };
+  if (parsed.data.salePrice !== undefined) {
+    payload.sale_price = parsed.data.salePrice;
+  }
   if (parsed.data.needsCatalogReview === true || parsed.data.needsCatalogReview === false) {
     payload.needs_catalog_review = parsed.data.needsCatalogReview;
   }
@@ -201,11 +211,43 @@ router.put("/products/:id", requireAuth, requireAdmin, async (req, res) => {
   if (parsed.data.needsCatalogReview === true || parsed.data.needsCatalogReview === false) {
     payload.needs_catalog_review = parsed.data.needsCatalogReview;
   }
+  if (parsed.data.salePrice !== undefined) {
+    payload.sale_price = parsed.data.salePrice;
+  }
 
   await ensureMeasurementUnitExists(supabaseAdmin, parsed.data.standardUnit);
   const { data, error } = await supabaseAdmin.from("products").update(payload).eq("id", req.params.id).select("*").single();
   if (error) return res.status(400).json({ message: error.message });
   await logAudit({ userId: req.user.id, action: "update", resource: "product", payload: { productId: data.id } });
+  return res.json(data);
+});
+
+/** Gerente ou admin: atualiza preço de venda para cálculo de margem. */
+router.patch("/products/:id/sale-price", requireAuth, async (req, res) => {
+  const parsed = salePricePatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.flatten());
+
+  const { data: existing, error: fetchErr } = await supabaseAdmin
+    .from("products")
+    .select("id, name")
+    .eq("id", req.params.id)
+    .maybeSingle();
+  if (fetchErr) return res.status(400).json({ message: fetchErr.message });
+  if (!existing) return res.status(404).json({ message: "Produto não encontrado." });
+
+  const { data, error } = await supabaseAdmin
+    .from("products")
+    .update({ sale_price: parsed.data.salePrice })
+    .eq("id", req.params.id)
+    .select("*")
+    .single();
+  if (error) return res.status(400).json({ message: error.message });
+  await logAudit({
+    userId: req.user.id,
+    action: "update",
+    resource: "product_sale_price",
+    payload: { productId: data.id, salePrice: parsed.data.salePrice }
+  });
   return res.json(data);
 });
 
@@ -382,7 +424,15 @@ router.post("/suppliers", requireAuth, async (req, res) => {
   if (error && missingStoreIdColumn(error.message)) {
     ({ data, error } = await supabaseAdmin.from("suppliers").insert({ name: parsed.data.name }).select("*").single());
   }
-  if (error) return res.status(400).json({ message: error.message });
+  if (error) {
+    const msg = String(error.message || "");
+    if (msg.toLowerCase().includes("unique") || error.code === "23505") {
+      return res.status(409).json({
+        message: `O fornecedor "${parsed.data.name}" já existe nesta loja. Escolha-o na lista ou use outro nome.`
+      });
+    }
+    return res.status(400).json({ message: error.message });
+  }
   await logAudit({
     userId: req.user.id,
     action: "create",

@@ -1,6 +1,6 @@
 -- Dados adicionais para dashboard do gerente: itens na compra da loja 3, compras com histórico e notas fiscais simuladas.
 
--- Compra aaa3 existia sem itens — preenche com mix de produtos
+-- Compra aaa3 existia sem itens; preenche com mix de produtos
 insert into public.purchase_items (
   purchase_id, store_id, product_id, supplier_id, unit_price, unit_used, quantity, purchase_date, week_of_month
 )

@@ -48,6 +48,7 @@ export default function ManagerPurchaseAiPage() {
     draftItem,
     setDraftItem,
     toast,
+    setToast,
     aiLoading,
     aiStage,
     aiProgress,
@@ -73,6 +74,15 @@ export default function ManagerPurchaseAiPage() {
     createProduct,
     productCreating
   } = usePurchaseForm(token, { recordAiHighlights: true, onAfterConfirm });
+
+  const notifyCatalog = useCallback(
+    (msg) => {
+      if (!msg) return;
+      setToast(msg);
+      setTimeout(() => setToast(""), 5500);
+    },
+    [setToast]
+  );
 
   const handleAppendReceipts = useCallback(
     (files) => {
@@ -244,7 +254,10 @@ export default function ManagerPurchaseAiPage() {
                       setSupplierId(id);
                     }}
                     allowCreate
+                    createEntityLabel="fornecedor"
+                    catalogField="supplier"
                     createBusy={supplierCreating}
+                    onNotify={notifyCatalog}
                     onCreateOption={createSupplier}
                     inputClassName="purchase-ai-input"
                   />
@@ -298,6 +311,8 @@ export default function ManagerPurchaseAiPage() {
                               updateItem(idx, { category: next });
                             }}
                             createEntityLabel="categoria"
+                            catalogField="category"
+                            onNotify={notifyCatalog}
                           />
                           <SingleSelectSearch
                             label="Produto"
@@ -317,10 +332,12 @@ export default function ManagerPurchaseAiPage() {
                             }}
                             allowCreate
                             createEntityLabel="produto"
+                            catalogField="product"
                             createBusy={productCreating}
+                            onNotify={notifyCatalog}
                             onCreateOption={async (q) => {
                               const data = await createProduct(q, row.lineType, row.category);
-                              if (!data) return;
+                              if (!data || data.ok === false) return data;
                               const suggestion = data.type === "venda" ? "venda" : "insumo";
                               updateItem(idx, {
                                 productId: data.id,
@@ -427,6 +444,8 @@ export default function ManagerPurchaseAiPage() {
                       value={draftItem.category}
                       onChange={(next) => setDraftItem({ ...draftItem, category: next })}
                       createEntityLabel="categoria"
+                      catalogField="category"
+                      onNotify={notifyCatalog}
                     />
                     <SingleSelectSearch
                       label="Produto"
@@ -436,11 +455,14 @@ export default function ManagerPurchaseAiPage() {
                       onChange={(id) => pickDraftProduct(id)}
                       allowCreate
                       createEntityLabel="produto"
+                      catalogField="product"
                       createBusy={productCreating}
+                      onNotify={notifyCatalog}
                       onCreateOption={async (q) => {
                         const data = await createProduct(q, draftItem.lineType, draftItem.category);
-                        if (!data) return;
+                        if (!data || data.ok === false) return data;
                         pickDraftProduct(data.id);
+                        return data;
                       }}
                     />
                     <div className="purchase-ai-product-line-type">

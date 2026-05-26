@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { FaEdit, FaTrash } from "react-icons/fa";
 import { api, withAuth } from "../../api";
+import { catalogMessageFromApiError, logCatalog } from "../../lib/catalogFeedback";
 import { useCatalogEditFlash } from "../../hooks/useCatalogEditFlash";
 import CompactTable from "../ui/CompactTable";
 import SingleSelectSearch from "../ui/SingleSelectSearch";
@@ -79,8 +80,9 @@ export default function SupplierCrudPanel({
       resetForm();
       await onRefresh?.();
     } catch (err) {
-      const msg = err?.response?.data?.message || "Não foi possível guardar o fornecedor.";
-      onToast?.(typeof msg === "string" ? msg : "Não foi possível guardar o fornecedor.");
+      const msg = catalogMessageFromApiError("supplier", name, err, editingId ? "update" : "create");
+      onToast?.(msg);
+      logCatalog("error", "supplier", { action: editingId ? "update" : "create", value: name, msg });
     } finally {
       setSaving(false);
     }

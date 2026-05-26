@@ -35,14 +35,34 @@ npx supabase --version
 
    A CLI vai pedir a senha do banco. Cole a `SUPABASE_DB_PASSWORD`.
 
-3. **Aplicar todas as migrations** (schema + seeds + RLS):
+3. **Aplicar migrations pendentes** (produção, via CLI + senha do banco):
 
    ```bash
-   npm run db:push
-   # equivalente: npx supabase db push --include-all
+   npm run db:push:remote
    ```
 
-4. **Bootstrap do Auth** (admin + 3 gerentes prontos para login):
+   O script usa `supabase db push --db-url …` (não precisa de `supabase login` nem `link`).
+   Carrega credenciais com `scripts/supabase-env.sh` (seguro para `.env` com valores com espaços).
+
+   Comandos manuais com a mesma URL:
+
+   ```bash
+   source scripts/supabase-env.sh
+   npx supabase migration list --db-url "$DB_URL"
+   npx supabase db query --db-url "$DB_URL" "SELECT version FROM supabase_migrations.schema_migrations ORDER BY version;"
+   ```
+
+   Se aparecer conflito de histórico (ex.: migration `014` wipe omitida em prod):
+
+   ```bash
+   source scripts/supabase-env.sh
+   npx supabase migration repair 014 --status applied --db-url "$DB_URL"
+   npm run db:push:remote
+   ```
+
+   **Nota:** `014_wipe_database_admin_only.sql` nunca deve rodar em produção; apenas marcar como aplicada.
+
+4. **Bootstrap do Auth** (admin + gerente demo):
 
    ```bash
    npm run supabase:bootstrap

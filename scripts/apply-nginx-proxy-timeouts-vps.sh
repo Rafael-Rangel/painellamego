@@ -12,4 +12,4 @@ done
 
 docker exec jada-nginx-proxy nginx -t
 docker exec jada-nginx-proxy nginx -s reload
-echo "nginx-proxy recarregado (proxy_read_timeout 300s para Lamego)."
+echo "nginx-proxy recarregado (client_max_body_size 25m + proxy_read_timeout 300s para Lamego)."

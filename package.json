@@ -20,6 +20,8 @@
     "test:openrouter:cupom-padaria": "RECEIPT_TEST_CATALOG=\"$(cat scripts/fixtures/cupom-padaria-catalog.json)\" node scripts/test-receipt-openrouter.mjs scripts/fixtures/cupom-padaria-pao-vovo.png --json",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
+    "db:push:remote": "bash scripts/supabase-db-push-remote.sh",
+    "db:env": "bash -c 'source scripts/supabase-env.sh && echo DB_URL=db.${SUPABASE_PROJECT_REF}.supabase.co'",
     "db:apply-pending": "node scripts/apply-pending-migrations.mjs",
     "db:link": "supabase link --project-ref hfxqvitixkrqjggkbbej",
     "db:wipe-remote": "node scripts/db-wipe-remote.mjs",

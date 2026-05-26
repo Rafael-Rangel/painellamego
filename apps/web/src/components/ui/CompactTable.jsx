@@ -10,12 +10,19 @@ export default function CompactTable({
   loading = false,
   emptyMessage = "Nenhum registro.",
   footerText,
-  mobileCompact = true
+  mobileCompact = true,
+  /** Tabela mais larga com scroll horizontal (ideal para histórico no celular). */
+  scrollHorizontal = false
 }) {
   if (loading) return <LoadingSkeleton rows={6} />;
   if (!rows?.length) return <EmptyState message={emptyMessage} compact />;
 
-  const wrapClass = ["table-wrap", mobileCompact ? "table-wrap--mobile" : ""].filter(Boolean).join(" ");
+  const wrapClass = [
+    "table-wrap",
+    scrollHorizontal ? "table-wrap--scroll-x" : mobileCompact ? "table-wrap--mobile" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <>
@@ -24,7 +31,7 @@ export default function CompactTable({
           <thead>
             <tr>
               {columns.map((col) => (
-                <th key={col.id} className={col.headerClassName}>
+                <th key={col.id} className={col.headerClassName} data-col={col.id}>
                   <span className="table-th-label">{col.label}</span>
                 </th>
               ))}

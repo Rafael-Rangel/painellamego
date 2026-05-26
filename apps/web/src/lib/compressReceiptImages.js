@@ -118,6 +118,24 @@ export async function compressReceiptFiles(files, hooks = {}) {
 }
 
 /** Compressão mais leve para o fluxo «Analisar com IA» (menos upload, OCR ainda legível). */
+/** Envio final (POST /purchases): ficheiros mais leves para caber no proxy e upload rápido no telemóvel. */
+export async function compressReceiptFilesForSubmit(files, hooks = {}) {
+  const list = Array.from(files || []).filter(Boolean);
+  if (!list.length) return [];
+
+  return Promise.all(
+    list.map(async (file, i) => {
+      hooks.onFileStart?.({ index: i, total: list.length, name: file.name });
+      return compressOneReceiptFile(
+        file,
+        RECEIPT_AI_QUALITY_PRESET,
+        RECEIPT_AI_GENTLE_PRESET,
+        AI_GENTLE_PASS_IF_ABOVE
+      );
+    })
+  );
+}
+
 export async function compressReceiptFilesForAi(files, hooks = {}) {
   const list = Array.from(files || []).filter(Boolean);
   if (!list.length) return [];

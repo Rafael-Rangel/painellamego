@@ -1,31 +1,46 @@
-import { useCallback, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { FaArrowLeft, FaArrowRight, FaCheck, FaFileInvoice, FaShoppingBasket } from "react-icons/fa";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { FaArrowLeft, FaArrowRight, FaCheck, FaCloudUploadAlt, FaFileInvoice, FaShoppingBasket } from "react-icons/fa";
 import AppShell from "../components/AppShell";
 import FilePickButton from "../components/ui/FilePickButton";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
 import { useAuth } from "../auth/AuthProvider";
-import CompactTable from "../components/ui/CompactTable";
-import SingleSelectInput from "../components/ui/SingleSelectInput";
+import HintButton from "../components/ui/HintButton";
+import { WizardAlert, WizardAlerts, toastKindFromMessage } from "../components/ui/WizardAlert";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
-import UnitSelect from "../components/ui/UnitSelect";
+import PurchaseDraftItemForm from "../components/purchase/PurchaseDraftItemForm";
+import PurchaseRegisteredItems from "../components/purchase/PurchaseRegisteredItems";
 import { formatStoreReadonly } from "../lib/displayText";
 import { formatCurrency } from "../lib/formatters";
+import { getDraftItemFieldErrors } from "../lib/draftItemValidation";
+import { purchaseTotalsFromItems, validateInstallmentsAgainstPayable } from "../lib/purchaseTotals";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
+import { usePurchaseDraft } from "../hooks/usePurchaseDraft";
+import { useWizardStepValidation } from "../hooks/useWizardStepValidation";
+import RequiredLabel, { FieldValidationMessage } from "../components/ui/RequiredLabel";
+import PurchaseInstallmentsEditor from "../components/purchase/PurchaseInstallmentsEditor";
 
 const STEPS = [
-  { n: 1, title: "Dados da compra", hint: "Data, fornecedor e anexo da nota" },
-  { n: 2, title: "Itens da nota", hint: "Produtos, valores e insumo ou venda" },
-  { n: 3, title: "Nota fiscal", hint: "Número NF e arquivos" },
-  { n: 4, title: "Conferir e enviar", hint: "Revise tudo antes de salvar" }
+  { n: 1, title: "Dados", hint: "Data, fornecedor e NF" },
+  { n: 2, title: "Itens", hint: "Compra e bonificação" },
+  { n: 3, title: "Vencimentos", hint: "Parcelas do boleto" },
+  { n: 4, title: "Fotos da nota", hint: "Opcional, pode pular" },
+  { n: 5, title: "Conferir", hint: "Rascunho ou publicar" }
 ];
 
 export default function ManagerPurchasePage() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [step, setStep] = useState(1);
+  const [draftReady, setDraftReady] = useState(false);
+  const [itemAddAttempted, setItemAddAttempted] = useState(false);
+  const { markStepAttempted, touchField, shouldShow, wasStepAttempted } = useWizardStepValidation();
 
-  const onAfterConfirm = useCallback(() => setStep(1), []);
+  const onAfterConfirm = useCallback(() => {
+    setStep(1);
+    setSearchParams({});
+  }, [setSearchParams]);
 
   const {
     overview,
@@ -49,23 +64,321 @@ export default function ManagerPurchasePage() {
     total,
     addItem,
     updateItem,
+    removeItemAt,
+    editingItemIndex,
+    loadItemForEdit,
+    cancelItemEdit,
+    savePurchaseDraft,
     confirmPurchase,
+    confirming,
     createSupplier,
     supplierCreating,
     createProduct,
-    productCreating
+    productCreating,
+    setToast,
+    installments,
+    setInstallments,
+    setItems
   } = usePurchaseForm(token, { recordAiHighlights: false, onAfterConfirm });
+
+  const draftPayload = useMemo(
+    () => ({
+      supplierId: supplierId || null,
+      purchaseDate: date,
+      invoiceNumber,
+      wizardStep: step,
+      items,
+      installments
+    }),
+    [supplierId, date, invoiceNumber, step, items, installments]
+  );
+
+  const {
+    draftId,
+    serverReceipts,
+    saveState,
+    lastSavedAt,
+    loadDraft,
+    createDraft,
+    saveDraft,
+    uploadReceipts,
+    removeServerReceipt,
+    resetDraftSession
+  } = usePurchaseDraft(token, { payload: draftPayload, enabled: draftReady });
+
+  const draftQuery = searchParams.get("draft");
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    const stepFromUrl = searchParams.get("step");
+    (async () => {
+      try {
+        if (draftQuery) {
+          const d = await loadDraft(draftQuery);
+          if (cancelled) return;
+          if (d.supplierId) setSupplierId(d.supplierId);
+          if (d.purchaseDate) setDate(d.purchaseDate);
+          if (d.invoiceNumber) setInvoiceNumber(d.invoiceNumber);
+          setItems(d.items || []);
+          setInstallments(d.installments || []);
+          const parsed = stepFromUrl ? Math.min(5, Math.max(1, Number(stepFromUrl) || 1)) : null;
+          setStep(parsed ?? d.wizardStep ?? 1);
+          if (stepFromUrl) {
+            setSearchParams({ draft: draftQuery }, { replace: true });
+          }
+        } else {
+          setStep(1);
+        }
+        setDraftReady(true);
+      } catch {
+        setToast("Não foi possível iniciar o rascunho. Tente recarregar.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, draftQuery]);
+
+  const hasReceipts = receipts.length > 0 || serverReceipts.length > 0;
+
+  const installmentCheck = useMemo(() => {
+    const { totalPayable } = purchaseTotalsFromItems(items);
+    return validateInstallmentsAgainstPayable(installments, totalPayable);
+  }, [items, installments]);
+
+  const invoiceTrimmed = useMemo(() => String(invoiceNumber || "").trim(), [invoiceNumber]);
+  const hasInvoice = invoiceTrimmed.length > 0;
+
+  const goNextStep = useCallback(() => {
+    if (step === 1) {
+      markStepAttempted(1);
+      if (!supplierId) {
+        touchField("supplier");
+        setToast("Selecione ou crie o fornecedor para continuar.");
+        setTimeout(() => setToast(""), 4200);
+        return;
+      }
+      if (!hasInvoice) {
+        touchField("invoice");
+        setToast("Informe o número da nota fiscal.");
+        setTimeout(() => setToast(""), 4200);
+        return;
+      }
+    }
+    if (step === 2 && items.length === 0) {
+      markStepAttempted(2);
+      setToast("Adicione pelo menos um item antes de continuar.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (step === 3 && installments.length > 0 && !installmentCheck.ok && total > 0) {
+      markStepAttempted(3);
+      setToast("Ajuste as parcelas para igualar o total da nota.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (step === 4 && !hasReceipts) {
+      markStepAttempted(4);
+    }
+    setStep((s) => s + 1);
+  }, [
+    step,
+    supplierId,
+    hasInvoice,
+    items.length,
+    installments.length,
+    installmentCheck.ok,
+    total,
+    hasReceipts,
+    setToast,
+    markStepAttempted,
+    touchField
+  ]);
 
   const links = useMemo(() => buildManagerSidebarLinks(navigate), [navigate]);
 
   const canGoNext =
     step === 1
-      ? Boolean(supplierId)
+      ? Boolean(supplierId) && hasInvoice
       : step === 2
         ? items.length > 0
-        : step === 3
-          ? receipts.length > 0
+        : step < 5
+          ? true
           : false;
+
+  const nextStepBlockReason =
+    step === 1 && !supplierId
+      ? "Selecione ou crie o fornecedor para continuar."
+      : step === 1 && !hasInvoice
+        ? "Informe o número da nota fiscal."
+        : step === 2 && items.length === 0
+        ? "Nenhum item cadastrado ainda. Adicione pelo menos 1 item para liberar o botão «Próximo»."
+        : null;
+
+  const saveDraftBlockReason =
+    !supplierId
+      ? "Selecione o fornecedor antes de guardar."
+      : !hasInvoice
+        ? "Informe o número da nota fiscal antes de guardar."
+        : items.length === 0
+        ? "Nenhum item na nota. Adicione pelo menos 1 item para guardar ou publicar."
+        : null;
+
+  const handleDeleteItem = useCallback(
+    (idx, productName) => {
+      const label = String(productName || "este item").trim();
+      if (!window.confirm(`Remover «${label}» da nota?\n\nEsta ação não pode ser desfeita.`)) return;
+      removeItemAt(idx);
+      setToast("Item removido.");
+      setTimeout(() => setToast(""), 2800);
+    },
+    [removeItemAt, setToast]
+  );
+
+  const ensureDraftId = useCallback(async () => {
+    if (draftId) return draftId;
+    const id = await createDraft();
+    setSearchParams({ draft: id }, { replace: true });
+    return id;
+  }, [draftId, createDraft, setSearchParams]);
+
+  const handleReceiptPick = useCallback(
+    async (files) => {
+      setReceipts(files);
+      if (!files?.length) return;
+      try {
+        const id = await ensureDraftId();
+        await uploadReceipts(files, id);
+        setToast("Fotos guardadas no rascunho.");
+        setTimeout(() => setToast(""), 3200);
+      } catch {
+        setToast("Ficheiros no aparelho; falhou enviar ao servidor. Tente de novo.");
+        setTimeout(() => setToast(""), 4500);
+      }
+    },
+    [ensureDraftId, uploadReceipts, setReceipts, setToast]
+  );
+
+  const showSupplierError = shouldShow(1, "supplier") && !supplierId;
+  const showInvoiceError = shouldShow(1, "invoice") && !hasInvoice;
+  const showItemsStepError = wasStepAttempted(2) && items.length === 0;
+  const showInstallmentsError =
+    shouldShow(3) && installments.length > 0 && !installmentCheck.ok && total > 0;
+  const showReceiptsHint = shouldShow(4) && !hasReceipts;
+  const showReviewValidation = shouldShow(5);
+
+  const draftItemErrors = useMemo(() => getDraftItemFieldErrors(draftItem, products), [draftItem, products]);
+  const showItemFieldValidation = itemAddAttempted || shouldShow(2, "itemFields");
+
+  const stepAlerts = useMemo(() => [], []);
+
+  useEffect(() => {
+    if (items.length > 0) setItemAddAttempted(false);
+  }, [items.length]);
+
+  const handleAddItem = useCallback(() => {
+    setItemAddAttempted(true);
+    touchField("itemFields");
+    addItem();
+  }, [addItem, touchField]);
+
+  const handleItemFieldBlur = useCallback(
+    (field) => {
+      touchField(field);
+      touchField("itemFields");
+    },
+    [touchField]
+  );
+
+  const handlePublish = useCallback(() => {
+    markStepAttempted(5);
+    if (!supplierId || !hasInvoice || items.length === 0) {
+      setToast("Complete fornecedor, número da NF e itens antes de publicar.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (installments.length > 0 && !installmentCheck.ok && total > 0) {
+      setToast("Corrija as parcelas no passo 3 antes de publicar.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (!hasReceipts) {
+      setToast("Para publicar, anexe pelo menos uma foto ou PDF no passo 4 (ou use «Salvar rascunho»).");
+      setTimeout(() => setToast(""), 5500);
+      return;
+    }
+    void confirmPurchase({
+      draftId,
+      serverReceiptCount: serverReceipts.length,
+      uploadDraftReceipts: uploadReceipts,
+      createDraft: ensureDraftId,
+      persistDraft: saveDraft
+    }).then(() => {
+      resetDraftSession();
+      setSearchParams({}, { replace: true });
+    });
+  }, [
+    hasReceipts,
+    confirmPurchase,
+    draftId,
+    serverReceipts.length,
+    uploadReceipts,
+    ensureDraftId,
+    saveDraft,
+    setSearchParams,
+    setToast,
+    resetDraftSession,
+    markStepAttempted,
+    installmentCheck.ok,
+    hasInvoice
+  ]);
+
+  const handleSaveDraft = useCallback(() => {
+    markStepAttempted(5);
+    if (!supplierId) {
+      touchField("supplier");
+      setToast("Selecione o fornecedor antes de guardar.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (!hasInvoice) {
+      touchField("invoice");
+      setToast("Informe o número da nota fiscal antes de guardar.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (items.length === 0) {
+      setToast("Adicione pelo menos um item antes de guardar.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    void savePurchaseDraft({
+      draftId,
+      createDraft: ensureDraftId,
+      persistDraft: saveDraft,
+      uploadDraftReceipts: uploadReceipts
+    }).then((id) => {
+      if (id) {
+        resetDraftSession();
+        setSearchParams({}, { replace: true });
+      }
+    });
+  }, [
+    savePurchaseDraft,
+    draftId,
+    ensureDraftId,
+    saveDraft,
+    uploadReceipts,
+    setSearchParams,
+    resetDraftSession,
+    markStepAttempted,
+    supplierId,
+    items.length,
+    touchField,
+    setToast,
+    hasInvoice
+  ]);
 
   const storeBadge =
     overview?.storeCode != null && String(overview.storeCode).length
@@ -73,6 +386,16 @@ export default function ManagerPurchasePage() {
       : null;
 
   const lojaReadonly = formatStoreReadonly(overview, user);
+
+  const notifyCatalog = useCallback(
+    (msg, severity) => {
+      if (!msg) return;
+      setToast(msg);
+      const delay = severity === "warning" ? 5500 : 6000;
+      setTimeout(() => setToast(""), delay);
+    },
+    [setToast]
+  );
 
   return (
     <AppShell
@@ -85,7 +408,13 @@ export default function ManagerPurchasePage() {
       <div className="purchase-wizard">
         <header className="wizard-header">
           <h2 className="wizard-title">Novo lançamento</h2>
-          <p className="wizard-lead">Quatro etapas rápidas. Use Voltar se precisar corrigir algo.</p>
+          <p className="wizard-lead">
+            Preencha as etapas normalmente. No passo 4 as fotos são opcionais. No fim, guarde como rascunho ou publique
+            (publicar exige anexo).
+          </p>
+          {saveState === "saved" && lastSavedAt ? (
+            <p className="purchase-draft-status">Guardado {lastSavedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+          ) : null}
         </header>
 
         <ol className="wizard-steps" aria-label="Etapas">
@@ -106,224 +435,125 @@ export default function ManagerPurchasePage() {
         </ol>
 
         <div className="wizard-panel card">
+          <WizardAlerts alerts={stepAlerts} />
+          {toast ? (
+            <WizardAlert type={toastKindFromMessage(toast)} onDismiss={() => setToast("")}>
+              {toast}
+            </WizardAlert>
+          ) : null}
+
           {step === 1 ? (
             <div className="wizard-step-content">
               <h3 className="wizard-panel-title">Quem fornece e quando</h3>
               <p className="wizard-panel-desc">
-                Para análise com IA numa única página (upload, leitura automática e formulário completo), use{" "}
-                <button type="button" className="btn btn-link" style={{ padding: 0, verticalAlign: "baseline" }} onClick={() => navigate("/manager/new-purchase/ai")}>
-                  Compra com IA
-                </button>
-                . Nesta página o fluxo é manual por etapas: preencha os campos e anexe a nota antes de confirmar.
+                Cadastre a compra passo a passo, preenchendo os dados necessários e anexando a nota fiscal antes da
+                confirmação.
               </p>
               <div className="wizard-fields">
                 <div className="field field-wizard">
-                  <label>Data da compra</label>
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  <label>
+                    Data da compra <span className="field-required" aria-hidden="true">*</span>
+                  </label>
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
                 </div>
-                <div className="field field-wizard field-wizard-supplier">
+                <div
+                  className={`field field-wizard field-wizard-supplier${showSupplierError ? " field--invalid" : ""}`}
+                >
                   <SingleSelectSearch
                     label="Fornecedor"
+                    required
                     placeholder="Digite para buscar ou adicionar…"
                     options={suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name }))}
                     value={supplierId}
                     onChange={setSupplierId}
                     allowCreate
+                    createEntityLabel="fornecedor"
+                    catalogField="supplier"
                     createBusy={supplierCreating}
+                    onNotify={notifyCatalog}
                     onCreateOption={createSupplier}
+                    showValidationError={showSupplierError}
+                    validationMessage="Selecione um fornecedor da lista ou crie um novo."
+                    onFieldBlur={() => touchField("supplier")}
                   />
                 </div>
-                <div className="field field-wizard">
-                  <label>Número da nota fiscal</label>
+                <div className={`field field-wizard${showInvoiceError ? " field--invalid" : ""}`}>
+                  <RequiredLabel htmlFor="purchase-invoice-number" required>
+                    Número da nota fiscal
+                  </RequiredLabel>
                   <input
+                    id="purchase-invoice-number"
                     type="text"
                     value={invoiceNumber}
                     onChange={(e) => setInvoiceNumber(e.target.value)}
+                    onBlur={() => touchField("invoice")}
                     placeholder="Ex.: 12345 ou chave resumida"
                     autoComplete="off"
+                    aria-invalid={showInvoiceError ? "true" : undefined}
+                    required
                   />
-                  <span className="field-helper">A IA na página Compra com IA pode sugerir este número; aqui pode editar à mão.</span>
-                </div>
-                <div className="field field-wizard">
-                  <label>Fotos / PDF da nota (obrigatório  ·  mínimo 1 arquivo)</label>
-                  <FilePickButton
-                    buttonText="Escolher arquivo(s) da nota"
-                    multiple
-                    onFilesSelected={(files) => setReceipts(files)}
-                    helper={
-                      receipts.length
-                        ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
-                        : "Selecione uma ou várias imagens/PDF da nota. Sem anexo não é possível confirmar o lançamento."
-                    }
-                  />
+                  {showInvoiceError ? (
+                    <FieldValidationMessage>Informe o número da nota fiscal.</FieldValidationMessage>
+                  ) : (
+                    <span className="field-helper">A IA na página Compra com IA pode sugerir este número; aqui pode editar à mão.</span>
+                  )}
                 </div>
               </div>
             </div>
           ) : null}
 
           {step === 2 ? (
-            <div className="wizard-step-content">
-              <div className="wizard-section-icon">
-                <FaShoppingBasket />
+            <div className="wizard-step-content wizard-step-content--items">
+              <div className="wizard-step-content__intro">
+                <div className="wizard-section-icon">
+                  <FaShoppingBasket />
+                </div>
+                <h3 className="wizard-panel-title">Itens da nota fiscal</h3>
+                <p className="wizard-panel-desc">
+                  Busque o produto, escolha a categoria, informe quantidade e valor.
+                </p>
               </div>
-              <h3 className="wizard-panel-title">Itens da nota fiscal</h3>
-              <p className="wizard-panel-desc">Busque o produto, escolha a categoria, informe quantidade e valor. Marque se a linha é insumo ou venda.</p>
 
-              <div className="grid wizard-item-grid">
-                <div className="span-5 wizard-product-col wizard-product-card">
-                  <SingleSelectInput
-                    label="Categoria"
-                    placeholder="Digite para buscar ou criar…"
-                    options={categoryOptions}
-                    value={draftItem.category}
-                    onChange={(next) => setDraftItem({ ...draftItem, category: next })}
-                    createEntityLabel="categoria"
-                  />
-                  <SingleSelectSearch
-                    label="Produto"
-                    placeholder="Digite para buscar ou adicionar…"
-                    options={products.map((product) => ({ value: product.id, label: product.name }))}
-                    value={draftItem.productId}
-                    onChange={(id) => pickDraftProduct(id)}
-                    allowCreate
-                    createEntityLabel="produto"
-                    createBusy={productCreating}
-                    onCreateOption={async (q) => {
-                      const data = await createProduct(q, draftItem.lineType, draftItem.category);
-                      if (!data) return;
-                      pickDraftProduct(data.id);
-                    }}
-                  />
-                  <div className="purchase-line-type-block purchase-line-type-block--nested">
-                    <span className="purchase-line-type-label">Esta linha é insumo ou venda?</span>
-                    <div className="purchase-line-type-options" role="radiogroup" aria-label="Insumo ou venda (nova linha)">
-                      <label className="purchase-line-type-option">
-                        <input
-                          type="radio"
-                          name="draft-line-type"
-                          checked={draftItem.lineType === "insumo"}
-                          onChange={() => setDraftItem({ ...draftItem, lineType: "insumo" })}
-                        />
-                        <span>Insumo</span>
-                      </label>
-                      <label className="purchase-line-type-option">
-                        <input
-                          type="radio"
-                          name="draft-line-type"
-                          checked={draftItem.lineType === "venda"}
-                          onChange={() => setDraftItem({ ...draftItem, lineType: "venda" })}
-                        />
-                        <span>Venda</span>
-                      </label>
-                    </div>
-                    <p className="field-helper">Cada item da nota pode ser diferente; o cadastro do produto só sugere o padrão.</p>
-                  </div>
-                </div>
-                <div className="field span-2 field-wizard">
-                  <label>Quantidade</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={draftItem.quantity}
-                    onChange={(e) => setDraftItem({ ...draftItem, quantity: e.target.value })}
-                  />
-                </div>
-                <div className="field span-2 field-wizard">
-                  <label>Unidade</label>
-                  <UnitSelect
-                    value={draftItem.unitUsed}
-                    units={unitOptions}
+              <div className="purchase-items-layout">
+                <section className="purchase-items-layout__form" aria-label="Novo item">
+                  <PurchaseDraftItemForm
+                    draftItem={draftItem}
+                    setDraftItem={setDraftItem}
+                    categoryOptions={categoryOptions}
                     products={products}
-                    onChange={(e) => setDraftItem({ ...draftItem, unitUsed: e.target.value })}
+                    unitOptions={unitOptions}
+                    pickDraftProduct={pickDraftProduct}
+                    createProduct={createProduct}
+                    productCreating={productCreating}
+                    onAdd={handleAddItem}
+                    onNotify={notifyCatalog}
+                    editing={editingItemIndex !== null}
+                    submitLabel={editingItemIndex !== null ? "Guardar alteração" : "Adicionar item"}
+                    onCancel={editingItemIndex !== null ? cancelItemEdit : undefined}
+                    showFieldValidation={showItemFieldValidation}
+                    fieldErrors={draftItemErrors}
+                    listError={showItemsStepError ? "Adicione pelo menos um item na nota antes de avançar." : ""}
+                    onFieldBlur={handleItemFieldBlur}
                   />
-                </div>
-                <div className="field span-2 field-wizard">
-                  <label>Valor unitário (R$)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={draftItem.unitPrice}
-                    onChange={(e) => setDraftItem({ ...draftItem, unitPrice: e.target.value })}
-                  />
-                </div>
-                <div className="span-1 field-wizard wizard-add-btn-wrap">
-                  <label className="wizard-label-spacer">&nbsp;</label>
-                  <button className="btn btn-secondary btn-block" type="button" onClick={addItem}>
-                    Adicionar
-                  </button>
-                </div>
-              </div>
+                </section>
 
-              <CompactTable
-                columns={[
-                  {
-                    id: "productId",
-                    label: "Produto",
-                    getTitle: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "",
-                    render: (item) => products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "n/d"
-                  },
-                  {
-                    id: "category",
-                    label: "Categoria",
-                    render: (item, idx) => (
-                      <SingleSelectInput
-                        placeholder="Categoria…"
-                        options={categoryOptions}
-                        value={item.category || ""}
-                        onChange={(next) => updateItem(idx, { category: next })}
-                        createEntityLabel="categoria"
-                      />
-                    )
-                  },
-                  {
-                    id: "lineType",
-                    label: "Insumo / venda",
-                    render: (item, idx) => (
-                      <div
-                        className="purchase-line-type-options purchase-line-type-options--compact"
-                        role="radiogroup"
-                        aria-label={`Tipo do item ${idx + 1}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <label className="purchase-line-type-option">
-                          <input
-                            type="radio"
-                            name={`wizard-item-line-${idx}`}
-                            checked={item.lineType !== "venda"}
-                            onChange={() => updateItem(idx, { lineType: "insumo" })}
-                          />
-                          <span>Insumo</span>
-                        </label>
-                        <label className="purchase-line-type-option">
-                          <input
-                            type="radio"
-                            name={`wizard-item-line-${idx}`}
-                            checked={item.lineType === "venda"}
-                            onChange={() => updateItem(idx, { lineType: "venda" })}
-                          />
-                          <span>Venda</span>
-                        </label>
-                      </div>
-                    )
-                  },
-                  { id: "quantity", label: "Qtd" },
-                  { id: "unitUsed", label: "Unid." },
-                  { id: "unitPrice", label: "Valor un.", render: (item) => formatCurrency(item.unitPrice) },
-                  {
-                    id: "lineTotal",
-                    label: "Total",
-                    render: (item) => formatCurrency(Number(item.quantity) * Number(item.unitPrice))
-                  }
-                ]}
-                rows={items}
-                loading={false}
-                emptyMessage="Nenhum item ainda. Preencha acima e clique em “Adicionar à lista”."
-              />
-              <p className="wizard-total">
-                Total desta nota: <strong>{formatCurrency(total)}</strong>
-              </p>
+                <section className="purchase-items-layout__list" aria-label="Itens registrados">
+                  <PurchaseRegisteredItems
+                    items={items}
+                    products={products}
+                    categoryOptions={categoryOptions}
+                    editingIndex={editingItemIndex}
+                    updateItem={updateItem}
+                    onEdit={loadItemForEdit}
+                    onDelete={handleDeleteItem}
+                    onNotify={notifyCatalog}
+                    emptyMessage="Nenhum item cadastrado ainda."
+                  />
+                  <p className="wizard-total">
+                    Total desta nota: <strong>{formatCurrency(total)}</strong>
+                  </p>
+                </section>
+              </div>
             </div>
           ) : null}
 
@@ -332,31 +562,60 @@ export default function ManagerPurchasePage() {
               <div className="wizard-section-icon">
                 <FaFileInvoice />
               </div>
-              <h3 className="wizard-panel-title">Nota fiscal</h3>
-              <p className="wizard-panel-desc">Confira número e arquivos da nota antes de concluir.</p>
-              <div className="wizard-fields">
-                <div className="field field-wizard">
-                  <label>Número da nota fiscal</label>
-                  <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="Ex.: 12345" />
-                </div>
-                <div className="field field-wizard">
-                  <label>Arquivo da nota (obrigatório  ·  mínimo 1 arquivo)</label>
-                  <FilePickButton
-                    buttonText="Escolher arquivo(s) da nota"
-                    multiple
-                    onFilesSelected={(files) => setReceipts(files)}
-                    helper={
-                      receipts.length
-                        ? `${receipts.length} arquivo(s): ${receipts.map((f) => f.name).join(", ")}`
-                        : "JPG, PNG ou PDF. Mínimo 1 arquivo obrigatório para confirmar."
-                    }
-                  />
-                </div>
-              </div>
+              <h3 className="wizard-panel-title">Vencimentos do boleto</h3>
+              <p className="wizard-panel-desc">Cadastre uma ou várias datas de parcelas de pagamento.</p>
+              <PurchaseInstallmentsEditor
+                items={items}
+                installments={installments}
+                onChange={setInstallments}
+                purchaseDate={date}
+                showValidation={showInstallmentsError}
+              />
             </div>
           ) : null}
 
           {step === 4 ? (
+            <div className="wizard-step-content">
+              <div className="wizard-section-icon">
+                <FaCloudUploadAlt />
+              </div>
+              <h3 className="wizard-panel-title">Fotos / PDF da nota</h3>
+              <p className="wizard-panel-desc">
+                Envie a foto ou o PDF da nota fiscal. Depois use «Próximo» para conferir e publicar, ou «Pular fotos» se
+                quiser guardar só como rascunho.
+              </p>
+              {serverReceipts.length ? (
+                <ul className="purchase-draft-receipts">
+                  {serverReceipts.map((r) => (
+                    <li key={r.id}>
+                      {r.originalName}
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => void removeServerReceipt(r.id)}>
+                        Remover
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <FilePickButton
+                buttonText="Enviar fotos para o rascunho"
+                multiple
+                onFilesSelected={(files) => void handleReceiptPick(files)}
+                helper={
+                  serverReceipts.length || receipts.length
+                    ? `${serverReceipts.length} no servidor · ${receipts.length} neste aparelho`
+                    : "JPG, PNG ou PDF, opcional nesta etapa"
+                }
+              />
+              {showReceiptsHint ? (
+                <FieldValidationMessage className="field-validation-msg--warning">
+                  Ainda sem foto ou PDF. Pode continuar e guardar rascunho, ou envie o ficheiro agora para poder publicar
+                  na conferência.
+                </FieldValidationMessage>
+              ) : null}
+            </div>
+          ) : null}
+
+          {step === 5 ? (
             <div className="wizard-step-content wizard-review">
               <div className="wizard-section-icon wizard-section-icon-success">
                 <FaCheck />
@@ -389,11 +648,19 @@ export default function ManagerPurchasePage() {
                 </div>
                 <div>
                   <dt>Nota fiscal</dt>
-                  <dd>{invoiceNumber || "Será gerada ao confirmar"}</dd>
+                  <dd>{hasInvoice ? invoiceTrimmed : "n/d"}</dd>
                 </div>
                 <div>
-                  <dt>Anexo</dt>
-                  <dd>{receipts.length ? `${receipts.length} arquivo(s)` : "Sem arquivo"}</dd>
+                  <dt>Anexos</dt>
+                  <dd>
+                    {serverReceipts.length + receipts.length
+                      ? `${serverReceipts.length} na nuvem + ${receipts.length} local`
+                      : "Sem arquivo"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Parcelas</dt>
+                  <dd>{installments.length ? `${installments.length} vencimento(s)` : "Vencimento único (automático)"}</dd>
                 </div>
               </dl>
 
@@ -404,8 +671,10 @@ export default function ManagerPurchasePage() {
                     <strong>{products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || item.productId || "n/d"}</strong>
                     <span className="wizard-review-meta">
                       {item.category || products.find((p) => p.id === item.productId)?.category || "n/d"} ·{" "}
-                      {item.lineType === "venda" ? "Venda" : "Insumo"} · {item.quantity} {item.unitUsed} ×{" "}
+                      {item.lineType === "venda" ? "Venda" : "Insumo"}
+                      {item.isBonificationOnly ? " · Bonificação" : ""} · {item.quantity} {item.unitUsed} ×{" "}
                       {formatCurrency(item.unitPrice)}
+                      {Number(item.bonusQuantity) > 0 ? ` · Bonif. ${item.bonusQuantity} un` : ""}
                     </span>
                   </li>
                 ))}
@@ -415,23 +684,66 @@ export default function ManagerPurchasePage() {
         </div>
 
         <footer className="wizard-footer">
-          <button className="btn btn-ghost" type="button" disabled={step === 1} onClick={() => setStep((s) => Math.max(1, s - 1))}>
-            <FaArrowLeft style={{ marginRight: "0.35rem" }} />
-            Voltar
-          </button>
-          {step < 4 ? (
-            <button className="btn btn-primary" type="button" disabled={!canGoNext} onClick={() => setStep((s) => s + 1)}>
-              Próximo
-              <FaArrowRight style={{ marginLeft: "0.35rem" }} />
-            </button>
-          ) : (
-            <button className="btn btn-primary" type="button" onClick={confirmPurchase} disabled={!supplierId || !items.length || !receipts.length}>
-              Confirmar lançamento
-            </button>
-          )}
+          <div className="wizard-footer__nav">
+            <HintButton
+              variant="ghost"
+              disabled={step === 1}
+              onClick={() => setStep((s) => Math.max(1, s - 1))}
+            >
+              <FaArrowLeft style={{ marginRight: "0.35rem" }} />
+              Voltar
+            </HintButton>
+            {step < 5 ? (
+              <HintButton
+                disabled={!canGoNext}
+                allowClickWhenDisabled
+                disabledReason={shouldShow(step) && nextStepBlockReason ? nextStepBlockReason : undefined}
+                title={shouldShow(step) && nextStepBlockReason ? nextStepBlockReason : undefined}
+                onClick={goNextStep}
+                hintClassName="hint-button--align-end"
+              >
+                Próximo
+                <FaArrowRight style={{ marginLeft: "0.35rem" }} />
+              </HintButton>
+            ) : (
+              <div className="wizard-footer__confirm">
+                <HintButton
+                  variant={hasReceipts ? "ghost" : "primary"}
+                  disabled={Boolean(saveDraftBlockReason) || confirming}
+                  allowClickWhenDisabled
+                  disabledReason={showReviewValidation && saveDraftBlockReason ? saveDraftBlockReason : undefined}
+                  title={showReviewValidation && saveDraftBlockReason ? saveDraftBlockReason : undefined}
+                  onClick={handleSaveDraft}
+                >
+                  {confirming ? "A guardar…" : "Salvar rascunho"}
+                </HintButton>
+                <HintButton
+                  variant={hasReceipts ? "primary" : "muted"}
+                  disabled={Boolean(saveDraftBlockReason) || confirming || !hasReceipts}
+                  allowClickWhenDisabled
+                  disabledReason={
+                    showReviewValidation && !saveDraftBlockReason && !hasReceipts
+                      ? "Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 4 ou pelo lápis no Histórico)."
+                      : showReviewValidation && saveDraftBlockReason
+                        ? saveDraftBlockReason
+                        : undefined
+                  }
+                  title={
+                    showReviewValidation && (saveDraftBlockReason || !hasReceipts)
+                      ? saveDraftBlockReason ||
+                        "Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 4 ou pelo lápis no Histórico)."
+                      : undefined
+                  }
+                  onClick={handlePublish}
+                  hintClassName="hint-button--align-end"
+                >
+                  {confirming ? "A publicar…" : "Publicar nota"}
+                </HintButton>
+              </div>
+            )}
+          </div>
         </footer>
       </div>
-      {toast ? <div className="toast">{toast}</div> : null}
     </AppShell>
   );
 }

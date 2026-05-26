@@ -1,12 +1,13 @@
-import { FaBook, FaHistory, FaHome, FaPlusCircle } from "react-icons/fa";
+import { FaBook, FaHistory, FaHome, FaMoneyBillWave, FaPlusCircle } from "react-icons/fa";
 import { MdAutoAwesome } from "react-icons/md";
 
 /** Menu lateral único do gerente (todas as páginas do fluxo manager). */
 export const MANAGER_MENU_ITEMS = [
-  { key: "overview", to: "/manager", label: "Visão Geral", icon: <FaHome /> },
+  { key: "overview", to: "/manager", label: "Inteligência", icon: <FaHome /> },
   { key: "history", to: "/manager?tab=history", label: "Histórico", icon: <FaHistory /> },
   { key: "catalog", to: "/manager?tab=catalog", label: "Catálogo", icon: <FaBook /> },
   { key: "new-purchase", to: "/manager/new-purchase", label: "Registrar compra", icon: <FaPlusCircle /> },
+  { key: "finance", to: "/manager/finance", label: "Financeiro", icon: <FaMoneyBillWave /> },
   { key: "purchase-ai", to: "/manager/new-purchase/ai", label: "Compra com IA", icon: <MdAutoAwesome /> }
 ];
 

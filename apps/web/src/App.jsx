@@ -8,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import ManagerPage from "./pages/ManagerPage";
 import ManagerPurchasePage from "./pages/ManagerPurchasePage";
 import ManagerPurchaseAiPage from "./pages/ManagerPurchaseAiPage";
+import ManagerFinancePage from "./pages/ManagerFinancePage";
 import OnboardingPage from "./pages/OnboardingPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 
@@ -46,6 +47,14 @@ export default function App() {
           element={
             <ProtectedRoute role="manager">
               <ManagerPurchasePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manager/finance"
+          element={
+            <ProtectedRoute role="manager">
+              <ManagerFinancePage />
             </ProtectedRoute>
           }
         />

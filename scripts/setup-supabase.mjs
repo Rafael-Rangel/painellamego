@@ -120,9 +120,11 @@ async function ensureDefaultCentroStore() {
 }
 
 async function ensureManagerStoreLink(managerId, storeId) {
-  const { error } = await admin
-    .from("manager_store_links")
-    .upsert({ manager_auth_user_id: managerId, store_id: storeId }, { onConflict: "manager_auth_user_id,store_id" });
+  const { error: clearStore } = await admin.from("manager_store_links").delete().eq("store_id", storeId);
+  if (clearStore) throw clearStore;
+  const { error: clearManager } = await admin.from("manager_store_links").delete().eq("manager_auth_user_id", managerId);
+  if (clearManager) throw clearManager;
+  const { error } = await admin.from("manager_store_links").insert({ manager_auth_user_id: managerId, store_id: storeId });
   if (error) throw error;
 }
 
@@ -145,8 +147,10 @@ async function run() {
     app_metadata: { role: "manager" },
     user_metadata: {
       store_id: store.id,
+      store_ids: [store.id],
       store_number: store.store_number,
-      manager_name: MANAGER_CENTRO.managerName
+      manager_name: MANAGER_CENTRO.managerName,
+      display_name: MANAGER_CENTRO.managerName
     }
   });
   await ensureManagerStoreLink(user.id, store.id);
