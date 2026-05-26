@@ -1,6 +1,8 @@
 import {
   isBonificationOnlyLine,
+  parseBrNumber,
   purchaseTotalsFromItems,
+  hasChargeablePurchaseContent,
   validateInstallmentsAgainstPayable
 } from "@lamego/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
@@ -13,16 +15,16 @@ export async function deletePurchaseCascade(purchaseId) {
 
 function mapItemToRow(item, purchaseId, storeId) {
   const isBonusOnly = isBonificationOnlyLine(item);
-  let quantity = Number(item.quantity) || 0;
-  let unitPrice = Number(item.unitPrice) || 0;
-  let bonusQuantity = Number(item.bonusQuantity) || 0;
-  let bonusUnitValue = Number(item.bonusUnitValue) || 0;
+  let quantity = parseBrNumber(item.quantity) || 0;
+  let unitPrice = parseBrNumber(item.unitPrice) || 0;
+  let bonusQuantity = parseBrNumber(item.bonusQuantity) || 0;
+  let bonusUnitValue = parseBrNumber(item.bonusUnitValue) || 0;
 
   if (isBonusOnly) {
     if (bonusQuantity <= 0) bonusQuantity = quantity;
     quantity = 0;
     unitPrice = 0;
-    if (bonusUnitValue <= 0) bonusUnitValue = Number(item.unitPrice) || 0;
+    if (bonusUnitValue <= 0) bonusUnitValue = parseBrNumber(item.unitPrice) || 0;
   }
 
   return {
@@ -56,6 +58,14 @@ export async function finalizePurchase({
   draftId = null
 }) {
   const { totalPayable, totalBonusValue } = purchaseTotalsFromItems(items);
+
+  if (!hasChargeablePurchaseContent(items)) {
+    const err = new Error(
+      "O total da nota está zerado. Informe quantidade e preço unitário em pelo menos um item."
+    );
+    err.statusCode = 400;
+    throw err;
+  }
 
   let inst = installments || [];
   if (!inst.length) {

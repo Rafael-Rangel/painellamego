@@ -60,3 +60,55 @@ export function validateInstallmentsAgainstPayable(installments, totalPayable, t
   const diff = Math.abs(sum - totalPayable);
   return { ok: diff <= tolerance, sum: Math.round(sum * 100) / 100, diff };
 }
+
+/** Linha de pré-visualização a partir do formulário (item ainda não adicionado ou em edição). */
+export function draftItemToPreviewRow(draftItem) {
+  if (!draftItem?.productId) return null;
+  const bonusOnly = isBonificationOnlyLine(draftItem);
+  const qty = parseBrNumber(draftItem.quantity);
+  const price = parseBrNumber(draftItem.unitPrice);
+  const bonusQty = parseBrNumber(draftItem.bonusQuantity) || 0;
+  const bonusVal = parseBrNumber(draftItem.bonusUnitValue) || 0;
+
+  if (bonusOnly) {
+    const effectiveQty = bonusQty > 0 ? bonusQty : qty;
+    const effectiveVal = bonusVal > 0 ? bonusVal : price;
+    if (!Number.isFinite(effectiveQty) || effectiveQty <= 0) return null;
+    return {
+      ...draftItem,
+      isBonificationOnly: true,
+      quantity: String(effectiveQty),
+      unitPrice: String(effectiveVal > 0 ? effectiveVal : 0),
+      bonusQuantity: String(bonusQty || effectiveQty),
+      bonusUnitValue: String(effectiveVal)
+    };
+  }
+
+  if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0) return null;
+  return {
+    ...draftItem,
+    quantity: String(qty),
+    unitPrice: String(price),
+    bonusQuantity: String(bonusQty),
+    bonusUnitValue: String(bonusVal)
+  };
+}
+
+/** Total incluindo item do formulário (1 item na nota ou ainda não adicionado). */
+export function purchaseTotalsWithDraft(items = [], draftItem, editingIndex = null) {
+  const preview = draftItemToPreviewRow(draftItem);
+  let rows = [...items];
+  if (preview) {
+    if (editingIndex != null && editingIndex >= 0 && editingIndex < rows.length) {
+      rows = rows.map((row, i) => (i === editingIndex ? preview : row));
+    } else if (editingIndex == null) {
+      rows = [...rows, preview];
+    }
+  }
+  return purchaseTotalsFromItems(rows);
+}
+
+export function hasChargeablePurchaseContent(items = []) {
+  const { totalPayable, totalBonusValue } = purchaseTotalsFromItems(items);
+  return totalPayable > 0 || totalBonusValue > 0;
+}

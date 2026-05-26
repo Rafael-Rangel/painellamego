@@ -1,4 +1,4 @@
-import { isBonificationOnlyLine } from "./purchaseTotals";
+import { isBonificationOnlyLine, parseBrNumber } from "./purchaseTotals";
 
 function resolveItemCategory(row, productList) {
   const explicit = String(row?.category || "").trim();
@@ -14,10 +14,10 @@ function resolveItemCategory(row, productList) {
 /** Erros por campo do formulário de item (true = inválido). */
 export function getDraftItemFieldErrors(draftItem, products) {
   const category = resolveItemCategory(draftItem, products);
-  const qty = Number(draftItem?.quantity);
-  const price = Number(draftItem?.unitPrice);
-  const bonusQty = Number(draftItem?.bonusQuantity) || 0;
-  const bonusVal = Number(draftItem?.bonusUnitValue) || 0;
+  const qty = parseBrNumber(draftItem?.quantity);
+  const price = parseBrNumber(draftItem?.unitPrice);
+  const bonusQty = parseBrNumber(draftItem?.bonusQuantity) || 0;
+  const bonusVal = parseBrNumber(draftItem?.bonusUnitValue) || 0;
   const bonusOnly = isBonificationOnlyLine(draftItem);
 
   return {

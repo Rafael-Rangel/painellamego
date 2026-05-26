@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { FaArrowLeft, FaArrowRight, FaCheck, FaCloudUploadAlt, FaFileInvoice, FaShoppingBasket } from "react-icons/fa";
 import AppShell from "../components/AppShell";
@@ -57,6 +57,7 @@ export default function ManagerPurchasePage() {
     setInvoiceNumber,
     receipts,
     setReceipts,
+    appendReceipts,
     items,
     draftItem,
     setDraftItem,
@@ -80,6 +81,10 @@ export default function ManagerPurchasePage() {
     setInstallments,
     setItems
   } = usePurchaseForm(token, { recordAiHighlights: false, onAfterConfirm });
+
+  const [uploadingReceipts, setUploadingReceipts] = useState(false);
+  /** Evita recarregar do servidor um rascunho que acabámos de criar na mesma sessão. */
+  const sessionDraftRef = useRef(null);
 
   const draftPayload = useMemo(
     () => ({
@@ -115,8 +120,13 @@ export default function ManagerPurchasePage() {
     (async () => {
       try {
         if (draftQuery) {
+          if (sessionDraftRef.current === draftQuery) {
+            setDraftReady(true);
+            return;
+          }
           const d = await loadDraft(draftQuery);
           if (cancelled) return;
+          sessionDraftRef.current = draftQuery;
           if (d.supplierId) setSupplierId(d.supplierId);
           if (d.purchaseDate) setDate(d.purchaseDate);
           if (d.invoiceNumber) setInvoiceNumber(d.invoiceNumber);
@@ -128,6 +138,7 @@ export default function ManagerPurchasePage() {
             setSearchParams({ draft: draftQuery }, { replace: true });
           }
         } else {
+          sessionDraftRef.current = null;
           setStep(1);
         }
         setDraftReady(true);
@@ -150,7 +161,16 @@ export default function ManagerPurchasePage() {
   const invoiceTrimmed = useMemo(() => String(invoiceNumber || "").trim(), [invoiceNumber]);
   const hasInvoice = invoiceTrimmed.length > 0;
 
-  const goNextStep = useCallback(() => {
+  const ensureDraftId = useCallback(async () => {
+    if (draftId) return draftId;
+    const id = await createDraft();
+    await saveDraft({ ...draftPayload, wizardStep: step }, id);
+    sessionDraftRef.current = id;
+    setSearchParams({ draft: id }, { replace: true });
+    return id;
+  }, [draftId, createDraft, saveDraft, draftPayload, step, setSearchParams]);
+
+  const goNextStep = useCallback(async () => {
     if (step === 1) {
       markStepAttempted(1);
       if (!supplierId) {
@@ -165,10 +185,25 @@ export default function ManagerPurchasePage() {
         setTimeout(() => setToast(""), 4200);
         return;
       }
+      if (!draftId) {
+        try {
+          await ensureDraftId();
+        } catch {
+          setToast("Não foi possível sincronizar o rascunho. Tente novamente.");
+          setTimeout(() => setToast(""), 4200);
+          return;
+        }
+      }
     }
     if (step === 2 && items.length === 0) {
       markStepAttempted(2);
       setToast("Adicione pelo menos um item antes de continuar.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
+    if (step === 2 && total <= 0) {
+      markStepAttempted(2);
+      setToast("Informe quantidade e valor unitário — o total da nota não pode ficar zerado.");
       setTimeout(() => setToast(""), 4200);
       return;
     }
@@ -186,6 +221,8 @@ export default function ManagerPurchasePage() {
     step,
     supplierId,
     hasInvoice,
+    draftId,
+    ensureDraftId,
     items.length,
     installments.length,
     installmentCheck.ok,
@@ -202,7 +239,7 @@ export default function ManagerPurchasePage() {
     step === 1
       ? Boolean(supplierId) && hasInvoice
       : step === 2
-        ? items.length > 0
+        ? items.length > 0 && total > 0
         : step < 5
           ? true
           : false;
@@ -214,6 +251,8 @@ export default function ManagerPurchasePage() {
         ? "Informe o número da nota fiscal."
         : step === 2 && items.length === 0
         ? "Nenhum item cadastrado ainda. Adicione pelo menos 1 item para liberar o botão «Próximo»."
+        : step === 2 && total <= 0
+          ? "Informe quantidade e valor unitário — o total da nota não pode ficar zerado."
         : null;
 
   const saveDraftBlockReason =
@@ -236,28 +275,24 @@ export default function ManagerPurchasePage() {
     [removeItemAt, setToast]
   );
 
-  const ensureDraftId = useCallback(async () => {
-    if (draftId) return draftId;
-    const id = await createDraft();
-    setSearchParams({ draft: id }, { replace: true });
-    return id;
-  }, [draftId, createDraft, setSearchParams]);
-
   const handleReceiptPick = useCallback(
     async (files) => {
-      setReceipts(files);
       if (!files?.length) return;
+      setUploadingReceipts(true);
       try {
         const id = await ensureDraftId();
         await uploadReceipts(files, id);
-        setToast("Fotos guardadas no rascunho.");
-        setTimeout(() => setToast(""), 3200);
-      } catch {
-        setToast("Ficheiros no aparelho; falhou enviar ao servidor. Tente de novo.");
+        setToast("Fotos enviadas. Toque em «Próximo» para conferir (passo 5) antes de publicar.");
         setTimeout(() => setToast(""), 4500);
+      } catch {
+        appendReceipts(files);
+        setToast("Não foi possível enviar agora; os ficheiros ficaram no aparelho. Tente novamente.");
+        setTimeout(() => setToast(""), 5000);
+      } finally {
+        setUploadingReceipts(false);
       }
     },
-    [ensureDraftId, uploadReceipts, setReceipts, setToast]
+    [ensureDraftId, uploadReceipts, appendReceipts, setToast]
   );
 
   const showSupplierError = shouldShow(1, "supplier") && !supplierId;
@@ -298,6 +333,11 @@ export default function ManagerPurchasePage() {
       setTimeout(() => setToast(""), 4200);
       return;
     }
+    if (total <= 0) {
+      setToast("Não é possível publicar nota com total zerado. Revise quantidade e preço dos itens.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
     if (installments.length > 0 && !installmentCheck.ok && total > 0) {
       setToast("Corrija as parcelas no passo 3 antes de publicar.");
       setTimeout(() => setToast(""), 4200);
@@ -315,6 +355,7 @@ export default function ManagerPurchasePage() {
       createDraft: ensureDraftId,
       persistDraft: saveDraft
     }).then(() => {
+      sessionDraftRef.current = null;
       resetDraftSession();
       setSearchParams({}, { replace: true });
     });
@@ -353,6 +394,11 @@ export default function ManagerPurchasePage() {
       setTimeout(() => setToast(""), 4200);
       return;
     }
+    if (total <= 0) {
+      setToast("O total da nota está zerado. Revise quantidade e preço dos itens.");
+      setTimeout(() => setToast(""), 4200);
+      return;
+    }
     void savePurchaseDraft({
       draftId,
       createDraft: ensureDraftId,
@@ -360,6 +406,7 @@ export default function ManagerPurchasePage() {
       uploadDraftReceipts: uploadReceipts
     }).then((id) => {
       if (id) {
+        sessionDraftRef.current = null;
         resetDraftSession();
         setSearchParams({}, { replace: true });
       }
@@ -413,7 +460,7 @@ export default function ManagerPurchasePage() {
             (publicar exige anexo).
           </p>
           {saveState === "saved" && lastSavedAt ? (
-            <p className="purchase-draft-status">Guardado {lastSavedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+            <p className="purchase-draft-status">Sincronizado {lastSavedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} (rascunho automático — continue até o passo 5)</p>
           ) : null}
         </header>
 
@@ -551,6 +598,11 @@ export default function ManagerPurchasePage() {
                   />
                   <p className="wizard-total">
                     Total desta nota: <strong>{formatCurrency(total)}</strong>
+                    {items.length === 0 && draftItem?.productId ? (
+                      <span className="field-helper" style={{ display: "block", marginTop: "0.35rem" }}>
+                        Inclui o item preenchido no formulário. Toque em «Adicionar item» para confirmar na lista.
+                      </span>
+                    ) : null}
                   </p>
                 </section>
               </div>
@@ -581,8 +633,8 @@ export default function ManagerPurchasePage() {
               </div>
               <h3 className="wizard-panel-title">Fotos / PDF da nota</h3>
               <p className="wizard-panel-desc">
-                Envie a foto ou o PDF da nota fiscal. Depois use «Próximo» para conferir e publicar, ou «Pular fotos» se
-                quiser guardar só como rascunho.
+                Envie a foto ou o PDF da nota fiscal. O envio não publica a compra — use «Próximo» para conferir no passo 5
+                e só então «Publicar nota» ou «Salvar rascunho».
               </p>
               {serverReceipts.length ? (
                 <ul className="purchase-draft-receipts">
@@ -597,13 +649,16 @@ export default function ManagerPurchasePage() {
                 </ul>
               ) : null}
               <FilePickButton
-                buttonText="Enviar fotos para o rascunho"
+                buttonText={uploadingReceipts ? "A enviar…" : "Enviar fotos da nota"}
                 multiple
+                disabled={uploadingReceipts}
                 onFilesSelected={(files) => void handleReceiptPick(files)}
                 helper={
-                  serverReceipts.length || receipts.length
-                    ? `${serverReceipts.length} no servidor · ${receipts.length} neste aparelho`
-                    : "JPG, PNG ou PDF, opcional nesta etapa"
+                  uploadingReceipts
+                    ? "Aguarde o envio terminar…"
+                    : serverReceipts.length || receipts.length
+                      ? `${serverReceipts.length} no servidor · ${receipts.length} neste aparelho`
+                      : "JPG, PNG ou PDF — opcional nesta etapa"
                 }
               />
               {showReceiptsHint ? (

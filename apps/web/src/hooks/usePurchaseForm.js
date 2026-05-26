@@ -10,7 +10,10 @@ import { catalogMessageFromApiError, catalogUserMessage, logCatalog } from "../l
 import { purchaseApiErrorMessage } from "../lib/purchaseErrors";
 import {
   isBonificationOnlyLine,
+  parseBrNumber,
   purchaseTotalsFromItems,
+  purchaseTotalsWithDraft,
+  hasChargeablePurchaseContent,
   validateInstallmentsAgainstPayable
 } from "../lib/purchaseTotals";
 import { MAX_RECEIPT_FILES, mergeUniqueReceiptFiles, receiptFileKey } from "../lib/receiptFiles";
@@ -188,7 +191,10 @@ export function usePurchaseForm(token, options = {}) {
     [products, unitOptions]
   );
 
-  const total = useMemo(() => purchaseTotalsFromItems(items).totalPayable, [items]);
+  const total = useMemo(
+    () => purchaseTotalsWithDraft(items, draftItem, editingItemIndex).totalPayable,
+    [items, draftItem, editingItemIndex]
+  );
 
   const canConfirmPurchase = useMemo(() => {
     if (aiLoading || confirming) return false;
@@ -196,8 +202,8 @@ export function usePurchaseForm(token, options = {}) {
     return items.every((it) => {
       const hasProduct = Boolean(it.productId) || String(it.aiRawProductName || "").trim().length >= 2;
       const category = resolveItemCategory(it, products);
-      const qty = Number(it.quantity);
-      const price = Number(it.unitPrice);
+      const qty = parseBrNumber(it.quantity);
+      const price = parseBrNumber(it.unitPrice);
       return (
         hasProduct &&
         Boolean(category) &&
@@ -213,10 +219,10 @@ export function usePurchaseForm(token, options = {}) {
   const addItem = useCallback(() => {
     const d = draftItem;
     const category = resolveItemCategory(d, products);
-    const qty = Number(d.quantity);
-    const price = Number(d.unitPrice);
-    const bonusQty = Number(d.bonusQuantity) || 0;
-    const bonusVal = Number(d.bonusUnitValue) || 0;
+    const qty = parseBrNumber(d.quantity);
+    const price = parseBrNumber(d.unitPrice);
+    const bonusQty = parseBrNumber(d.bonusQuantity) || 0;
+    const bonusVal = parseBrNumber(d.bonusUnitValue) || 0;
 
     if (!d.productId) {
       setToast("Selecione o produto na lista (toque no nome após buscar).");
@@ -541,6 +547,11 @@ export function usePurchaseForm(token, options = {}) {
         setTimeout(() => setToast(""), 4500);
         return null;
       }
+      if (!hasChargeablePurchaseContent(items)) {
+        setToast("Informe quantidade e valor unitário para calcular o total da nota.");
+        setTimeout(() => setToast(""), 4500);
+        return null;
+      }
       setConfirming(true);
       const workItems = [...items];
       for (let i = 0; i < workItems.length; i += 1) {
@@ -599,9 +610,9 @@ export function usePurchaseForm(token, options = {}) {
       }
 
       for (const row of workItems) {
-        const unitPrice = Number(row.unitPrice);
-        const quantity = Number(row.quantity);
-        const bonusQty = Number(row.bonusQuantity) || 0;
+        const unitPrice = parseBrNumber(row.unitPrice);
+        const quantity = parseBrNumber(row.quantity);
+        const bonusQty = parseBrNumber(row.bonusQuantity) || 0;
         if (isBonificationOnlyLine(row)) {
           if (bonusQty <= 0 && quantity <= 0) {
             setToast("Revise as linhas de bonificação.");
@@ -749,6 +760,12 @@ export function usePurchaseForm(token, options = {}) {
     }
 
     const { totalPayable } = purchaseTotalsFromItems(workItems);
+    if (!hasChargeablePurchaseContent(workItems)) {
+      setToast("O total da nota está zerado. Revise quantidade e preço dos itens.");
+      setTimeout(() => setToast(""), 5000);
+      setConfirming(false);
+      return;
+    }
     if (installments.length > 0) {
       const instCheck = validateInstallmentsAgainstPayable(installments, totalPayable);
       if (!instCheck.ok && totalPayable > 0) {
@@ -762,9 +779,9 @@ export function usePurchaseForm(token, options = {}) {
     }
 
     for (const row of workItems) {
-      const unitPrice = Number(row.unitPrice);
-      const quantity = Number(row.quantity);
-      const bonusQty = Number(row.bonusQuantity) || 0;
+      const unitPrice = parseBrNumber(row.unitPrice);
+      const quantity = parseBrNumber(row.quantity);
+      const bonusQty = parseBrNumber(row.bonusQuantity) || 0;
       if (isBonificationOnlyLine(row)) {
         if (bonusQty <= 0 && quantity <= 0) {
           setToast("Revise as linhas de bonificação (quantidade).");
@@ -793,20 +810,20 @@ export function usePurchaseForm(token, options = {}) {
       const payload = workItems.map((item) => ({
         productId: item.productId,
         supplierId: item.supplierId || supplierId,
-        unitPrice: Number(item.unitPrice) || 0,
+        unitPrice: parseBrNumber(item.unitPrice) || 0,
         unitUsed: String(item.unitUsed || "").trim() || "un",
-        quantity: Number(item.quantity) || 0,
+        quantity: parseBrNumber(item.quantity) || 0,
         purchaseDate,
         weekOfMonth: toWeekOfMonth(date),
         lineType: item.lineType === "venda" ? "venda" : "insumo",
         isBonificationOnly: isBonificationOnlyLine(item),
-        bonusQuantity: Number(item.bonusQuantity) || 0,
-        bonusUnitValue: Number(item.bonusUnitValue) || 0
+        bonusQuantity: parseBrNumber(item.bonusQuantity) || 0,
+        bonusUnitValue: parseBrNumber(item.bonusUnitValue) || 0
       }));
 
       const instPayload = installments.map((row) => ({
         dueDate: row.dueDate,
-        amount: Number(row.amount),
+        amount: parseBrNumber(row.amount) || 0,
         notes: row.notes || ""
       }));
 

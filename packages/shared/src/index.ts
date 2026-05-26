@@ -51,7 +51,10 @@ export {
   lineChargeAmount,
   lineBonusValue,
   purchaseTotalsFromItems,
-  validateInstallmentsAgainstPayable
+  validateInstallmentsAgainstPayable,
+  draftItemToPreviewRow,
+  purchaseTotalsWithDraft,
+  hasChargeablePurchaseContent
 } from "./purchaseTotals";
 
 export const createPurchaseSchema = z.object({
