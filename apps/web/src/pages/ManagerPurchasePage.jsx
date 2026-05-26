@@ -13,7 +13,13 @@ import PurchaseRegisteredItems from "../components/purchase/PurchaseRegisteredIt
 import { formatStoreReadonly } from "../lib/displayText";
 import { formatCurrency } from "../lib/formatters";
 import { getDraftItemFieldErrors } from "../lib/draftItemValidation";
-import { purchaseTotalsFromItems, validateInstallmentsAgainstPayable } from "../lib/purchaseTotals";
+import {
+  isBonificationOnlyLine,
+  normalizePurchaseItemRow,
+  purchaseTotalsFromItems,
+  purchaseTotalsWithDraft,
+  validateInstallmentsAgainstPayable
+} from "../lib/purchaseTotals";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
 import { usePurchaseDraft } from "../hooks/usePurchaseDraft";
 import { useWizardStepValidation } from "../hooks/useWizardStepValidation";
@@ -22,7 +28,7 @@ import PurchaseInstallmentsEditor from "../components/purchase/PurchaseInstallme
 
 const STEPS = [
   { n: 1, title: "Dados", hint: "Data, fornecedor e NF" },
-  { n: 2, title: "Itens", hint: "Compra e bonificação" },
+  { n: 2, title: "Itens", hint: "Compra e produto de bonificação" },
   { n: 3, title: "Vencimentos", hint: "Parcelas do boleto" },
   { n: 4, title: "Fotos da nota", hint: "Opcional, pode pular" },
   { n: 5, title: "Conferir", hint: "Rascunho ou publicar" }
@@ -35,12 +41,14 @@ export default function ManagerPurchasePage() {
   const [step, setStep] = useState(1);
   const [draftReady, setDraftReady] = useState(false);
   const [itemAddAttempted, setItemAddAttempted] = useState(false);
-  const { markStepAttempted, touchField, shouldShow, wasStepAttempted } = useWizardStepValidation();
+  const { markStepAttempted, touchField, shouldShow, wasStepAttempted, resetValidation } = useWizardStepValidation();
 
   const onAfterConfirm = useCallback(() => {
     setStep(1);
+    setItemAddAttempted(false);
+    resetValidation();
     setSearchParams({});
-  }, [setSearchParams]);
+  }, [setSearchParams, resetValidation]);
 
   const {
     overview,
@@ -65,6 +73,7 @@ export default function ManagerPurchasePage() {
     total,
     addItem,
     updateItem,
+    markItemAsPaidPurchase,
     removeItemAt,
     editingItemIndex,
     loadItemForEdit,
@@ -127,10 +136,13 @@ export default function ManagerPurchasePage() {
           const d = await loadDraft(draftQuery);
           if (cancelled) return;
           sessionDraftRef.current = draftQuery;
+          cancelItemEdit();
+          setItemAddAttempted(false);
+          resetValidation();
           if (d.supplierId) setSupplierId(d.supplierId);
           if (d.purchaseDate) setDate(d.purchaseDate);
           if (d.invoiceNumber) setInvoiceNumber(d.invoiceNumber);
-          setItems(d.items || []);
+          setItems((d.items || []).map(normalizePurchaseItemRow));
           setInstallments(d.installments || []);
           const parsed = stepFromUrl ? Math.min(5, Math.max(1, Number(stepFromUrl) || 1)) : null;
           setStep(parsed ?? d.wizardStep ?? 1);
@@ -139,6 +151,9 @@ export default function ManagerPurchasePage() {
           }
         } else {
           sessionDraftRef.current = null;
+          cancelItemEdit();
+          setItemAddAttempted(false);
+          resetValidation();
           setStep(1);
         }
         setDraftReady(true);
@@ -149,7 +164,7 @@ export default function ManagerPurchasePage() {
     return () => {
       cancelled = true;
     };
-  }, [token, draftQuery]);
+  }, [token, draftQuery, loadDraft, cancelItemEdit, resetValidation, setSupplierId, setDate, setInvoiceNumber, setItems, setInstallments, setSearchParams, setToast]);
 
   const hasReceipts = receipts.length > 0 || serverReceipts.length > 0;
 
@@ -157,6 +172,13 @@ export default function ManagerPurchasePage() {
     const { totalPayable } = purchaseTotalsFromItems(items);
     return validateInstallmentsAgainstPayable(installments, totalPayable);
   }, [items, installments]);
+
+  const invoiceTotals = useMemo(
+    () => purchaseTotalsWithDraft(items, draftItem, editingItemIndex),
+    [items, draftItem, editingItemIndex]
+  );
+
+  const hasBonusOnlyItems = useMemo(() => items.some(isBonificationOnlyLine), [items]);
 
   const invoiceTrimmed = useMemo(() => String(invoiceNumber || "").trim(), [invoiceNumber]);
   const hasInvoice = invoiceTrimmed.length > 0;
@@ -356,6 +378,9 @@ export default function ManagerPurchasePage() {
       persistDraft: saveDraft
     }).then(() => {
       sessionDraftRef.current = null;
+      cancelItemEdit();
+      setItemAddAttempted(false);
+      resetValidation();
       resetDraftSession();
       setSearchParams({}, { replace: true });
     });
@@ -370,6 +395,8 @@ export default function ManagerPurchasePage() {
     setSearchParams,
     setToast,
     resetDraftSession,
+    cancelItemEdit,
+    resetValidation,
     markStepAttempted,
     installmentCheck.ok,
     hasInvoice
@@ -407,6 +434,9 @@ export default function ManagerPurchasePage() {
     }).then((id) => {
       if (id) {
         sessionDraftRef.current = null;
+        cancelItemEdit();
+        setItemAddAttempted(false);
+        resetValidation();
         resetDraftSession();
         setSearchParams({}, { replace: true });
       }
@@ -419,6 +449,8 @@ export default function ManagerPurchasePage() {
     uploadReceipts,
     setSearchParams,
     resetDraftSession,
+    cancelItemEdit,
+    resetValidation,
     markStepAttempted,
     supplierId,
     items.length,
@@ -593,6 +625,7 @@ export default function ManagerPurchasePage() {
                     updateItem={updateItem}
                     onEdit={loadItemForEdit}
                     onDelete={handleDeleteItem}
+                    onMarkAsPaidPurchase={markItemAsPaidPurchase}
                     onNotify={notifyCatalog}
                     emptyMessage="Nenhum item cadastrado ainda."
                   />
@@ -601,6 +634,13 @@ export default function ManagerPurchasePage() {
                     {items.length === 0 && draftItem?.productId ? (
                       <span className="field-helper" style={{ display: "block", marginTop: "0.35rem" }}>
                         Inclui o item preenchido no formulário. Toque em «Adicionar item» para confirmar na lista.
+                      </span>
+                    ) : null}
+                    {total <= 0 && hasBonusOnlyItems && invoiceTotals.totalBonusValue > 0 ? (
+                      <span className="wizard-total__hint" role="status">
+                        Há produtos de bonificação (sem cobrança) — valor de referência{" "}
+                        {formatCurrency(invoiceTotals.totalBonusValue)}. Se for compra paga, toque em «Marcar como compra
+                        paga» no item ou edite e desmarque «Produto de bonificação».
                       </span>
                     ) : null}
                   </p>
@@ -727,7 +767,8 @@ export default function ManagerPurchasePage() {
                     <span className="wizard-review-meta">
                       {item.category || products.find((p) => p.id === item.productId)?.category || "n/d"} ·{" "}
                       {item.lineType === "venda" ? "Venda" : "Insumo"}
-                      {item.isBonificationOnly ? " · Bonificação" : ""} · {item.quantity} {item.unitUsed} ×{" "}
+                      {isBonificationOnlyLine(item) ? " · Produto de bonificação" : ""} · {item.quantity}{" "}
+                      {item.unitUsed} ×{" "}
                       {formatCurrency(item.unitPrice)}
                       {Number(item.bonusQuantity) > 0 ? ` · Bonif. ${item.bonusQuantity} un` : ""}
                     </span>

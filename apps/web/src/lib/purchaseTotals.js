@@ -112,3 +112,15 @@ export function hasChargeablePurchaseContent(items = []) {
   const { totalPayable, totalBonusValue } = purchaseTotalsFromItems(items);
   return totalPayable > 0 || totalBonusValue > 0;
 }
+
+/** Normaliza flag de bonificação vinda de JSON/rascunho (evita string "false" truthy na UI). */
+export function normalizePurchaseItemRow(item) {
+  if (!item || typeof item !== "object") return item;
+  return { ...item, isBonificationOnly: isBonificationOnlyLine(item) };
+}
+
+/** Valor exibido na linha: cobrança ou referência de bonificação. */
+export function lineDisplayAmount(item) {
+  if (isBonificationOnlyLine(item)) return lineBonusValue(item);
+  return lineChargeAmount(item);
+}

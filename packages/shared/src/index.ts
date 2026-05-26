@@ -22,7 +22,7 @@ export const purchaseItemSchema = z
   .superRefine((row, ctx) => {
     if (row.isBonificationOnly) {
       if (row.bonusQuantity <= 0 && row.quantity <= 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Informe a quantidade bonificada." });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Informe a quantidade do produto de bonificação." });
       }
       return;
     }
@@ -31,7 +31,7 @@ export const purchaseItemSchema = z
     if (charge <= 0 && bonus <= 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Informe compra (qtd × preço) ou bonificação."
+        message: "Informe compra (qtd × preço) ou produto de bonificação."
       });
     }
     if (row.quantity > 0 && row.unitPrice <= 0) {
@@ -54,7 +54,9 @@ export {
   validateInstallmentsAgainstPayable,
   draftItemToPreviewRow,
   purchaseTotalsWithDraft,
-  hasChargeablePurchaseContent
+  hasChargeablePurchaseContent,
+  normalizePurchaseItemRow,
+  lineDisplayAmount
 } from "./purchaseTotals";
 
 export const createPurchaseSchema = z.object({

@@ -254,8 +254,8 @@ export default function ManagerFinancePage() {
                 <FaGift className="finance-empty__icon" aria-hidden />
                 <p className="finance-empty__title">Sem bonificação neste mês</p>
                 <p className="finance-empty__text">
-                  Não há linhas de bonificação em notas de {MONTHS_PT.find((m) => m.value === month)?.label?.toLowerCase()}{" "}
-                  de {year}. Altere o período ou registe bonificações ao lançar compras.
+                  Não há produtos de bonificação em notas de {MONTHS_PT.find((m) => m.value === month)?.label?.toLowerCase()}{" "}
+                  de {year}. Altere o período ou registe produtos de bonificação ao lançar compras.
                 </p>
               </div>
             )}

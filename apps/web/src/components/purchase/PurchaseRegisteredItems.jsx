@@ -3,7 +3,7 @@ import EmptyState from "../ui/EmptyState";
 import { LineTypePicker } from "./PurchaseDraftItemForm";
 import SingleSelectInput from "../ui/SingleSelectInput";
 import { formatCurrency } from "../../lib/formatters";
-import { lineChargeAmount } from "../../lib/purchaseTotals";
+import { isBonificationOnlyLine, lineDisplayAmount } from "../../lib/purchaseTotals";
 
 export default function PurchaseRegisteredItems({
   items,
@@ -13,6 +13,7 @@ export default function PurchaseRegisteredItems({
   updateItem,
   onEdit,
   onDelete,
+  onMarkAsPaidPurchase,
   onNotify,
   emptyMessage
 }) {
@@ -36,7 +37,8 @@ export default function PurchaseRegisteredItems({
           const productName =
             products.find((p) => p.id === item.productId)?.name || item.aiRawProductName || "Produto";
           const category = item.category || products.find((p) => p.id === item.productId)?.category || "";
-          const lineTotal = lineChargeAmount(item);
+          const bonusOnly = isBonificationOnlyLine(item);
+          const lineTotal = lineDisplayAmount(item);
           const isEditing = editingIndex === idx;
 
           return (
@@ -50,10 +52,13 @@ export default function PurchaseRegisteredItems({
                   {category ? <span className="purchase-item-card__category">{category}</span> : null}
                   <span className="purchase-item-card__type-pill">
                     {item.lineType === "venda" ? "Venda" : "Insumo"}
-                    {item.isBonificationOnly ? " · Bonificação" : ""}
+                    {bonusOnly ? " · Produto de bonificação" : ""}
                   </span>
                 </div>
-                <span className="purchase-item-card__total">{formatCurrency(lineTotal)}</span>
+                <span className={`purchase-item-card__total${bonusOnly ? " purchase-item-card__total--bonus" : ""}`}>
+                  {bonusOnly ? <span className="purchase-item-card__total-label">Ref.</span> : null}
+                  {formatCurrency(lineTotal)}
+                </span>
               </header>
 
               <div className="purchase-item-card__metrics">
@@ -66,10 +71,25 @@ export default function PurchaseRegisteredItems({
                   <span className="purchase-item-card__value">{item.unitUsed}</span>
                 </div>
                 <div className="purchase-item-card__metric">
-                  <span className="purchase-item-card__label">Valor un.</span>
+                  <span className="purchase-item-card__label">{bonusOnly ? "Valor ref." : "Valor un."}</span>
                   <span className="purchase-item-card__value">{formatCurrency(item.unitPrice)}</span>
                 </div>
               </div>
+
+              {bonusOnly ? (
+                <p className="purchase-item-card__bonus-hint">
+                  Produto de bonificação — não entra no total a pagar.{" "}
+                  {onMarkAsPaidPurchase ? (
+                    <button
+                      type="button"
+                      className="purchase-item-card__bonus-fix"
+                      onClick={() => onMarkAsPaidPurchase(idx)}
+                    >
+                      Marcar como compra paga
+                    </button>
+                  ) : null}
+                </p>
+              ) : null}
 
               <div className="purchase-item-card__field purchase-item-card__field--mobile-edit">
                 <span className="purchase-item-card__label">Categoria</span>

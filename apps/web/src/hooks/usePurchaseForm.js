@@ -231,7 +231,7 @@ export function usePurchaseForm(token, options = {}) {
     }
     if (isBonificationOnlyLine(d)) {
       if (bonusQty <= 0 && qty <= 0) {
-        setToast("Informe a quantidade bonificada.");
+        setToast("Informe a quantidade do produto de bonificação.");
         setTimeout(() => setToast(""), 3200);
         return;
       }
@@ -253,7 +253,7 @@ export function usePurchaseForm(token, options = {}) {
       return;
     }
 
-    const bonusOnly = isBonificationOnlyLine(d);
+    const bonusOnly = d.isBonificationOnly === true;
     const newRow = {
       productId: d.productId,
       category,
@@ -289,6 +289,8 @@ export function usePurchaseForm(token, options = {}) {
       const row = items[index];
       if (!row) return;
       const product = products.find((p) => p.id === row.productId);
+      const bonusOnly = isBonificationOnlyLine(row);
+      const refUnitValue = String(row.bonusUnitValue || (bonusOnly ? row.unitPrice : "") || "");
       setDraftItem({
         productId: row.productId || "",
         category: row.category || product?.category || "",
@@ -296,9 +298,9 @@ export function usePurchaseForm(token, options = {}) {
         unitUsed: row.unitUsed || "kg",
         unitPrice: String(row.unitPrice ?? ""),
         lineType: row.lineType === "venda" ? "venda" : "insumo",
-        isBonificationOnly: isBonificationOnlyLine(row),
+        isBonificationOnly: bonusOnly,
         bonusQuantity: String(row.bonusQuantity ?? ""),
-        bonusUnitValue: String(row.bonusUnitValue ?? "")
+        bonusUnitValue: refUnitValue
       });
       setEditingItemIndex(index);
       const label = product?.name || row.aiRawProductName || "item";
@@ -313,8 +315,24 @@ export function usePurchaseForm(token, options = {}) {
     setDraftItem({ ...EMPTY_DRAFT_ITEM });
   }, []);
 
+  useEffect(() => {
+    if (editingItemIndex == null) return;
+    if (editingItemIndex < 0 || editingItemIndex >= items.length) {
+      setEditingItemIndex(null);
+      setDraftItem({ ...EMPTY_DRAFT_ITEM });
+    }
+  }, [editingItemIndex, items.length]);
+
   const updateItem = useCallback((index, patch) => {
     setItems((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }, []);
+
+  const markItemAsPaidPurchase = useCallback((index) => {
+    setItems((prev) =>
+      prev.map((row, i) => (i === index && isBonificationOnlyLine(row) ? { ...row, isBonificationOnly: false } : row))
+    );
+    setToast("Item marcado como compra paga — total da nota atualizado.");
+    setTimeout(() => setToast(""), 3200);
   }, []);
 
   const removeItem = useCallback(
@@ -531,6 +549,7 @@ export function usePurchaseForm(token, options = {}) {
     setReceiptExtras([]);
     setDraftItem({ ...EMPTY_DRAFT_ITEM });
     setSupplierId("");
+    setEditingItemIndex(null);
     setAiHighlightKeys(new Set());
     onAfterConfirm?.();
   }, [onAfterConfirm]);
@@ -615,7 +634,7 @@ export function usePurchaseForm(token, options = {}) {
         const bonusQty = parseBrNumber(row.bonusQuantity) || 0;
         if (isBonificationOnlyLine(row)) {
           if (bonusQty <= 0 && quantity <= 0) {
-            setToast("Revise as linhas de bonificação.");
+            setToast("Revise os produtos de bonificação.");
             setTimeout(() => setToast(""), 5000);
             setConfirming(false);
             return null;
@@ -784,7 +803,7 @@ export function usePurchaseForm(token, options = {}) {
       const bonusQty = parseBrNumber(row.bonusQuantity) || 0;
       if (isBonificationOnlyLine(row)) {
         if (bonusQty <= 0 && quantity <= 0) {
-          setToast("Revise as linhas de bonificação (quantidade).");
+          setToast("Revise os produtos de bonificação (quantidade).");
           setTimeout(() => setToast(""), 5000);
           setConfirming(false);
           return;
@@ -1167,6 +1186,7 @@ export function usePurchaseForm(token, options = {}) {
     total,
     addItem,
     updateItem,
+    markItemAsPaidPurchase,
     removeItem,
     removeItemAt,
     editingItemIndex,

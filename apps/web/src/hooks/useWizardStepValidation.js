@@ -27,5 +27,10 @@ export function useWizardStepValidation() {
 
   const wasStepAttempted = useCallback((step) => Boolean(attemptedSteps[step]), [attemptedSteps]);
 
-  return { markStepAttempted, touchField, shouldShow, wasStepAttempted, attemptedSteps };
+  const resetValidation = useCallback(() => {
+    setAttemptedSteps({});
+    setTouched({});
+  }, []);
+
+  return { markStepAttempted, touchField, shouldShow, wasStepAttempted, attemptedSteps, resetValidation };
 }

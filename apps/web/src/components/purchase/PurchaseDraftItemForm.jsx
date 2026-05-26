@@ -4,6 +4,7 @@ import SingleSelectSearch from "../ui/SingleSelectSearch";
 import RequiredLabel, { FieldValidationMessage } from "../ui/RequiredLabel";
 import UnitSelect from "../ui/UnitSelect";
 import { catalogUserMessage } from "../../lib/catalogFeedback";
+import { isBonificationOnlyLine } from "../../lib/purchaseTotals";
 
 function LineTypePicker({ name, value, onChange }) {
   return (
@@ -39,7 +40,7 @@ export default function PurchaseDraftItemForm({
   listError = "",
   onFieldBlur
 }) {
-  const bonusOnly = Boolean(draftItem.isBonificationOnly);
+  const bonusOnly = isBonificationOnlyLine(draftItem);
   const show = (key) => showFieldValidation && fieldErrors[key];
 
   return (
@@ -102,20 +103,32 @@ export default function PurchaseDraftItemForm({
             onChange={(lineType) => setDraftItem((d) => ({ ...d, lineType }))}
           />
         </div>
-        <label className="purchase-bonus-toggle">
+        <label className={`purchase-bonus-toggle${bonusOnly ? " purchase-bonus-toggle--active" : ""}`}>
           <input
             type="checkbox"
             checked={bonusOnly}
-            onChange={(e) =>
+            onChange={(e) => {
+              const checked = e.target.checked;
               setDraftItem((d) => ({
                 ...d,
-                isBonificationOnly: e.target.checked,
-                unitPrice: e.target.checked ? "0" : d.unitPrice
-              }))
-            }
+                isBonificationOnly: checked,
+                unitPrice: checked
+                  ? "0"
+                  : d.unitPrice && String(d.unitPrice).trim() !== "0"
+                    ? d.unitPrice
+                    : d.bonusUnitValue || "",
+                bonusUnitValue: checked ? d.bonusUnitValue || d.unitPrice : d.bonusUnitValue
+              }));
+            }}
           />
-          <span>Linha só bonificação (sem cobrança)</span>
+          <span>Produto de bonificação (sem cobrança)</span>
         </label>
+        {bonusOnly ? (
+          <p className="purchase-bonus-toggle__hint" role="status">
+            Este produto de bonificação <strong>não entra no total a pagar</strong> da nota — use só para brindes ou
+            amostras grátis.
+          </p>
+        ) : null}
       </section>
 
       <section className="wizard-item-form__section wizard-item-form__metrics" aria-label="Quantidade, unidade e valor">
@@ -137,7 +150,7 @@ export default function PurchaseDraftItemForm({
             />
             {show("quantity") ? (
               <FieldValidationMessage>
-                {bonusOnly ? "Informe a quantidade bonificada." : "Informe a quantidade comprada."}
+                {bonusOnly ? "Informe a quantidade do produto de bonificação." : "Informe a quantidade comprada."}
               </FieldValidationMessage>
             ) : null}
           </div>
@@ -173,7 +186,7 @@ export default function PurchaseDraftItemForm({
         ) : (
           <div className={`field field-wizard wizard-item-form__metric wizard-item-form__metric--full${show("unitPrice") ? " field--invalid" : ""}`}>
             <RequiredLabel htmlFor="draft-bonus-val" required>
-              Valor ref. bonificação (R$)
+              Valor ref. produto de bonificação (R$)
             </RequiredLabel>
             <input
               id="draft-bonus-val"
