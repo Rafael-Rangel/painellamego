@@ -250,6 +250,7 @@ a:not(.nav):not(.btn) {
   .app-main-section,
   .login-card,
   .toast,
+  .wizard-alert--fade-in-left,
   .modal-overlay,
   .modal {
     animation: none !important;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { FaArrowLeft, FaArrowRight, FaCheck, FaCloudUploadAlt, FaFileInvoice, FaShoppingBasket } from "react-icons/fa";
+import { FaArrowLeft, FaArrowRight, FaCheck, FaCloudUploadAlt, FaFileInvoice, FaShoppingBasket, FaTrash } from "react-icons/fa";
 import AppShell from "../components/AppShell";
 import FilePickButton from "../components/ui/FilePickButton";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
@@ -70,6 +70,7 @@ export default function ManagerPurchasePage() {
     draftItem,
     setDraftItem,
     toast,
+    toastType,
     total,
     addItem,
     updateItem,
@@ -304,11 +305,11 @@ export default function ManagerPurchasePage() {
       try {
         const id = await ensureDraftId();
         await uploadReceipts(files, id);
-        setToast("Fotos enviadas. Toque em «Próximo» para conferir (passo 5) antes de publicar.");
+        setToast("Fotos enviadas. Toque em «Próximo» para conferir (passo 5) antes de publicar.", "success");
         setTimeout(() => setToast(""), 4500);
       } catch {
         appendReceipts(files);
-        setToast("Não foi possível enviar agora; os ficheiros ficaram no aparelho. Tente novamente.");
+        setToast("Não foi possível enviar agora; os ficheiros ficaram no aparelho. Tente novamente.", "error");
         setTimeout(() => setToast(""), 5000);
       } finally {
         setUploadingReceipts(false);
@@ -469,7 +470,9 @@ export default function ManagerPurchasePage() {
   const notifyCatalog = useCallback(
     (msg, severity) => {
       if (!msg) return;
-      setToast(msg);
+      const type =
+        severity === "warning" ? "warning" : severity === "error" ? "error" : severity === "success" ? "success" : null;
+      setToast(msg, type);
       const delay = severity === "warning" ? 5500 : 6000;
       setTimeout(() => setToast(""), delay);
     },
@@ -516,9 +519,11 @@ export default function ManagerPurchasePage() {
         <div className="wizard-panel card">
           <WizardAlerts alerts={stepAlerts} />
           {toast ? (
-            <WizardAlert type={toastKindFromMessage(toast)} onDismiss={() => setToast("")}>
-              {toast}
-            </WizardAlert>
+            <div className="wizard-toast-slot" aria-live="polite">
+              <WizardAlert key={toast} type={toastType || toastKindFromMessage(toast)} onDismiss={() => setToast("")}>
+                {toast}
+              </WizardAlert>
+            </div>
           ) : null}
 
           {step === 1 ? (
@@ -677,12 +682,19 @@ export default function ManagerPurchasePage() {
                 e só então «Publicar nota» ou «Salvar rascunho».
               </p>
               {serverReceipts.length ? (
-                <ul className="purchase-draft-receipts">
+                <ul className="purchase-draft-receipts" aria-label="Fotos enviadas">
                   {serverReceipts.map((r) => (
-                    <li key={r.id}>
-                      {r.originalName}
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => void removeServerReceipt(r.id)}>
-                        Remover
+                    <li key={r.id} className="purchase-draft-receipts__item">
+                      <span className="purchase-draft-receipts__name" title={r.originalName || "Anexo"}>
+                        {r.originalName || "Anexo"}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm purchase-draft-receipts__remove"
+                        onClick={() => void removeServerReceipt(r.id)}
+                        aria-label={`Remover ${r.originalName || "anexo"}`}
+                      >
+                        <FaTrash aria-hidden />
                       </button>
                     </li>
                   ))}

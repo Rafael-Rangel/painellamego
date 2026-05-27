@@ -138,7 +138,8 @@ export function usePurchaseForm(token, options = {}) {
   const [draftItem, setDraftItem] = useState({ ...EMPTY_DRAFT_ITEM });
   const [editingItemIndex, setEditingItemIndex] = useState(null);
   const [installments, setInstallments] = useState([]);
-  const [toast, setToast] = useState("");
+  const [toast, setToastState] = useState("");
+  const [toastType, setToastType] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiStage, setAiStage] = useState(null);
   const [aiProgress, setAiProgress] = useState(0);
@@ -152,6 +153,11 @@ export function usePurchaseForm(token, options = {}) {
   const [supplierCreating, setSupplierCreating] = useState(false);
   const [productCreating, setProductCreating] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  const setToast = useCallback((message, type = null) => {
+    setToastState(message || "");
+    setToastType(message ? type : null);
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -276,9 +282,9 @@ export function usePurchaseForm(token, options = {}) {
 
     if (editIdx !== null) {
       setEditingItemIndex(null);
-      setToast("Item atualizado na nota.");
+      setToast("Item atualizado na nota.", "success");
     } else {
-      setToast("Item adicionado à nota.");
+      setToast("Item adicionado à nota.", "success");
     }
     setTimeout(() => setToast(""), 2800);
     setDraftItem({ ...EMPTY_DRAFT_ITEM, unitUsed: d.unitUsed || EMPTY_DRAFT_ITEM.unitUsed });
@@ -677,7 +683,7 @@ export function usePurchaseForm(token, options = {}) {
           },
           activeDraftId
         );
-        setToast("Rascunho guardado. Veja em Histórico para editar ou publicar.");
+        setToast("Rascunho guardado. Veja em Histórico para editar ou publicar.", "success");
         resetAfterSubmit();
         setTimeout(() => setToast(""), 3200);
         return activeDraftId;
@@ -891,7 +897,7 @@ export function usePurchaseForm(token, options = {}) {
         headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" },
         timeout: 120_000
       });
-      setToast("Nota publicada com sucesso.");
+      setToast("Nota publicada com sucesso.", "success");
       resetAfterSubmit();
       setTimeout(() => setToast(""), 2600);
     } catch (err) {
@@ -1174,6 +1180,7 @@ export function usePurchaseForm(token, options = {}) {
     draftItem,
     setDraftItem,
     toast,
+    toastType,
     setToast,
     aiLoading,
     aiStage,
