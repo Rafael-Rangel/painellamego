@@ -31,21 +31,20 @@ export const config = {
   appOrigins: parseOrigins(appOriginRaw),
   authInviteRedirectUrl,
   trustProxy: Number(process.env.TRUST_PROXY ?? 1),
-  openRouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
-  /** Visão + JSON; override com OPENROUTER_MODEL. Lista: https://openrouter.ai/models */
-  openRouterModel: process.env.OPENROUTER_MODEL ?? "google/gemini-2.5-pro",
-  /** OpenRouter recomenda para rankings / depuração (opcional) */
-  openRouterHttpReferer: process.env.OPENROUTER_HTTP_REFERER ?? process.env.APP_ORIGIN ?? "",
-  openRouterAppTitle: process.env.OPENROUTER_APP_TITLE ?? "Lamego Compras",
-  /** Timeout por pedido HTTP ao OpenRouter (evita requisição pendente indefinida na leitura de NF). */
-  openRouterFetchTimeoutMs: Math.min(
+  googleAiApiKey: process.env.GOOGLE_AI_API_KEY ?? "",
+  /** Modelo de visão/OCR da Google AI Studio. */
+  googleAiModel: process.env.GOOGLE_AI_MODEL ?? "gemini-2.5-pro",
+  /** Fallback opcional (deixe vazio para desativar). */
+  googleAiFallbackModel: process.env.GOOGLE_AI_FALLBACK_MODEL ?? "",
+  /** Timeout por pedido HTTP à Google AI (evita requisição pendente indefinida na leitura de NF). */
+  googleAiFetchTimeoutMs: Math.min(
     300_000,
-    Math.max(15_000, Number(process.env.OPENROUTER_FETCH_TIMEOUT_MS ?? 120_000) || 120_000)
+    Math.max(15_000, Number(process.env.GOOGLE_AI_FETCH_TIMEOUT_MS ?? 120_000) || 120_000)
   ),
   /** Limite de tokens na resposta da IA (notas típicas; reduz latência). */
-  openRouterMaxTokens: Math.min(
+  googleAiMaxTokens: Math.min(
     8192,
-    Math.max(2048, Number(process.env.OPENROUTER_MAX_TOKENS ?? 4096) || 4096)
+    Math.max(2048, Number(process.env.GOOGLE_AI_MAX_TOKENS ?? 4096) || 4096)
   ),
   /** Máximo de ficheiros analisados em paralelo por pedido receipt-ai-parse. */
   receiptAiParseConcurrency: Math.min(

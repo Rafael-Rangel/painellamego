@@ -1,5 +1,16 @@
 # Deploy de produção - painellamego.com.br
 
+entre na vps:Ubuntu 24.04 LTS
+Ubuntu 24.04 LTS
+
+KVM 1
+Em atividade
+Acesso root
+
+ssh root@2.24.87.222
+senha root quando pedir:R@09245235NFJASFJ1dh
+
+
 Stack final em produção:
 
 - **Caddy** na borda (TLS Let's Encrypt automático)
@@ -234,13 +245,13 @@ Os fluxos de Auth usam URLs do projeto Supabase. O cadastro de gerente no painel
 
 Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 
-### Leitura de nota com IA (OpenRouter) : “carrega para sempre”
+### Leitura de nota com IA (Google AI Studio direto) : “carrega para sempre”
 
-- **Modelo recomendado em produção:** `OPENROUTER_MODEL=google/gemini-2.5-pro` (visão + JSON). Fallback: `OPENROUTER_FALLBACK_MODEL=google/gemini-2.5-flash`.
-- **Regressão local (amostras WhatsApp):** `node scripts/test-receipt-batch.mjs --only golden` (requer `OPENROUTER_API_KEY`; imagens em `scripts/fixtures/receipt-samples/`).
-- **Causas frequentes:** pedido ao OpenRouter **sem timeout** (ficava pendente até o proxy cortar); **nginx** entre `web` e `api` com `proxy_read_timeout` curto (504); PDF/imagem muito grande; vários ficheiros em sequência; rede lenta.
-- **No código:** cada chamada HTTP ao OpenRouter tem timeout configurável (`OPENROUTER_FETCH_TIMEOUT_MS`, predefinido 120 s); o nginx interno do container `web` usa **300 s** para `/api/`; o browser usa **300 s** neste pedido.
-- **Na VPS:** `docker logs lamego-api-1 --tail 300` (erros OpenRouter, timeout, chave). O **jada-nginx-proxy** usa ~60s por defeito e devolve **502** na análise longa; o deploy aplica `ops/deploy/nginx-proxy/*_location` (300s) via `scripts/apply-nginx-proxy-timeouts-vps.sh`.
+- **Modelo recomendado em produção:** `GOOGLE_AI_MODEL=gemini-2.5-pro` (visão + JSON). Fallback opcional: `GOOGLE_AI_FALLBACK_MODEL` (vazio = desativado).
+- **Regressão local (amostras WhatsApp):** `node scripts/test-receipt-batch.mjs --only golden` (requer `GOOGLE_AI_API_KEY`; imagens em `scripts/fixtures/receipt-samples/`).
+- **Causas frequentes:** pedido à Google AI sem timeout (ficava pendente até o proxy cortar); **nginx** entre `web` e `api` com `proxy_read_timeout` curto (504); PDF/imagem muito grande; vários ficheiros em sequência; rede lenta.
+- **No código:** cada chamada HTTP à Google AI tem timeout configurável (`GOOGLE_AI_FETCH_TIMEOUT_MS`, predefinido 120 s); o nginx interno do container `web` usa **300 s** para `/api/`; o browser usa **300 s** neste pedido.
+- **Na VPS:** `docker logs lamego-api-1 --tail 300` (erros Google AI, timeout, chave). O **jada-nginx-proxy** usa ~60s por defeito e devolve **502** na análise longa; o deploy aplica `ops/deploy/nginx-proxy/*_location` (300s) via `scripts/apply-nginx-proxy-timeouts-vps.sh`.
 - **E2E (imagem → IA → registo):** `E2E_BASE_URL=https://painellamego.com.br node scripts/test-purchase-ai-e2e.mjs` (credenciais em `E2E_MANAGER_EMAIL` / `E2E_MANAGER_PASSWORD` ou seed do README Supabase).
 - **413 no `jada-nginx-proxy`:** o proxy recusava corpos grandes (ex.: ~4,5 MB) com *“client intended to send too large body”* : o pedido **não chegava à API**; no telemóvel parecia carregar muito tempo e falhar. O `docker-compose.nginxproxy.yml` define `CLIENT_MAX_BODY_SIZE: 25m` no serviço `web`; após `git pull`, recria o container `web` (`compose ... up -d --build web`).
 

@@ -125,20 +125,6 @@ function truncateCatalogNames(names, maxItems = 120, maxCharsPerName = 100) {
 /** Limiar de fuzzy match fornecedor na nota (supplierName). */
 const MIN_SUPPLIER_MATCH = 0.55;
 
-function openRouterHeaders() {
-  const h = {
-    Authorization: `Bearer ${config.openRouterApiKey}`,
-    "Content-Type": "application/json"
-  };
-  if (config.openRouterHttpReferer) {
-    h["HTTP-Referer"] = config.openRouterHttpReferer;
-  }
-  if (config.openRouterAppTitle) {
-    h["X-Title"] = config.openRouterAppTitle;
-  }
-  return h;
-}
-
 async function fetchWithTimeout(url, init, timeoutMs) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
@@ -157,61 +143,71 @@ async function fetchWithTimeout(url, init, timeoutMs) {
 }
 
 /** Segundo modelo se o principal esgotar tentativas. */
-function openRouterFallbackModel() {
-  if (process.env.OPENROUTER_FALLBACK_MODEL === "") return null;
-  const v = (process.env.OPENROUTER_FALLBACK_MODEL ?? "anthropic/claude-opus-4.1").trim();
+function googleAiFallbackModel() {
+  const v = String(config.googleAiFallbackModel || "").trim();
   if (!v || /^(off|false|none|0)$/i.test(v)) return null;
-  if (v === config.openRouterModel) return null;
+  if (v === config.googleAiModel) return null;
   return v;
 }
 
-async function callOpenRouterChat({
-  prompt,
-  dataUrl,
-  mimeType,
-  documents,
-  useJsonObject,
-  pdfPlugin,
-  model
-}) {
+function contentPartsForGoogleAi({ prompt, dataUrl, mimeType, documents }) {
   const docParts =
     Array.isArray(documents) && documents.length
       ? visionPartsForDocuments(documents)
       : visionPartsForMime(mimeType, dataUrl);
-  const userContent = [...docParts, { type: "text", text: prompt }];
+  const parts = docParts.map((p) => {
+    if (p.type === "text") return { text: p.text };
+    if (p.type === "image_url") {
+      const dataUrlRaw = p.image_url?.url || "";
+      const m = /^data:([^;]+);base64,(.*)$/i.exec(dataUrlRaw);
+      if (!m) return { text: "" };
+      return {
+        inline_data: {
+          mime_type: m[1],
+          data: m[2]
+        }
+      };
+    }
+    if (p.type === "file") {
+      const dataUrlRaw = p.file?.file_data || "";
+      const m = /^data:([^;]+);base64,(.*)$/i.exec(dataUrlRaw);
+      if (!m) return { text: "" };
+      return {
+        inline_data: {
+          mime_type: m[1],
+          data: m[2]
+        }
+      };
+    }
+    return { text: "" };
+  });
+  parts.push({ text: prompt });
+  return parts;
+}
 
+async function callGoogleAiGenerateContent({ prompt, dataUrl, mimeType, documents, model }) {
+  const selectedModel = model || config.googleAiModel;
   const body = {
-    model: model || config.openRouterModel,
-    temperature: 0.1,
-    max_tokens: config.openRouterMaxTokens,
-    messages: [
+    contents: [
       {
         role: "user",
-        content: userContent
+        parts: contentPartsForGoogleAi({ prompt, dataUrl, mimeType, documents })
       }
-    ]
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: config.googleAiMaxTokens,
+      responseMimeType: "application/json"
+    }
   };
-
-  if (useJsonObject) {
-    body.response_format = { type: "json_object" };
-  }
-
-  const hasPdf =
-    mimeType === "application/pdf" ||
-    (Array.isArray(documents) && documents.some((d) => d?.mimeType === "application/pdf"));
-  const usePdfPlugin = pdfPlugin !== false && hasPdf;
-  if (usePdfPlugin) {
-    body.plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
-  }
-
   const resp = await fetchWithTimeout(
-    "https://openrouter.ai/api/v1/chat/completions",
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(config.googleAiApiKey)}`,
     {
       method: "POST",
-      headers: openRouterHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     },
-    config.openRouterFetchTimeoutMs
+    config.googleAiFetchTimeoutMs
   );
 
   const payload = await resp.json();
@@ -223,61 +219,6 @@ async function callOpenRouterChat({
     throw err;
   }
 
-  return payload;
-}
-
-async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, documents, model }) {
-  let payload;
-  try {
-    payload = await callOpenRouterChat({
-      prompt,
-      dataUrl,
-      mimeType,
-      documents,
-      useJsonObject: true,
-      model
-    });
-  } catch (firstErr) {
-    try {
-      payload = await callOpenRouterChat({
-        prompt,
-        dataUrl,
-        mimeType,
-        documents,
-        useJsonObject: false,
-        model
-      });
-    } catch (secondErr) {
-      const hasPdf =
-        mimeType === "application/pdf" ||
-        (Array.isArray(documents) && documents.some((d) => d?.mimeType === "application/pdf"));
-      if (hasPdf) {
-        try {
-          payload = await callOpenRouterChat({
-            prompt,
-            dataUrl,
-            mimeType,
-            documents,
-            useJsonObject: false,
-            pdfPlugin: false,
-            model
-          });
-        } catch (thirdErr) {
-          const hint = [firstErr, secondErr, thirdErr]
-            .map((e) => String(e?.message || e))
-            .filter(Boolean)
-            .join(" | ");
-          throw new Error(`[${model || config.openRouterModel}] ${hint}`);
-        }
-      } else {
-        const hint = [firstErr, secondErr]
-          .map((e) => String(e?.message || e))
-          .filter(Boolean)
-          .join(" | ");
-        throw new Error(`[${model || config.openRouterModel}] ${hint}`);
-      }
-    }
-  }
   return payload;
 }
 
@@ -498,8 +439,8 @@ export async function parseReceiptWithAI({
   sharedParseCtx = null,
   deferAliasLearning = false
 }) {
-  if (!config.openRouterApiKey) {
-    throw new Error("OPENROUTER_API_KEY não configurada.");
+  if (!config.googleAiApiKey) {
+    throw new Error("GOOGLE_AI_API_KEY não configurada.");
   }
 
   const parseStarted = Date.now();
@@ -574,23 +515,27 @@ export async function parseReceiptWithAI({
     dbPrepMs = Date.now() - prepStarted;
   }
 
-  const models = [config.openRouterModel];
-  const fb = openRouterFallbackModel();
+  const models = [config.googleAiModel];
+  const fb = googleAiFallbackModel();
   if (fb) models.push(fb);
 
   const errors = [];
   for (const model of models) {
     try {
-      const orStarted = Date.now();
-      const payload = await fetchOpenRouterPayloadWithRetries({
+      const aiStarted = Date.now();
+      const payload = await callGoogleAiGenerateContent({
         prompt,
         dataUrl,
         mimeType,
         documents: docParts,
         model
       });
-      const openRouterMs = Date.now() - orStarted;
-      const content = payload?.choices?.[0]?.message?.content || "{}";
+      const aiMs = Date.now() - aiStarted;
+      const content =
+        payload?.candidates?.[0]?.content?.parts
+          ?.map((p) => p?.text || "")
+          .join("\n")
+          .trim() || "{}";
       const parsed = parseJsonFromModelContent(content);
 
       const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
@@ -615,7 +560,7 @@ export async function parseReceiptWithAI({
         inputBytes,
         ms: Date.now() - parseStarted,
         dbPrepMs,
-        openRouterMs,
+        aiMs,
         matchMs,
         items: mapped.items?.length ?? 0,
         model,
@@ -634,5 +579,5 @@ export async function parseReceiptWithAI({
     ms: Date.now() - parseStarted,
     errors
   });
-  throw new Error(`OpenRouter: ${errors.join(" || ")}`);
+  throw new Error(`Google AI: ${errors.join(" || ")}`);
 }
