@@ -10,7 +10,7 @@
  *   RECEIPT_TEST_CATALOG='{"products":[...],"suppliers":[...]}' node scripts/test-receipt-openrouter.mjs nota.png --json
  * DANFE vazio (sem itens/fornecedores no prompt; evita match falso):
  *   node scripts/test-receipt-openrouter.mjs scripts/fixtures/blank-danfe-template.png --empty-catalog --json
- * Requer OPENROUTER_API_KEY no .env (raiz ou apps/api).
+ * Requer OPENAI_API_KEY no .env (raiz ou apps/api); fallback usa OPENROUTER_API_KEY.
  */
 import dotenv from "dotenv";
 import { Buffer } from "node:buffer";
@@ -81,8 +81,8 @@ function loadCatalogFromEnv() {
 }
 
 async function main() {
-  if (!process.env.OPENROUTER_API_KEY) {
-    console.error("SKIP: defina OPENROUTER_API_KEY no .env para rodar este teste.");
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("SKIP: defina OPENAI_API_KEY no .env para rodar este teste.");
     process.exit(2);
   }
 
@@ -121,7 +121,8 @@ async function main() {
   }
 
   console.log("OK: OpenRouter respondeu e o serviço retornou objeto válido.");
-  console.log("  model (env):", process.env.OPENROUTER_MODEL || "(padrão google/gemini-2.0-flash-001)");
+  console.log("  model OpenAI:", process.env.OPENAI_MODEL || "gpt-5.5");
+  console.log("  fallback OR:", process.env.OPENROUTER_FALLBACK_MODEL || "google/gemini-3.1-pro-preview");
   console.log("  itens:", out.items.length, "| missingGlobal:", out.missingGlobal.length);
   if (printJson) {
     console.log("\n--- JSON completo ---");

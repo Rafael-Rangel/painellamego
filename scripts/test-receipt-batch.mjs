@@ -5,7 +5,7 @@
  *   node scripts/test-receipt-batch.mjs
  *   node scripts/test-receipt-batch.mjs --only golden
  *   RECEIPT_BATCH_LIMIT=2 node scripts/test-receipt-batch.mjs
- * Requer OPENROUTER_API_KEY no .env
+ * Requer OPENAI_API_KEY (e opcional OPENROUTER_API_KEY para fallback) no .env
  */
 import dotenv from "dotenv";
 import fs from "node:fs";
@@ -94,8 +94,8 @@ function validateGolden(result, golden) {
 }
 
 async function main() {
-  if (!process.env.OPENROUTER_API_KEY) {
-    console.error("Defina OPENROUTER_API_KEY no .env");
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("Defina OPENAI_API_KEY no .env");
     process.exit(1);
   }
 
@@ -109,7 +109,8 @@ async function main() {
   }
   if (limit > 0) files = files.slice(0, limit);
 
-  console.log(`Modelo: ${process.env.OPENROUTER_MODEL || "(default config)"}`);
+  console.log(`Modelo OpenAI: ${process.env.OPENAI_MODEL || "gpt-5.5"}`);
+  console.log(`Fallback OR: ${process.env.OPENROUTER_FALLBACK_MODEL || "(default config)"}`);
   console.log(`Amostras: ${files.length}\n`);
 
   let passed = 0;

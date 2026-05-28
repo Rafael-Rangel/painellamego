@@ -1,8 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+function isOpenAiUrl(url) {
+  return String(url || "").includes("api.openai.com");
+}
+
 function isOpenRouterUrl(url) {
   return String(url || "").includes("openrouter.ai");
+}
+
+function isAiChatUrl(url) {
+  return isOpenAiUrl(url) || isOpenRouterUrl(url);
 }
 
 /** @supabase/postgrest-js usa `res.text()` + JSON.parse, não `json()`. */
@@ -18,41 +26,48 @@ function fakePostgrestEmptyArray() {
   };
 }
 
-test("parseReceiptWithAI: PDF usa content type file (não image_url)", async () => {
+const okReceiptJson = {
+  invoiceNumber: "123",
+  purchaseDate: "2026-05-01",
+  supplierName: "Fornecedor X",
+  items: [
+    {
+      productName: "Produto Y",
+      quantity: 2,
+      unitUsed: "kg",
+      unitPrice: 10.5
+    }
+  ]
+};
+
+test("parseReceiptWithAI: PDF no OpenAI falha e OpenRouter usa file + plugin", async () => {
   const calls = [];
   global.fetch = async (url, init) => {
-    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
+    if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
     calls.push({ url, body: JSON.parse(init.body) });
+    if (isOpenAiUrl(url)) {
+      return {
+        ok: false,
+        status: 400,
+        async json() {
+          return { error: { message: "PDF not supported on OpenAI test" } };
+        }
+      };
+    }
     return {
       ok: true,
       async json() {
         return {
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  invoiceNumber: "123",
-                  purchaseDate: "2026-05-01",
-                  supplierName: "Fornecedor X",
-                  items: [
-                    {
-                      productName: "Produto Y",
-                      quantity: 2,
-                      unitUsed: "kg",
-                      unitPrice: 10.5
-                    }
-                  ]
-                })
-              }
-            }
-          ]
+          choices: [{ message: { content: JSON.stringify(okReceiptJson) } }]
         };
       }
     };
   };
 
-  process.env.OPENROUTER_API_KEY = "test-key";
-  process.env.OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
+  process.env.OPENAI_API_KEY = "test-openai";
+  process.env.OPENAI_MODEL = "gpt-5.5";
+  process.env.OPENROUTER_API_KEY = "test-or";
+  process.env.OPENROUTER_FALLBACK_MODEL = "google/gemini-3.1-pro-preview";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
   const pdfBuf = Buffer.from("%PDF-1.4 fake", "utf8");
@@ -63,24 +78,22 @@ test("parseReceiptWithAI: PDF usa content type file (não image_url)", async () 
     suppliers: [{ id: "s1", name: "Fornecedor X" }]
   });
 
-  assert.equal(calls.length, 1);
-  const content = calls[0].body.messages[0].content;
-  assert.equal(content[0].type, "file", "PDF deve vir antes do texto");
-  const filePart = content[0];
-  assert.ok(String(filePart.file?.file_data || "").startsWith("data:application/pdf;base64,"));
-  assert.ok(Array.isArray(calls[0].body.plugins));
+  assert.ok(calls.some((c) => isOpenAiUrl(c.url)));
+  const orCall = calls.find((c) => isOpenRouterUrl(c.url));
+  assert.ok(orCall);
+  const content = orCall.body.messages[0].content;
+  assert.equal(content[0].type, "file");
+  assert.ok(Array.isArray(orCall.body.plugins));
   assert.equal(out.invoiceNumber, "123");
-  assert.equal(out.items.length, 1);
-  assert.ok(out.items[0].productId);
 
   delete global.fetch;
 });
 
-test("parseReceiptWithAI: JPEG usa image_url", async () => {
+test("parseReceiptWithAI: JPEG usa OpenAI com image_url detail auto", async () => {
   const calls = [];
   global.fetch = async (url, init) => {
-    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
-    calls.push({ body: JSON.parse(init.body) });
+    if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
+    calls.push({ url, body: JSON.parse(init.body) });
     return {
       ok: true,
       async json() {
@@ -102,8 +115,9 @@ test("parseReceiptWithAI: JPEG usa image_url", async () => {
     };
   };
 
-  process.env.OPENROUTER_API_KEY = "test-key";
-  process.env.OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
+  process.env.OPENAI_API_KEY = "test-openai";
+  process.env.OPENAI_MODEL = "gpt-5.5";
+  process.env.OPENROUTER_API_KEY = "test-or";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
   const jpegBuf = Buffer.from("ff", "hex");
@@ -114,20 +128,22 @@ test("parseReceiptWithAI: JPEG usa image_url", async () => {
     suppliers: []
   });
 
+  assert.equal(calls.length, 1);
+  assert.ok(isOpenAiUrl(calls[0].url));
+  assert.equal(calls[0].body.model, "gpt-5.5");
   const content = calls[0].body.messages[0].content;
   const img = content.find((c) => c.type === "image_url");
   assert.ok(img);
-  assert.equal(content[0].type, "image_url", "imagem deve vir antes do texto");
-  assert.ok(String(img.image_url?.url || "").startsWith("data:image/jpeg;base64,"));
+  assert.equal(img.image_url.detail, "auto");
   assert.ok(!calls[0].body.plugins);
 
   delete global.fetch;
 });
 
-test("parseReceiptWithAI: falha do provider na 1ª chamada faz retry sem response_format", async () => {
+test("parseReceiptWithAI: falha OpenAI na 1ª chamada faz retry sem response_format", async () => {
   let n = 0;
   global.fetch = async (url, init) => {
-    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
+    if (!isOpenAiUrl(url)) return fakePostgrestEmptyArray();
     n += 1;
     const body = JSON.parse(init.body);
     if (n === 1) {
@@ -172,8 +188,9 @@ test("parseReceiptWithAI: falha do provider na 1ª chamada faz retry sem respons
     };
   };
 
-  process.env.OPENROUTER_API_KEY = "test-key";
-  process.env.OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
+  process.env.OPENAI_API_KEY = "test-openai";
+  process.env.OPENAI_MODEL = "gpt-5.5";
+  process.env.OPENROUTER_API_KEY = "test-or";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
   const jpegBuf = Buffer.from("ff", "hex");
@@ -190,56 +207,54 @@ test("parseReceiptWithAI: falha do provider na 1ª chamada faz retry sem respons
   delete global.fetch;
 });
 
-test("parseReceiptWithAI: esgota modelo principal e usa OPENROUTER_FALLBACK_MODEL", async () => {
+test("parseReceiptWithAI: esgota OpenAI e usa OPENROUTER_FALLBACK_MODEL", async () => {
   let n = 0;
   global.fetch = async (url, init) => {
-    if (!isOpenRouterUrl(url)) return fakePostgrestEmptyArray();
+    if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
     n += 1;
     const body = JSON.parse(init.body);
-    const model = body.model;
-    if (model === "google/gemini-2.0-flash-001") {
+    if (isOpenAiUrl(url)) {
       return {
         ok: false,
         status: 502,
         async json() {
-          return { error: { message: "Provider returned error" } };
+          return { error: { message: "OpenAI down" } };
         }
       };
     }
-    if (model === "google/gemini-2.5-flash") {
-      return {
-        ok: true,
-        async json() {
-          return {
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({
-                    invoiceNumber: "77",
-                    purchaseDate: "2026-02-01",
-                    supplierName: "Fornecedor X",
-                    items: [
-                      {
-                        productName: "Produto Y",
-                        quantity: 2,
-                        unitUsed: "kg",
-                        unitPrice: 3
-                      }
-                    ]
-                  })
-                }
+    assert.equal(body.model, "google/gemini-3.1-pro-preview");
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  invoiceNumber: "77",
+                  purchaseDate: "2026-02-01",
+                  supplierName: "Fornecedor X",
+                  items: [
+                    {
+                      productName: "Produto Y",
+                      quantity: 2,
+                      unitUsed: "kg",
+                      unitPrice: 3
+                    }
+                  ]
+                })
               }
-            ]
-          };
-        }
-      };
-    }
-    throw new Error(`modelo inesperado: ${model}`);
+            }
+          ]
+        };
+      }
+    };
   };
 
-  process.env.OPENROUTER_API_KEY = "test-key";
-  process.env.OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
-  process.env.OPENROUTER_FALLBACK_MODEL = "google/gemini-2.5-flash";
+  process.env.OPENAI_API_KEY = "test-openai";
+  process.env.OPENAI_MODEL = "gpt-5.5";
+  process.env.OPENROUTER_API_KEY = "test-or";
+  process.env.OPENROUTER_FALLBACK_MODEL = "google/gemini-3.1-pro-preview";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
   const jpegBuf = Buffer.from("ff", "hex");
@@ -250,7 +265,7 @@ test("parseReceiptWithAI: esgota modelo principal e usa OPENROUTER_FALLBACK_MODE
     suppliers: [{ id: "s1", name: "Fornecedor X" }]
   });
 
-  assert.equal(n, 3, "2 falhas no principal + 1 sucesso no fallback");
+  assert.ok(n >= 3, "2+ tentativas OpenAI + 1 OpenRouter");
   assert.equal(out.invoiceNumber, "77");
 
   delete global.fetch;

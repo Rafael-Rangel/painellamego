@@ -142,72 +142,131 @@ async function fetchWithTimeout(url, init, timeoutMs) {
   }
 }
 
-/** Segundo modelo se o principal esgotar tentativas. */
-function googleAiFallbackModel() {
-  const v = String(config.googleAiFallbackModel || "").trim();
-  if (!v || /^(off|false|none|0)$/i.test(v)) return null;
-  if (v === config.googleAiModel) return null;
-  return v;
+function openRouterHeaders() {
+  const h = {
+    Authorization: `Bearer ${config.openRouterApiKey}`,
+    "Content-Type": "application/json"
+  };
+  if (config.openRouterHttpReferer) {
+    h["HTTP-Referer"] = config.openRouterHttpReferer;
+  }
+  if (config.openRouterAppTitle) {
+    h["X-Title"] = config.openRouterAppTitle;
+  }
+  return h;
 }
 
-function contentPartsForGoogleAi({ prompt, dataUrl, mimeType, documents }) {
-  const docParts =
-    Array.isArray(documents) && documents.length
-      ? visionPartsForDocuments(documents)
-      : visionPartsForMime(mimeType, dataUrl);
-  const parts = docParts.map((p) => {
-    if (p.type === "text") return { text: p.text };
-    if (p.type === "image_url") {
-      const dataUrlRaw = p.image_url?.url || "";
-      const m = /^data:([^;]+);base64,(.*)$/i.exec(dataUrlRaw);
-      if (!m) return { text: "" };
-      return {
-        inline_data: {
-          mime_type: m[1],
-          data: m[2]
+function openAiHeaders() {
+  return {
+    Authorization: `Bearer ${config.openaiApiKey}`,
+    "Content-Type": "application/json"
+  };
+}
+
+/** OpenAI: detail auto preserva mais detalhe em imagens (GPT-5.5). */
+function visionPartsForOpenAi(mimeType, dataUrl) {
+  if (mimeType === "application/pdf") {
+    return [
+      {
+        type: "file",
+        file: {
+          filename: "nota-fiscal.pdf",
+          file_data: dataUrl
         }
-      };
+      }
+    ];
+  }
+  return [
+    {
+      type: "image_url",
+      image_url: { url: dataUrl, detail: "auto" }
     }
-    if (p.type === "file") {
-      const dataUrlRaw = p.file?.file_data || "";
-      const m = /^data:([^;]+);base64,(.*)$/i.exec(dataUrlRaw);
-      if (!m) return { text: "" };
-      return {
-        inline_data: {
-          mime_type: m[1],
-          data: m[2]
-        }
-      };
-    }
-    return { text: "" };
-  });
-  parts.push({ text: prompt });
+  ];
+}
+
+function visionPartsForOpenAiDocuments(documents = []) {
+  const parts = [];
+  for (let i = 0; i < documents.length; i += 1) {
+    const doc = documents[i];
+    parts.push({ type: "text", text: `Página ${i + 1}/${documents.length}` });
+    parts.push(...visionPartsForOpenAi(doc.mimeType, doc.dataUrl));
+  }
   return parts;
 }
 
-async function callGoogleAiGenerateContent({ prompt, dataUrl, mimeType, documents, model }) {
-  const selectedModel = model || config.googleAiModel;
+function openRouterFallbackModel() {
+  if (process.env.OPENROUTER_FALLBACK_MODEL === "") return null;
+  const v = String(config.openRouterFallbackModel || "").trim();
+  if (!v || /^(off|false|none|0)$/i.test(v)) return null;
+  return v;
+}
+
+function buildUserMessageContent({ prompt, dataUrl, mimeType, documents, provider }) {
+  const docParts =
+    Array.isArray(documents) && documents.length
+      ? provider === "openai"
+        ? visionPartsForOpenAiDocuments(documents)
+        : visionPartsForDocuments(documents)
+      : provider === "openai"
+        ? visionPartsForOpenAi(mimeType, dataUrl)
+        : visionPartsForMime(mimeType, dataUrl);
+  return [...docParts, { type: "text", text: prompt }];
+}
+
+async function callChatCompletions({
+  provider,
+  prompt,
+  dataUrl,
+  mimeType,
+  documents,
+  useJsonObject,
+  pdfPlugin,
+  model
+}) {
+  const isOpenAi = provider === "openai";
+  const url = isOpenAi
+    ? "https://api.openai.com/v1/chat/completions"
+    : "https://openrouter.ai/api/v1/chat/completions";
+  const headers = isOpenAi ? openAiHeaders() : openRouterHeaders();
+  const timeoutMs = isOpenAi ? config.openaiFetchTimeoutMs : config.openRouterFetchTimeoutMs;
+  const maxTokens = isOpenAi ? config.openaiMaxTokens : config.openRouterMaxTokens;
+  const selectedModel =
+    model || (isOpenAi ? config.openaiModel : config.openRouterFallbackModel);
+
   const body = {
-    contents: [
+    model: selectedModel,
+    temperature: 0.1,
+    max_tokens: maxTokens,
+    messages: [
       {
         role: "user",
-        parts: contentPartsForGoogleAi({ prompt, dataUrl, mimeType, documents })
+        content: buildUserMessageContent({ prompt, dataUrl, mimeType, documents, provider })
       }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: config.googleAiMaxTokens,
-      responseMimeType: "application/json"
-    }
+    ]
   };
+
+  if (useJsonObject) {
+    body.response_format = { type: "json_object" };
+  }
+
+  if (!isOpenAi) {
+    const hasPdf =
+      mimeType === "application/pdf" ||
+      (Array.isArray(documents) && documents.some((d) => d?.mimeType === "application/pdf"));
+    const usePdfPlugin = pdfPlugin !== false && hasPdf;
+    if (usePdfPlugin) {
+      body.plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
+    }
+  }
+
   const resp = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(config.googleAiApiKey)}`,
+    url,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body)
     },
-    config.googleAiFetchTimeoutMs
+    timeoutMs
   );
 
   const payload = await resp.json();
@@ -220,6 +279,69 @@ async function callGoogleAiGenerateContent({ prompt, dataUrl, mimeType, document
   }
 
   return payload;
+}
+
+async function fetchChatPayloadWithRetries({ provider, prompt, dataUrl, mimeType, documents, model }) {
+  const label = model || (provider === "openai" ? config.openaiModel : config.openRouterFallbackModel);
+  let payload;
+  try {
+    payload = await callChatCompletions({
+      provider,
+      prompt,
+      dataUrl,
+      mimeType,
+      documents,
+      useJsonObject: true,
+      model
+    });
+  } catch (firstErr) {
+    try {
+      payload = await callChatCompletions({
+        provider,
+        prompt,
+        dataUrl,
+        mimeType,
+        documents,
+        useJsonObject: false,
+        model
+      });
+    } catch (secondErr) {
+      const hasPdf =
+        mimeType === "application/pdf" ||
+        (Array.isArray(documents) && documents.some((d) => d?.mimeType === "application/pdf"));
+      if (provider === "openrouter" && hasPdf) {
+        try {
+          payload = await callChatCompletions({
+            provider,
+            prompt,
+            dataUrl,
+            mimeType,
+            documents,
+            useJsonObject: false,
+            pdfPlugin: false,
+            model
+          });
+        } catch (thirdErr) {
+          const hint = [firstErr, secondErr, thirdErr]
+            .map((e) => String(e?.message || e))
+            .filter(Boolean)
+            .join(" | ");
+          throw new Error(`[${label}] ${hint}`);
+        }
+      } else {
+        const hint = [firstErr, secondErr]
+          .map((e) => String(e?.message || e))
+          .filter(Boolean)
+          .join(" | ");
+        throw new Error(`[${label}] ${hint}`);
+      }
+    }
+  }
+  return payload;
+}
+
+function extractMessageContent(payload) {
+  return payload?.choices?.[0]?.message?.content || "{}";
 }
 
 function dedupeRawItems(rawItems = []) {
@@ -439,8 +561,8 @@ export async function parseReceiptWithAI({
   sharedParseCtx = null,
   deferAliasLearning = false
 }) {
-  if (!config.googleAiApiKey) {
-    throw new Error("GOOGLE_AI_API_KEY não configurada.");
+  if (!config.openaiApiKey) {
+    throw new Error("OPENAI_API_KEY não configurada.");
   }
 
   const parseStarted = Date.now();
@@ -515,15 +637,18 @@ export async function parseReceiptWithAI({
     dbPrepMs = Date.now() - prepStarted;
   }
 
-  const models = [config.googleAiModel];
-  const fb = googleAiFallbackModel();
-  if (fb) models.push(fb);
+  const attempts = [{ provider: "openai", model: config.openaiModel }];
+  const fb = openRouterFallbackModel();
+  if (fb && config.openRouterApiKey) {
+    attempts.push({ provider: "openrouter", model: fb });
+  }
 
   const errors = [];
-  for (const model of models) {
+  for (const { provider, model } of attempts) {
     try {
       const aiStarted = Date.now();
-      const payload = await callGoogleAiGenerateContent({
+      const payload = await fetchChatPayloadWithRetries({
+        provider,
         prompt,
         dataUrl,
         mimeType,
@@ -531,11 +656,7 @@ export async function parseReceiptWithAI({
         model
       });
       const aiMs = Date.now() - aiStarted;
-      const content =
-        payload?.candidates?.[0]?.content?.parts
-          ?.map((p) => p?.text || "")
-          .join("\n")
-          .trim() || "{}";
+      const content = extractMessageContent(payload);
       const parsed = parseJsonFromModelContent(content);
 
       const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
@@ -563,6 +684,7 @@ export async function parseReceiptWithAI({
         aiMs,
         matchMs,
         items: mapped.items?.length ?? 0,
+        provider,
         model,
         documentType: mapped.documentType,
         aliasDeferred: deferAliasLearning ? aliasTasks.length : 0
@@ -579,5 +701,5 @@ export async function parseReceiptWithAI({
     ms: Date.now() - parseStarted,
     errors
   });
-  throw new Error(`Google AI: ${errors.join(" || ")}`);
+  throw new Error(`IA (OpenAI/OpenRouter): ${errors.join(" || ")}`);
 }
