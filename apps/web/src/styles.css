@@ -3311,6 +3311,15 @@ tbody tr:last-child td {
   font-weight: 800;
 }
 
+/* Admin dashboard: mostra mais caracteres da loja antes do ellipsis. */
+.admin-store-name {
+  display: inline-block;
+  max-width: 17rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .price-pill {
   display: inline-flex;
   align-items: center;

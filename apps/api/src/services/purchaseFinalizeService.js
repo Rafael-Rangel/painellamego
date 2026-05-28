@@ -2,7 +2,6 @@ import {
   isBonificationOnlyLine,
   parseBrNumber,
   purchaseTotalsFromItems,
-  hasChargeablePurchaseContent,
   validateInstallmentsAgainstPayable
 } from "@lamego/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
@@ -58,14 +57,6 @@ export async function finalizePurchase({
   draftId = null
 }) {
   const { totalPayable, totalBonusValue } = purchaseTotalsFromItems(items);
-
-  if (!hasChargeablePurchaseContent(items)) {
-    const err = new Error(
-      "O total da nota está zerado. Informe quantidade e preço unitário em pelo menos um item."
-    );
-    err.statusCode = 400;
-    throw err;
-  }
 
   let inst = installments || [];
   if (!inst.length) {

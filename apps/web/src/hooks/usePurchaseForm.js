@@ -13,7 +13,6 @@ import {
   parseBrNumber,
   purchaseTotalsFromItems,
   purchaseTotalsWithDraft,
-  hasChargeablePurchaseContent,
   validateInstallmentsAgainstPayable
 } from "../lib/purchaseTotals";
 import { MAX_RECEIPT_FILES, mergeUniqueReceiptFiles, receiptFileKey } from "../lib/receiptFiles";
@@ -572,11 +571,6 @@ export function usePurchaseForm(token, options = {}) {
         setTimeout(() => setToast(""), 4500);
         return null;
       }
-      if (!hasChargeablePurchaseContent(items)) {
-        setToast("Informe quantidade e valor unitário para calcular o total da nota.");
-        setTimeout(() => setToast(""), 4500);
-        return null;
-      }
       setConfirming(true);
       const workItems = [...items];
       for (let i = 0; i < workItems.length; i += 1) {
@@ -785,12 +779,6 @@ export function usePurchaseForm(token, options = {}) {
     }
 
     const { totalPayable } = purchaseTotalsFromItems(workItems);
-    if (!hasChargeablePurchaseContent(workItems)) {
-      setToast("O total da nota está zerado. Revise quantidade e preço dos itens.");
-      setTimeout(() => setToast(""), 5000);
-      setConfirming(false);
-      return;
-    }
     if (installments.length > 0) {
       const instCheck = validateInstallmentsAgainstPayable(installments, totalPayable);
       if (!instCheck.ok && totalPayable > 0) {

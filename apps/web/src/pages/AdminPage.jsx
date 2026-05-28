@@ -847,7 +847,16 @@ export default function AdminPage() {
                         </span>
                       )
                     },
-                    { id: "store_name", label: "Loja", render: (r) => <span className="price-store">{r.store_name}</span> },
+                    {
+                      id: "store_name",
+                      label: "Loja",
+                      clamp: false,
+                      render: (r) => (
+                        <span className="price-store admin-store-name" title={r.store_name}>
+                          {r.store_name}
+                        </span>
+                      )
+                    },
                     { id: "supplier_name", label: "Fornecedor", render: (r) => <span className="badge badge-info">{r.supplier_name}</span> },
                     { id: "invoice_number", label: "NF", render: (r) => <span className="badge badge-warning">{r.invoice_number || "-"}</span> },
                     { id: "total", label: "Total", render: (r) => <span className="price-pill price-high">{formatCurrency(r.total || 0)}</span> }
@@ -855,6 +864,7 @@ export default function AdminPage() {
                   rows={(dashboardSummary?.recentPurchases || []).slice(0, 8)}
                   keyField="purchase_id"
                   loading={loading}
+                scrollHorizontal
                   emptyMessage="Sem compras para este produto no recorte selecionado."
                 />
               </DataCard>
@@ -869,8 +879,22 @@ export default function AdminPage() {
             >
               <CompactTable
                 columns={[
-                  { id: "store_name", label: "Loja", render: (r) => <span className="price-store">{r.store_name}</span> },
-                  { id: "product_name", label: "Produto", render: (r) => <span className="badge badge-info">{r.product_name}</span> },
+                  {
+                    id: "store_name",
+                    label: "Loja",
+                    clamp: false,
+                    render: (r) => (
+                      <span className="price-store admin-store-name" title={r.store_name}>
+                        {r.store_name}
+                      </span>
+                    )
+                  },
+                  {
+                    id: "product_name",
+                    label: "Produto",
+                    clamp: false,
+                    render: (r) => <span className="badge badge-info">{r.product_name}</span>
+                  },
                   {
                     id: "store_avg_price",
                     label: "Média loja",
@@ -888,6 +912,7 @@ export default function AdminPage() {
                 rows={topDashboardOpportunities}
                 keyField={activeProductId ? "store_name" : "product_id"}
                 loading={loading}
+                scrollHorizontal
                 emptyMessage="Sem oportunidades para este recorte."
               />
             </DataCard>

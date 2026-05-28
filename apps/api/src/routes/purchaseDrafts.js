@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
-import { purchaseTotalsFromItems, hasChargeablePurchaseContent } from "@lamego/shared";
+import { purchaseTotalsFromItems } from "@lamego/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth, resolveStoreScope } from "../middleware/auth.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
@@ -300,12 +300,6 @@ router.post(
       ...item,
       purchaseDate: normalizePurchaseDate(item.purchaseDate) || draft.purchase_date
     }));
-
-    if (!hasChargeablePurchaseContent(items)) {
-      return res.status(400).json({
-        message: "O total da nota está zerado. Informe quantidade e preço unitário em pelo menos um item."
-      });
-    }
 
     let installments = draft.installments_json || [];
     if (req.body?.installments) {

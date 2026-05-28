@@ -9,8 +9,6 @@ import { finalizePurchase, deletePurchaseCascade } from "../services/purchaseFin
 import { getManagerStoreIds } from "../services/scopeService.js";
 import purchaseDraftRoutes from "./purchaseDrafts.js";
 import { gatherReceiptFiles, normalizePurchaseDate } from "./purchaseRouteUtils.js";
-import { mapWithConcurrency } from "../lib/mapWithConcurrency.js";
-import { config } from "../config.js";
 import { buildReceiptParseContext } from "../services/receiptParseContext.js";
 import { parseReceiptWithAI } from "../services/receiptAiService.js";
 
@@ -109,14 +107,6 @@ router.post(
     });
 
     try {
-    const aggregate = {
-      invoiceNumber: null,
-      purchaseDate: null,
-      supplierSuggestion: null,
-      items: [],
-      missingGlobal: [],
-      documentTotals: null
-    };
     const supplierIdHint = req.body?.supplierId ? String(req.body.supplierId).trim() : "";
     const supplierIdForParse = supplierIdHint && /^[0-9a-f-]{36}$/i.test(supplierIdHint) ? supplierIdHint : null;
 
@@ -129,51 +119,24 @@ router.post(
     });
     const ctxMs = Date.now() - ctxStarted;
 
-    const deferredAliasTasks = [];
-    const parsedList = await mapWithConcurrency(
-      receiptFiles,
-      config.receiptAiParseConcurrency,
-      async (file) => {
-        const fileStarted = Date.now();
-        const parsed = await parseReceiptWithAI({
-          imageBuffer: file.buffer,
-          mimeType: file.mimetype,
-          products: products || [],
-          suppliers: suppliers || [],
-          categories,
-          supplierIdHint: supplierIdForParse,
-          userId: req.user?.id || null,
-          sharedParseCtx,
-          deferAliasLearning: true
-        });
-        console.info("[receipt-ai-parse] ficheiro", {
-          name: file.originalname,
-          bytes: file.buffer?.length ?? 0,
-          ms: Date.now() - fileStarted,
-          items: parsed.items?.length ?? 0
-        });
-        if (parsed._deferredAliasTasks?.length) {
-          deferredAliasTasks.push(...parsed._deferredAliasTasks);
-        }
-        delete parsed._deferredAliasTasks;
-        return parsed;
-      }
-    );
-
-    for (const parsed of parsedList) {
-      if (!aggregate.invoiceNumber && parsed.invoiceNumber) aggregate.invoiceNumber = parsed.invoiceNumber;
-      if (!aggregate.purchaseDate && parsed.purchaseDate) aggregate.purchaseDate = parsed.purchaseDate;
-      if (!aggregate.supplierSuggestion && parsed.supplierSuggestion) aggregate.supplierSuggestion = parsed.supplierSuggestion;
-      aggregate.items.push(...(parsed.items || []));
-      aggregate.missingGlobal.push(...(parsed.missingGlobal || []));
-      if (!aggregate.documentTotals && parsed.documentTotals) {
-        aggregate.documentTotals = parsed.documentTotals;
-      }
-    }
-    aggregate.missingGlobal = [...new Set(aggregate.missingGlobal)];
+    const parseStarted = Date.now();
+    const aggregate = await parseReceiptWithAI({
+      documents: receiptFiles.map((f) => ({ buffer: f.buffer, mimeType: f.mimetype })),
+      products: products || [],
+      suppliers: suppliers || [],
+      categories,
+      supplierIdHint: supplierIdForParse,
+      userId: req.user?.id || null,
+      sharedParseCtx,
+      deferAliasLearning: true
+    });
+    const deferredAliasTasks = aggregate._deferredAliasTasks || [];
+    delete aggregate._deferredAliasTasks;
+    aggregate.missingGlobal = [...new Set(aggregate.missingGlobal || [])];
     console.info("[receipt-ai-parse] ok", {
       userId: req.user?.id,
       ms: Date.now() - reqStarted,
+      parseMs: Date.now() - parseStarted,
       ctxMs,
       catalogLines: sharedParseCtx.catalogLines,
       items: aggregate.items.length,

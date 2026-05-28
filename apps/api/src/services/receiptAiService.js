@@ -103,6 +103,18 @@ function visionPartsForMime(mimeType, dataUrl) {
   ];
 }
 
+/** Várias páginas/imagens devem ser tratadas como UM documento único. */
+function visionPartsForDocuments(documents = []) {
+  const parts = [];
+  for (let i = 0; i < documents.length; i += 1) {
+    const doc = documents[i];
+    const pageLabel = `Página ${i + 1}/${documents.length}`;
+    parts.push({ type: "text", text: pageLabel });
+    parts.push(...visionPartsForMime(doc.mimeType, doc.dataUrl));
+  }
+  return parts;
+}
+
 function truncateCatalogNames(names, maxItems = 120, maxCharsPerName = 100) {
   return (names || [])
     .map((n) => String(n || "").trim().slice(0, maxCharsPerName))
@@ -147,14 +159,26 @@ async function fetchWithTimeout(url, init, timeoutMs) {
 /** Segundo modelo se o principal esgotar tentativas. */
 function openRouterFallbackModel() {
   if (process.env.OPENROUTER_FALLBACK_MODEL === "") return null;
-  const v = (process.env.OPENROUTER_FALLBACK_MODEL ?? "google/gemini-2.5-flash").trim();
+  const v = (process.env.OPENROUTER_FALLBACK_MODEL ?? "anthropic/claude-opus-4.1").trim();
   if (!v || /^(off|false|none|0)$/i.test(v)) return null;
   if (v === config.openRouterModel) return null;
   return v;
 }
 
-async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pdfPlugin, model }) {
-  const userContent = [...visionPartsForMime(mimeType, dataUrl), { type: "text", text: prompt }];
+async function callOpenRouterChat({
+  prompt,
+  dataUrl,
+  mimeType,
+  documents,
+  useJsonObject,
+  pdfPlugin,
+  model
+}) {
+  const docParts =
+    Array.isArray(documents) && documents.length
+      ? visionPartsForDocuments(documents)
+      : visionPartsForMime(mimeType, dataUrl);
+  const userContent = [...docParts, { type: "text", text: prompt }];
 
   const body = {
     model: model || config.openRouterModel,
@@ -172,7 +196,10 @@ async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pd
     body.response_format = { type: "json_object" };
   }
 
-  const usePdfPlugin = pdfPlugin !== false && mimeType === "application/pdf";
+  const hasPdf =
+    mimeType === "application/pdf" ||
+    (Array.isArray(documents) && documents.some((d) => d?.mimeType === "application/pdf"));
+  const usePdfPlugin = pdfPlugin !== false && hasPdf;
   if (usePdfPlugin) {
     body.plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
   }
@@ -199,20 +226,38 @@ async function callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject, pd
   return payload;
 }
 
-async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, model }) {
+async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, documents, model }) {
   let payload;
   try {
-    payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: true, model });
+    payload = await callOpenRouterChat({
+      prompt,
+      dataUrl,
+      mimeType,
+      documents,
+      useJsonObject: true,
+      model
+    });
   } catch (firstErr) {
     try {
-      payload = await callOpenRouterChat({ prompt, dataUrl, mimeType, useJsonObject: false, model });
+      payload = await callOpenRouterChat({
+        prompt,
+        dataUrl,
+        mimeType,
+        documents,
+        useJsonObject: false,
+        model
+      });
     } catch (secondErr) {
-      if (mimeType === "application/pdf") {
+      const hasPdf =
+        mimeType === "application/pdf" ||
+        (Array.isArray(documents) && documents.some((d) => d?.mimeType === "application/pdf"));
+      if (hasPdf) {
         try {
           payload = await callOpenRouterChat({
             prompt,
             dataUrl,
             mimeType,
+            documents,
             useJsonObject: false,
             pdfPlugin: false,
             model
@@ -236,9 +281,27 @@ async function fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, mo
   return payload;
 }
 
+function dedupeRawItems(rawItems = []) {
+  const seen = new Set();
+  const out = [];
+  for (const it of rawItems || []) {
+    const key = [
+      normalizeText(it?.catalogProductName || it?.productNameNormalized || it?.productName || ""),
+      Number(it?.quantity ?? 0) || 0,
+      Number(it?.unitPrice ?? 0) || 0,
+      Number(it?.lineTotal ?? 0) || 0,
+      normalizeText(it?.unitUsed || "")
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+  }
+  return out;
+}
+
 function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allowedUnits = []) {
   const supplierMatch = bestMatchByName(parsed?.supplierName, suppliers, "name");
-  const rawItems = parsed?.items || [];
+  const rawItems = dedupeRawItems(parsed?.items || []);
   const singleLine = rawItems.length === 1;
 
   const aliasByKey = matchCtx?.aliasByKey instanceof Map ? matchCtx.aliasByKey : new Map();
@@ -426,6 +489,7 @@ export function collectReceiptAliasLearningTasks(mapped, supplierIdForLearn) {
 export async function parseReceiptWithAI({
   imageBuffer,
   mimeType,
+  documents = null,
   products = [],
   suppliers = [],
   categories = [],
@@ -442,8 +506,20 @@ export async function parseReceiptWithAI({
   const inputBytes = imageBuffer?.length ?? 0;
   console.info("[receipt-ai] parse início", { mimeType, inputBytes, userId: userId || null });
 
-  const base64 = imageBuffer.toString("base64");
-  const dataUrl = `data:${mimeType};base64,${base64}`;
+  let dataUrl = null;
+  let docParts = null;
+  if (Array.isArray(documents) && documents.length) {
+    docParts = documents.map((d) => {
+      const b64 = d.buffer.toString("base64");
+      return {
+        mimeType: d.mimeType,
+        dataUrl: `data:${d.mimeType};base64,${b64}`
+      };
+    });
+  } else {
+    const base64 = imageBuffer.toString("base64");
+    dataUrl = `data:${mimeType};base64,${base64}`;
+  }
 
   let prompt;
   let allowedUnits;
@@ -506,7 +582,13 @@ export async function parseReceiptWithAI({
   for (const model of models) {
     try {
       const orStarted = Date.now();
-      const payload = await fetchOpenRouterPayloadWithRetries({ prompt, dataUrl, mimeType, model });
+      const payload = await fetchOpenRouterPayloadWithRetries({
+        prompt,
+        dataUrl,
+        mimeType,
+        documents: docParts,
+        model
+      });
       const openRouterMs = Date.now() - orStarted;
       const content = payload?.choices?.[0]?.message?.content || "{}";
       const parsed = parseJsonFromModelContent(content);

@@ -11,6 +11,9 @@ export function buildReceiptAiPrompt({
   return [
     "Você é um especialista em leitura de documentos fiscais e pedidos de compra brasileiros.",
     "Extraia os dados do documento na imagem/PDF e retorne SOMENTE JSON válido (sem markdown).",
+    "Se receber múltiplas imagens/PDFs, trate TODAS como páginas do MESMO documento.",
+    "Consolide dados entre páginas e NÃO duplique item quando a mesma linha aparecer repetida em páginas diferentes.",
+    "Quando houver conflito entre páginas, prefira a informação mais completa e consistente do documento.",
     "",
     "## Tipos de documento (documentType)",
     "- danfe: DANFE / NF-e com chave de acesso, emitente, destinatário, tabela de produtos",
