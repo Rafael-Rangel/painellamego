@@ -235,7 +235,6 @@ async function callChatCompletions({
 
   const body = {
     model: selectedModel,
-    temperature: 0.1,
     messages: [
       {
         role: "user",
@@ -244,10 +243,11 @@ async function callChatCompletions({
     ]
   };
 
-  // GPT-5.x na OpenAI Platform usa max_completion_tokens (não max_tokens).
+  // GPT-5.x (OpenAI): max_completion_tokens; temperature só o default (1) — não enviar 0.1.
   if (isOpenAi) {
     body.max_completion_tokens = maxTokens;
   } else {
+    body.temperature = 0.1;
     body.max_tokens = maxTokens;
   }
 
