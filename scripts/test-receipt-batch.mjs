@@ -11,6 +11,10 @@ import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  RECEIPT_AI_OPENAI_MODEL,
+  RECEIPT_AI_OPENROUTER_FALLBACK_MODEL
+} from "../apps/api/src/receiptAiModels.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(root, ".env") });
@@ -109,8 +113,8 @@ async function main() {
   }
   if (limit > 0) files = files.slice(0, limit);
 
-  console.log(`Modelo OpenAI: ${process.env.OPENAI_MODEL || "gpt-5.5"}`);
-  console.log(`Fallback OR: ${process.env.OPENROUTER_FALLBACK_MODEL || "(default config)"}`);
+  console.log(`Modelo OpenAI: ${RECEIPT_AI_OPENAI_MODEL}`);
+  console.log(`Fallback OpenRouter: ${RECEIPT_AI_OPENROUTER_FALLBACK_MODEL}`);
   console.log(`Amostras: ${files.length}\n`);
 
   let passed = 0;

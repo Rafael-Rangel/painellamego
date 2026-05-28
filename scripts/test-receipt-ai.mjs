@@ -1,22 +1,20 @@
 #!/usr/bin/env node
 /**
- * Teste de integração: OpenRouter + parseReceiptWithAI (imagem mínima).
+ * Teste de integração: parseReceiptWithAI (OpenAI gpt-5.5 + fallback OpenRouter).
  * Uso na raiz do repo:
- *   node scripts/test-receipt-openrouter.mjs
- *   node scripts/test-receipt-openrouter.mjs https://exemplo.com/nota.jpg
- *   node scripts/test-receipt-openrouter.mjs /caminho/local/nota.png
- *   node scripts/test-receipt-openrouter.mjs nota.png --json
- * Catálogo opcional (para testar match com cadastro):
- *   RECEIPT_TEST_CATALOG='{"products":[...],"suppliers":[...]}' node scripts/test-receipt-openrouter.mjs nota.png --json
- * DANFE vazio (sem itens/fornecedores no prompt; evita match falso):
- *   node scripts/test-receipt-openrouter.mjs scripts/fixtures/blank-danfe-template.png --empty-catalog --json
- * Requer OPENAI_API_KEY no .env (raiz ou apps/api); fallback usa OPENROUTER_API_KEY.
+ *   npm run test:receipt-ai
+ *   node scripts/test-receipt-ai.mjs /caminho/nota.png --json
+ * Requer OPENAI_API_KEY no .env; fallback usa OPENROUTER_API_KEY.
  */
 import dotenv from "dotenv";
 import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  RECEIPT_AI_OPENAI_MODEL,
+  RECEIPT_AI_OPENROUTER_FALLBACK_MODEL
+} from "../apps/api/src/receiptAiModels.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(root, ".env") });
@@ -24,7 +22,6 @@ dotenv.config({ path: path.join(root, "apps", "api", ".env") });
 
 const { parseReceiptWithAI } = await import("../apps/api/src/services/receiptAiService.js");
 
-// JPEG 1×1 pixel (válido); não é nota real; valida chamada, JSON e encadeamento.
 const tinyJpeg = Buffer.from(
   "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=",
   "base64"
@@ -120,9 +117,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("OK: OpenRouter respondeu e o serviço retornou objeto válido.");
-  console.log("  model OpenAI:", process.env.OPENAI_MODEL || "gpt-5.5");
-  console.log("  fallback OR:", process.env.OPENROUTER_FALLBACK_MODEL || "google/gemini-3.1-pro-preview");
+  console.log("OK: IA respondeu e o serviço retornou objeto válido.");
+  console.log("  OpenAI:", RECEIPT_AI_OPENAI_MODEL);
+  console.log("  fallback OpenRouter:", RECEIPT_AI_OPENROUTER_FALLBACK_MODEL);
   console.log("  itens:", out.items.length, "| missingGlobal:", out.missingGlobal.length);
   if (printJson) {
     console.log("\n--- JSON completo ---");
@@ -133,9 +130,9 @@ async function main() {
 main().catch((e) => {
   const msg = String(e.message || "");
   if (/insufficient credits/i.test(msg)) {
-    console.error("PARCIAL_OK: autenticação e modelo foram aceitos pela OpenRouter.");
-    console.error("  Falta saldo na conta: https://openrouter.ai/settings/credits");
-    console.error("  Depois disso, rode de novo: npm run test:openrouter");
+    console.error("PARCIAL_OK: autenticação aceita; falta crédito na conta.");
+    console.error("  OpenAI: https://platform.openai.com/account/billing");
+    console.error("  OpenRouter: https://openrouter.ai/settings/credits");
     process.exit(3);
   }
   console.error("FAIL:", msg);

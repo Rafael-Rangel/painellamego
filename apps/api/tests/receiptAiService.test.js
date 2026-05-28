@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {
+  RECEIPT_AI_OPENAI_MODEL,
+  RECEIPT_AI_OPENROUTER_FALLBACK_MODEL
+} from "../src/receiptAiModels.js";
 
 function isOpenAiUrl(url) {
   return String(url || "").includes("api.openai.com");
@@ -65,9 +69,7 @@ test("parseReceiptWithAI: PDF no OpenAI falha e OpenRouter usa file + plugin", a
   };
 
   process.env.OPENAI_API_KEY = "test-openai";
-  process.env.OPENAI_MODEL = "gpt-5.5";
   process.env.OPENROUTER_API_KEY = "test-or";
-  process.env.OPENROUTER_FALLBACK_MODEL = "google/gemini-3.1-pro-preview";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
   const pdfBuf = Buffer.from("%PDF-1.4 fake", "utf8");
@@ -116,7 +118,6 @@ test("parseReceiptWithAI: JPEG usa OpenAI com image_url detail auto", async () =
   };
 
   process.env.OPENAI_API_KEY = "test-openai";
-  process.env.OPENAI_MODEL = "gpt-5.5";
   process.env.OPENROUTER_API_KEY = "test-or";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
@@ -130,7 +131,7 @@ test("parseReceiptWithAI: JPEG usa OpenAI com image_url detail auto", async () =
 
   assert.equal(calls.length, 1);
   assert.ok(isOpenAiUrl(calls[0].url));
-  assert.equal(calls[0].body.model, "gpt-5.5");
+  assert.equal(calls[0].body.model, RECEIPT_AI_OPENAI_MODEL);
   const content = calls[0].body.messages[0].content;
   const img = content.find((c) => c.type === "image_url");
   assert.ok(img);
@@ -189,7 +190,6 @@ test("parseReceiptWithAI: falha OpenAI na 1ª chamada faz retry sem response_for
   };
 
   process.env.OPENAI_API_KEY = "test-openai";
-  process.env.OPENAI_MODEL = "gpt-5.5";
   process.env.OPENROUTER_API_KEY = "test-or";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
@@ -207,7 +207,7 @@ test("parseReceiptWithAI: falha OpenAI na 1ª chamada faz retry sem response_for
   delete global.fetch;
 });
 
-test("parseReceiptWithAI: esgota OpenAI e usa OPENROUTER_FALLBACK_MODEL", async () => {
+test("parseReceiptWithAI: esgota OpenAI e usa fallback OpenRouter fixo", async () => {
   let n = 0;
   global.fetch = async (url, init) => {
     if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
@@ -222,7 +222,7 @@ test("parseReceiptWithAI: esgota OpenAI e usa OPENROUTER_FALLBACK_MODEL", async 
         }
       };
     }
-    assert.equal(body.model, "google/gemini-3.1-pro-preview");
+    assert.equal(body.model, RECEIPT_AI_OPENROUTER_FALLBACK_MODEL);
     return {
       ok: true,
       async json() {
@@ -252,9 +252,7 @@ test("parseReceiptWithAI: esgota OpenAI e usa OPENROUTER_FALLBACK_MODEL", async 
   };
 
   process.env.OPENAI_API_KEY = "test-openai";
-  process.env.OPENAI_MODEL = "gpt-5.5";
   process.env.OPENROUTER_API_KEY = "test-or";
-  process.env.OPENROUTER_FALLBACK_MODEL = "google/gemini-3.1-pro-preview";
 
   const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
   const jpegBuf = Buffer.from("ff", "hex");

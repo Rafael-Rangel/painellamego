@@ -247,9 +247,9 @@ Documentação: [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-u
 
 ### Leitura de nota com IA (OpenAI + fallback OpenRouter) : “carrega para sempre”
 
-- **Principal:** `OPENAI_MODEL=gpt-5.5` com `OPENAI_API_KEY` (OpenAI Platform).
-- **Fallback:** `OPENROUTER_FALLBACK_MODEL=google/gemini-3.1-pro-preview` com `OPENROUTER_API_KEY` (créditos em openrouter.ai).
-- **Regressão local:** `npm run test:openrouter` ou `node scripts/test-receipt-batch.mjs --only golden` (requer chaves no `.env`).
+- **Modelos fixos** em `apps/api/src/receiptAiModels.js`: **gpt-5.5** (OpenAI) e **google/gemini-3.1-pro-preview** (OpenRouter fallback).
+- **Secrets:** `OPENAI_API_KEY` e `OPENROUTER_API_KEY` em `.env.production` (não altere modelo via env).
+- **Regressão local:** `npm run test:receipt-ai` ou `node scripts/test-receipt-batch.mjs --only golden`.
 - **Causas frequentes:** timeout no proxy; PDF/imagem muito grande; sem crédito OpenAI/OpenRouter.
 - **No código:** timeouts `OPENAI_FETCH_TIMEOUT_MS` / `OPENROUTER_FETCH_TIMEOUT_MS` (predefinido 120 s); nginx interno do `web` usa **300 s** para `/api/`.
 - **Na VPS:** `docker logs lamego-api-1 --tail 300`. O **jada-nginx-proxy** precisa de 300s (`scripts/apply-nginx-proxy-timeouts-vps.sh`).

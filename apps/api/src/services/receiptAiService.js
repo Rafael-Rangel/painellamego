@@ -195,10 +195,8 @@ function visionPartsForOpenAiDocuments(documents = []) {
 }
 
 function openRouterFallbackModel() {
-  if (process.env.OPENROUTER_FALLBACK_MODEL === "") return null;
-  const v = String(config.openRouterFallbackModel || "").trim();
-  if (!v || /^(off|false|none|0)$/i.test(v)) return null;
-  return v;
+  if (!config.openRouterApiKey) return null;
+  return config.openRouterFallbackModel;
 }
 
 function buildUserMessageContent({ prompt, dataUrl, mimeType, documents, provider }) {

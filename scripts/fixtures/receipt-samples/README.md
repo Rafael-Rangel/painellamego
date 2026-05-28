@@ -7,4 +7,4 @@ Imagens copiadas de exemplos reais (WhatsApp) para testar `parseReceiptWithAI`.
 - **Só com golden:** `node scripts/test-receipt-batch.mjs --only golden`
 - **Limite:** `RECEIPT_BATCH_LIMIT=2 node scripts/test-receipt-batch.mjs`
 
-Requer `OPENAI_API_KEY` no `.env` (e `OPENROUTER_API_KEY` para fallback).
+Requer `OPENAI_API_KEY` e `OPENROUTER_API_KEY` no `.env`. Modelos fixos em `apps/api/src/receiptAiModels.js`.

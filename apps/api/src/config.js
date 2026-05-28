@@ -1,4 +1,8 @@
 import dotenv from "dotenv";
+import {
+  RECEIPT_AI_OPENAI_MODEL,
+  RECEIPT_AI_OPENROUTER_FALLBACK_MODEL
+} from "./receiptAiModels.js";
 
 dotenv.config({ path: new URL("../.env", import.meta.url) });
 dotenv.config({ path: new URL("../../../.env", import.meta.url) });
@@ -31,9 +35,9 @@ export const config = {
   appOrigins: parseOrigins(appOriginRaw),
   authInviteRedirectUrl,
   trustProxy: Number(process.env.TRUST_PROXY ?? 1),
-  /** Leitura de NF — principal: OpenAI Platform (gpt-5.5). */
+  /** Leitura de NF — principal: OpenAI Platform (`receiptAiModels.js`). */
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-  openaiModel: process.env.OPENAI_MODEL ?? "gpt-5.5",
+  openaiModel: RECEIPT_AI_OPENAI_MODEL,
   openaiFetchTimeoutMs: Math.min(
     300_000,
     Math.max(15_000, Number(process.env.OPENAI_FETCH_TIMEOUT_MS ?? 120_000) || 120_000)
@@ -42,9 +46,9 @@ export const config = {
     8192,
     Math.max(2048, Number(process.env.OPENAI_MAX_TOKENS ?? 4096) || 4096)
   ),
-  /** Fallback OpenRouter (ex.: google/gemini-3.1-pro-preview). */
+  /** Fallback OpenRouter (`receiptAiModels.js`). */
   openRouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
-  openRouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL ?? "google/gemini-3.1-pro-preview",
+  openRouterFallbackModel: RECEIPT_AI_OPENROUTER_FALLBACK_MODEL,
   openRouterHttpReferer: process.env.OPENROUTER_HTTP_REFERER ?? process.env.APP_ORIGIN ?? "",
   openRouterAppTitle: process.env.OPENROUTER_APP_TITLE ?? "Lamego Compras",
   openRouterFetchTimeoutMs: Math.min(
