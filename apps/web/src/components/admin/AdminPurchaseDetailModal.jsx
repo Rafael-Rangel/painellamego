@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { FaExternalLinkAlt, FaTimes } from "react-icons/fa";
-import { api, withAuth } from "../api";
-import CompactTable from "./ui/CompactTable";
-import { formatCurrency } from "../lib/formatters";
+import { api, withAuth } from "../../api";
+import CompactTable from "../ui/CompactTable";
+import { formatCurrency } from "../../lib/formatters";
 
 function formatDate(value) {
   if (!value) return "n/d";
