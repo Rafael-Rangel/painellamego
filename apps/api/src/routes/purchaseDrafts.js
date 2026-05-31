@@ -145,7 +145,8 @@ router.get("/drafts/:draftId", requireAuth, async (req, res) => {
       mimeType: r.mime_type,
       createdAt: r.created_at
     })),
-    notes: data.notes
+    notes: data.notes,
+    documentMetadata: data.document_metadata_json || {}
   });
 });
 
@@ -158,7 +159,8 @@ const saveDraftSchema = z.object({
   installments: z.array(z.record(z.string(), z.unknown())).optional(),
   taxes: z.array(z.record(z.string(), z.unknown())).optional(),
   extras: z.array(z.record(z.string(), z.unknown())).optional(),
-  notes: z.string().max(2000).optional()
+  notes: z.string().max(2000).optional(),
+  documentMetadata: z.record(z.string(), z.unknown()).optional()
 });
 
 router.put("/drafts/:draftId", requireAuth, async (req, res) => {
@@ -180,6 +182,7 @@ router.put("/drafts/:draftId", requireAuth, async (req, res) => {
   if (parsed.data.taxes !== undefined) patch.taxes_json = parsed.data.taxes;
   if (parsed.data.extras !== undefined) patch.extras_json = parsed.data.extras;
   if (parsed.data.notes !== undefined) patch.notes = parsed.data.notes;
+  if (parsed.data.documentMetadata !== undefined) patch.document_metadata_json = parsed.data.documentMetadata;
 
   const { data, error } = await supabaseAdmin
     .from("purchase_drafts")
@@ -346,6 +349,15 @@ router.post(
     const taxes = parseAdjustmentLines(req.body?.taxes, draft.taxes_json || []);
     const extras = parseAdjustmentLines(req.body?.extras, draft.extras_json || []);
     const notes = req.body?.notes != null ? String(req.body.notes) : draft.notes || null;
+    let documentMetadata = draft.document_metadata_json || {};
+    if (req.body?.documentMetadata) {
+      try {
+        const parsedMeta = JSON.parse(req.body.documentMetadata);
+        if (parsedMeta && typeof parsedMeta === "object") documentMetadata = parsedMeta;
+      } catch {
+        return res.status(400).json({ message: "Metadados do documento inválidos." });
+      }
+    }
 
     const newFiles = gatherReceiptFiles(req.files || {});
     const draftReceiptCount = (draft.purchase_draft_receipts || []).length;
@@ -380,7 +392,8 @@ router.post(
         draftId: draft.id,
         taxes,
         extras,
-        notes
+        notes,
+        documentMetadata
       });
 
       await logAudit({

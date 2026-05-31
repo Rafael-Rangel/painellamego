@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaPlus, FaStore, FaTimes, FaTrash } from "react-icons/fa";
 import { MdAutoAwesome } from "react-icons/md";
 import AppShell from "../components/AppShell";
+import PurchaseAdjustmentsEditor from "../components/purchase/PurchaseAdjustmentsEditor";
+import PurchaseDocumentMetadataPanel from "../components/purchase/PurchaseDocumentMetadataPanel";
+import PurchaseInstallmentsEditor from "../components/purchase/PurchaseInstallmentsEditor";
 import ReceiptAiDropzoneCard from "../components/purchase/ReceiptAiDropzoneCard";
 import ReceiptAiProgressPanel from "../components/purchase/ReceiptAiProgressPanel";
 import { buildManagerSidebarLinks } from "../config/managerNavLinks";
@@ -57,6 +60,18 @@ export default function ManagerPurchaseAiPage() {
     aiRetryCount,
     aiMissing,
     documentTotals,
+    documentMetadata,
+    setDocumentMetadata,
+    taxes,
+    setTaxes,
+    extras,
+    setExtras,
+    notes,
+    setNotes,
+    installments,
+    setInstallments,
+    getAiFieldClass,
+    invoiceSummary,
     total,
     addItem,
     updateItem,
@@ -137,7 +152,14 @@ export default function ManagerPurchaseAiPage() {
 
   const lojaReadonly = formatStoreReadonly(overview, user);
 
-  const aiClass = (key) => (aiHighlightKeys?.has(key) ? "field-ai-suggested" : "");
+  const aiClass = (key) => getAiFieldClass?.(key) || (aiHighlightKeys?.has(key) ? "field-ai-suggested" : "");
+
+  const reviewBadge = (key) =>
+    getAiFieldClass(key) === "field-ai-review" ? (
+      <span className="field-ai-review-badge" aria-label="Revisar">
+        Revisar
+      </span>
+    ) : null;
 
   const docTotalRows = useMemo(
     () => buildReceiptTotalDifferenceRows(documentTotals, formatCurrency),
@@ -284,6 +306,15 @@ export default function ManagerPurchaseAiPage() {
               </div>
             </section>
 
+            {items.length > 0 || documentMetadata?.accessKey || documentMetadata?.orderNumber ? (
+              <PurchaseDocumentMetadataPanel
+                metadata={documentMetadata}
+                onChange={setDocumentMetadata}
+                onNotesSync={setNotes}
+                aiClass={aiClass}
+              />
+            ) : null}
+
             <section className="card purchase-ai-section">
               <h3 className="purchase-ai-section-title">
                 <MdAutoAwesome className="purchase-ai-section-icon" aria-hidden />
@@ -427,6 +458,22 @@ export default function ManagerPurchaseAiPage() {
                             <span className="field-helper">Total na nota: {formatCurrency(row.aiLineTotal)}</span>
                           ) : null}
                         </div>
+                        <div className={`field purchase-ai-field span-full ${aiClass(`itemNotes.${idx}`)}`}>
+                          <label htmlFor={`item-notes-${idx}`}>
+                            Observações do Produto {reviewBadge(`itemNotes.${idx}`)}
+                          </label>
+                          <textarea
+                            id={`item-notes-${idx}`}
+                            className="purchase-ai-input"
+                            rows={2}
+                            placeholder="Bonificação, lote, validade, divergência..."
+                            value={row.notes || ""}
+                            onChange={(e) => {
+                              clearItemRowAiHighlight(idx);
+                              updateItem(idx, { notes: e.target.value });
+                            }}
+                          />
+                        </div>
                         <div className="purchase-ai-item-actions">
                           <button type="button" className="btn btn-ghost btn-icon" title="Remover linha" onClick={() => removeItem(idx)}>
                             <FaTrash />
@@ -536,9 +583,45 @@ export default function ManagerPurchaseAiPage() {
               </div>
 
               <p className="purchase-ai-total">
-                Total: <strong>{formatCurrency(total)}</strong>
+                Total produtos: <strong>{formatCurrency(total)}</strong>
+                {invoiceSummary.grandTotal > total ? (
+                  <>
+                    {" · "}
+                    Total da nota: <strong>{formatCurrency(invoiceSummary.grandTotal)}</strong>
+                  </>
+                ) : null}
               </p>
             </section>
+
+            {items.length > 0 ? (
+              <section className="card purchase-ai-section">
+                <h3 className="purchase-ai-section-title">Impostos, extras e observações</h3>
+                <PurchaseAdjustmentsEditor
+                  items={items}
+                  taxes={taxes}
+                  extras={extras}
+                  notes={notes}
+                  onTaxesChange={setTaxes}
+                  onExtrasChange={setExtras}
+                  onNotesChange={setNotes}
+                />
+              </section>
+            ) : null}
+
+            {items.length > 0 ? (
+              <section className="card purchase-ai-section">
+                <h3 className="purchase-ai-section-title">Parcelas / vencimentos</h3>
+                <PurchaseInstallmentsEditor
+                  items={items}
+                  taxes={taxes}
+                  extras={extras}
+                  installments={installments}
+                  onChange={setInstallments}
+                  purchaseDate={date}
+                  showValidation
+                />
+              </section>
+            ) : null}
 
             {docTotalRows.length ? (
               <section className="card purchase-ai-section purchase-ai-doc-totals" aria-label="Totais da nota fiscal">

@@ -201,6 +201,7 @@ router.post(
       taxes: z.string().optional(),
       extras: z.string().optional(),
       notes: z.string().max(2000).optional(),
+      documentMetadata: z.string().optional(),
       draftId: z.string().uuid().optional()
     });
     const parsed = schema.safeParse(req.body);
@@ -273,6 +274,15 @@ router.post(
     const taxes = parseAdjustmentLines(parsed.data.taxes);
     const extras = parseAdjustmentLines(parsed.data.extras);
     const notes = parsed.data.notes ? String(parsed.data.notes).trim() : null;
+    let documentMetadata = {};
+    if (parsed.data.documentMetadata) {
+      try {
+        const parsedMeta = JSON.parse(parsed.data.documentMetadata);
+        if (parsedMeta && typeof parsedMeta === "object") documentMetadata = parsedMeta;
+      } catch {
+        return res.status(400).json({ message: "Metadados do documento inválidos." });
+      }
+    }
 
     const receiptFiles = gatherReceiptFiles(req.files || {});
     if (!receiptFiles.length) {
@@ -301,7 +311,8 @@ router.post(
       draftId: parsed.data.draftId || null,
       taxes,
       extras,
-      notes
+      notes,
+      documentMetadata
     });
     purchaseId = result.purchaseId;
 

@@ -327,3 +327,87 @@ test("parseReceiptWithAI: sem match no catálogo devolve nome extraído da NF", 
 
   delete global.fetch;
 });
+
+test("parseReceiptWithAI: devolve taxes, extras, metadados, parcelas e notes por item", async () => {
+  global.fetch = async (url) => {
+    if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  documentType: "danfe",
+                  invoiceNumber: "46328",
+                  purchaseDate: "2026-05-26",
+                  supplierName: "BEIRAO DA SERRA",
+                  productsSubtotal: 1570.1,
+                  documentTotal: 1611.78,
+                  taxes: [
+                    { name: "ICMS", amount: 159.75, confidence: "high" },
+                    { name: "IPI", amount: 19.89, confidence: "high" },
+                    { name: "ICMS-ST", amount: 19.81, confidence: "medium" }
+                  ],
+                  extras: [],
+                  documentMetadata: {
+                    orderNumber: "49473",
+                    paymentTerms: "30 DIAS"
+                  },
+                  invoiceNotes: "PEDIDO 49473",
+                  installments: [
+                    { dueDate: "2026-06-09", amount: 1611.78, notes: "Duplicata 1", confidence: "high" }
+                  ],
+                  fieldConfidence: {
+                    invoiceNumber: "high",
+                    purchaseDate: "medium",
+                    "metadata.orderNumber": "high"
+                  },
+                  items: [
+                    {
+                      productName: "ATUM PORT.MINERVA SOLIDO AZEITE CX 25X120",
+                      quantity: 1,
+                      unitUsed: "CX",
+                      unitPrice: 383.9,
+                      lineTotal: 383.9,
+                      notes: "Valor FCP R$ 4,19",
+                      notesConfidence: "medium"
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        };
+      }
+    };
+  };
+
+  process.env.OPENAI_API_KEY = "test-openai";
+  process.env.OPENROUTER_API_KEY = "test-or";
+
+  const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
+  const jpegBuf = Buffer.from("ff", "hex");
+  const out = await parseReceiptWithAI({
+    imageBuffer: jpegBuf,
+    mimeType: "image/jpeg",
+    products: [],
+    suppliers: [{ id: "s1", name: "BEIRAO DA SERRA" }]
+  });
+
+  assert.equal(out.taxes.length, 3);
+  assert.ok(out.taxes.some((t) => t.name === "ICMS" && t.amount === 159.75));
+  assert.ok(out.taxes.some((t) => t.name === "IPI" && t.amount === 19.89));
+  assert.ok(out.taxes.some((t) => t.name === "ICMS-ST" && t.amount === 19.81));
+  assert.equal(out.documentMetadata.orderNumber, "49473");
+  assert.ok(out.notes.includes("49473"));
+  assert.equal(out.suggestedInstallments.length, 1);
+  assert.equal(out.suggestedInstallments[0].amount, 1611.78);
+  assert.equal(out.suggestedInstallments[0].dueDate, "2026-06-09");
+  assert.equal(out.fieldConfidence.purchaseDate, "medium");
+  assert.equal(out.items[0].notes, "Valor FCP R$ 4,19");
+  assert.equal(out.items[0].notesConfidence, "medium");
+
+  delete global.fetch;
+});

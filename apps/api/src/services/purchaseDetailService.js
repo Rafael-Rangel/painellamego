@@ -55,7 +55,8 @@ function mapItemRow(item) {
     bonusUnitValue: bonusVal,
     bonusRefTotal: Math.round(bonusRefTotal * 100) / 100,
     purchaseDate: item.purchase_date,
-    weekOfMonth: item.week_of_month
+    weekOfMonth: item.week_of_month,
+    notes: item.notes ? String(item.notes).trim() : null
   };
 }
 
@@ -169,6 +170,10 @@ export async function getPurchaseDetail(purchaseId) {
       : null,
     supplierName,
     notes: data.notes || "",
+    documentMetadata:
+      data.document_metadata_json && typeof data.document_metadata_json === "object"
+        ? data.document_metadata_json
+        : {},
     taxes,
     extras,
     totals,

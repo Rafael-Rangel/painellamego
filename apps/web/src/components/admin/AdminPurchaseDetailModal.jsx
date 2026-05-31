@@ -27,6 +27,25 @@ function SummaryRow({ label, value, strong = false }) {
   );
 }
 
+const DOCUMENT_METADATA_LABELS = {
+  accessKey: "Chave de acesso",
+  series: "Série",
+  issueDate: "Data de emissão",
+  exitDate: "Data de saída",
+  orderNumber: "Pedido",
+  paymentTerms: "Condição de pagamento",
+  paymentDeadlineDays: "Prazo (dias)",
+  salesRep: "Representante",
+  carrierName: "Transportadora",
+  complementaryInfo: "Informações complementares"
+};
+
+function formatMetadataValue(key, value) {
+  if (value == null || value === "") return null;
+  if (key === "issueDate" || key === "exitDate") return formatDate(value);
+  return String(value);
+}
+
 export default function AdminPurchaseDetailModal({ purchaseId, token, onClose }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -192,10 +211,35 @@ export default function AdminPurchaseDetailModal({ purchaseId, token, onClose })
                     id: "bonusRefTotal",
                     label: "Ref. bonif.",
                     render: (r) => (r.bonusRefTotal > 0 ? formatCurrency(r.bonusRefTotal) : "—")
+                  },
+                  {
+                    id: "notes",
+                    label: "Obs.",
+                    clamp: false,
+                    render: (r) => (r.notes?.trim() ? r.notes.trim() : "—")
                   }
                 ]}
               />
             </section>
+
+            {detail.documentMetadata &&
+            Object.entries(DOCUMENT_METADATA_LABELS).some(([key]) => detail.documentMetadata[key]) ? (
+              <section className="purchase-detail-section">
+                <h4>Metadados fiscais</h4>
+                <ul className="purchase-detail-lines">
+                  {Object.entries(DOCUMENT_METADATA_LABELS).map(([key, label]) => {
+                    const val = formatMetadataValue(key, detail.documentMetadata[key]);
+                    if (!val) return null;
+                    return (
+                      <li key={key}>
+                        <span>{label}</span>
+                        <strong>{val}</strong>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
 
             {detail.installments?.length ? (
               <section className="purchase-detail-section">

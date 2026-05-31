@@ -40,7 +40,8 @@ function mapItemToRow(item, purchaseId, storeId) {
     line_type: item.lineType,
     bonus_quantity: bonusQuantity,
     bonus_unit_value: bonusUnitValue,
-    is_bonification_only: isBonusOnly
+    is_bonification_only: isBonusOnly,
+    notes: item.notes ? String(item.notes).trim().slice(0, 500) || null : null
   };
 }
 
@@ -58,7 +59,8 @@ export async function finalizePurchase({
   draftId = null,
   taxes = [],
   extras = [],
-  notes = null
+  notes = null,
+  documentMetadata = null
 }) {
   const summary = purchaseInvoiceSummary(items, taxes, extras);
   const { totalPayable, totalBonusValue, totalTaxes, totalExtras, grandTotal } = summary;
@@ -91,7 +93,9 @@ export async function finalizePurchase({
       grand_total: grandTotal,
       taxes_json: taxes,
       extras_json: extras,
-      notes: notes ? String(notes).trim() || null : null
+      notes: notes ? String(notes).trim() || null : null,
+      document_metadata_json:
+        documentMetadata && typeof documentMetadata === "object" ? documentMetadata : {}
     })
     .select("id")
     .single();

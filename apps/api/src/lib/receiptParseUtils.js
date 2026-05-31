@@ -255,8 +255,220 @@ export function normalizeRawAiItem(it, allowedUnits = []) {
     lineTotal: reconciled.lineTotal,
     unitUsed: it?.unitUsed ? normalizeReceiptUnit(it.unitUsed, allowedUnits) : null,
     notes: it?.notes ? String(it.notes).trim() : null,
+    notesConfidence: normalizeFieldConfidence(it?.notesConfidence),
     reconcileWarnings: reconciled.warnings
   };
+}
+
+const CONFIDENCE_VALUES = new Set(["high", "medium", "low"]);
+
+/** Saneia nível de confiança vindo da IA. */
+export function normalizeFieldConfidence(raw) {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (CONFIDENCE_VALUES.has(s)) return s;
+  return null;
+}
+
+const TAX_NAME_ALIASES = {
+  icms: "ICMS",
+  "icms st": "ICMS-ST",
+  "icms-st": "ICMS-ST",
+  "icms subst": "ICMS-ST",
+  "icms substituicao": "ICMS-ST",
+  "icms substituição": "ICMS-ST",
+  ipi: "IPI",
+  pis: "PIS",
+  cofins: "COFINS",
+  iss: "ISS",
+  fcp: "FCP",
+  difal: "DIFAL"
+};
+
+function normalizeTaxName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  const key = raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const aliases = Object.entries(TAX_NAME_ALIASES).sort((a, b) => b[0].length - a[0].length);
+  for (const [alias, canonical] of aliases) {
+    if (key === alias || key.includes(alias)) return canonical;
+  }
+  return raw.slice(0, 120);
+}
+
+function normalizeAdjustmentLine(row, defaultName = "") {
+  const name = normalizeTaxName(row?.name || defaultName);
+  const amount = parseBrDecimal(row?.amount);
+  if (!name || !Number.isFinite(amount) || amount <= 0) return null;
+  return {
+    name,
+    amount: roundMoney(amount),
+    confidence: normalizeFieldConfidence(row?.confidence) || "high"
+  };
+}
+
+function dedupeAdjustmentLines(lines) {
+  const byKey = new Map();
+  for (const line of lines) {
+    if (!line) continue;
+    const key = line.name.toLowerCase();
+    const prev = byKey.get(key);
+    if (!prev || line.amount > prev.amount) byKey.set(key, line);
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Impostos explícitos da IA + fallback do rodapé DANFE (icmsStAmount etc.).
+ */
+export function normalizeAiTaxLines(parsed) {
+  const fromAi = (parsed?.taxes || [])
+    .map((row) => normalizeAdjustmentLine(row))
+    .filter(Boolean);
+
+  const fallback = [];
+  const pushLegacy = (name, val) => {
+    const line = normalizeAdjustmentLine({ name, amount: val, confidence: "high" });
+    if (line) fallback.push(line);
+  };
+
+  const icmsSt = parseBrDecimal(parsed?.icmsStAmount);
+  if (Number.isFinite(icmsSt) && icmsSt > 0) {
+    const hasSt = fromAi.some((l) => l.name.toLowerCase().includes("icms-st"));
+    if (!hasSt) pushLegacy("ICMS-ST", icmsSt);
+  }
+
+  return dedupeAdjustmentLines([...fromAi, ...fallback]);
+}
+
+/**
+ * Extras (frete, seguro, desconto…) — nunca impostos.
+ */
+export function normalizeAiExtraLines(parsed) {
+  const fromAi = (parsed?.extras || [])
+    .map((row) => normalizeAdjustmentLine(row))
+    .filter(Boolean);
+
+  const fallback = [];
+  const pushExtra = (name, val, confidence = "high") => {
+    const line = normalizeAdjustmentLine({ name, amount: val, confidence });
+    if (line) fallback.push(line);
+  };
+
+  pushExtra("Frete", parsed?.freightAmount);
+  pushExtra("Seguro", parsed?.insuranceAmount);
+  pushExtra("Outras despesas", parsed?.otherExpensesAmount);
+  pushExtra("Desconto", parsed?.discountAmount);
+
+  return dedupeAdjustmentLines([...fromAi, ...fallback]);
+}
+
+function normalizeIsoDate(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const br = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (br) {
+    const [, d, m, y] = br;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  return null;
+}
+
+/** Metadados fiscais estruturados. */
+export function normalizeDocumentMetadata(raw = {}) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const deadline = parseBrDecimal(src.paymentDeadlineDays);
+  return {
+    accessKey: String(src.accessKey || "")
+      .replace(/\s/g, "")
+      .trim() || null,
+    series: String(src.series || "").trim() || null,
+    issueDate: normalizeIsoDate(src.issueDate),
+    exitDate: normalizeIsoDate(src.exitDate),
+    orderNumber: String(src.orderNumber || "").trim() || null,
+    paymentTerms: String(src.paymentTerms || "").trim() || null,
+    paymentDeadlineDays: Number.isFinite(deadline) && deadline > 0 ? Math.round(deadline) : null,
+    salesRep: String(src.salesRep || "").trim() || null,
+    carrierName: String(src.carrierName || "").trim() || null,
+    complementaryInfo: String(src.complementaryInfo || "").trim() || null
+  };
+}
+
+export function normalizeFieldConfidenceMap(raw = {}) {
+  const out = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, val] of Object.entries(raw)) {
+    const c = normalizeFieldConfidence(val);
+    if (c) out[String(key)] = c;
+  }
+  return out;
+}
+
+const METADATA_LABELS = {
+  accessKey: "Chave de acesso",
+  series: "Série",
+  issueDate: "Data de emissão",
+  exitDate: "Data de saída",
+  orderNumber: "Pedido",
+  paymentTerms: "Condição de pagamento",
+  paymentDeadlineDays: "Prazo (dias)",
+  salesRep: "Representante",
+  carrierName: "Transportadora",
+  complementaryInfo: "Informações complementares"
+};
+
+/** Compila OBS legível a partir de metadados + invoiceNotes da IA. */
+export function buildInvoiceNotesFromMetadata(metadata = {}, invoiceNotes = "") {
+  const lines = [];
+  const meta = metadata && typeof metadata === "object" ? metadata : {};
+  for (const [key, label] of Object.entries(METADATA_LABELS)) {
+    const val = meta[key];
+    if (val == null || val === "") continue;
+    lines.push(`${label}: ${val}`);
+  }
+  const extra = String(invoiceNotes || "").trim();
+  if (extra) {
+    if (lines.length) lines.push("");
+    lines.push(extra);
+  }
+  return lines.join("\n").trim() || "";
+}
+
+/** Parcelas sugeridas pela IA. */
+export function normalizeAiInstallments(parsed, documentTotal = null) {
+  const rows = Array.isArray(parsed?.installments) ? parsed.installments : [];
+  const out = [];
+  for (const row of rows) {
+    const dueDate = normalizeIsoDate(row?.dueDate);
+    const amount = parseBrDecimal(row?.amount);
+    if (!dueDate || !Number.isFinite(amount) || amount <= 0) continue;
+    out.push({
+      dueDate,
+      amount: roundMoney(amount),
+      notes: String(row?.notes || "").trim() || null,
+      confidence: normalizeFieldConfidence(row?.confidence) || "high"
+    });
+  }
+
+  if (out.length) return out;
+
+  const total = parseBrDecimal(documentTotal ?? parsed?.documentTotal);
+  if (Number.isFinite(total) && total > 0 && parsed?.purchaseDate) {
+    return [
+      {
+        dueDate: normalizeIsoDate(parsed.purchaseDate),
+        amount: roundMoney(total),
+        notes: "Parcela 1",
+        confidence: "medium"
+      }
+    ];
+  }
+  return [];
 }
 
 /** Compara unidade da nota com unidade padrão do catálogo (após normalização). */

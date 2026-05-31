@@ -17,7 +17,8 @@ export const purchaseItemSchema = z
     lineType: z.enum(["insumo", "venda"]),
     isBonificationOnly: z.boolean().optional().default(false),
     bonusQuantity: z.number().nonnegative().optional().default(0),
-    bonusUnitValue: z.number().nonnegative().optional().default(0)
+    bonusUnitValue: z.number().nonnegative().optional().default(0),
+    notes: z.string().max(500).optional().nullable()
   })
   .superRefine((row, ctx) => {
     if (row.isBonificationOnly) {

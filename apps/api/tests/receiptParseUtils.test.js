@@ -6,7 +6,13 @@ import {
   reconcileLineItem,
   normalizeRawAiItem,
   buildDocumentTotalHints,
-  cleanReceiptProductDescription
+  cleanReceiptProductDescription,
+  normalizeAiTaxLines,
+  normalizeAiExtraLines,
+  normalizeDocumentMetadata,
+  buildInvoiceNotesFromMetadata,
+  normalizeAiInstallments,
+  normalizeFieldConfidenceMap
 } from "../src/lib/receiptParseUtils.js";
 
 test("parseBrDecimal: formato brasileiro", () => {
@@ -131,4 +137,87 @@ test("receiptUnitConflict: detecta cx vs kg", async () => {
   assert.ok(clash);
   assert.equal(clash.noteUnit, "cx");
   assert.equal(clash.catalogUnit, "kg");
+});
+
+test("normalizeAiTaxLines: deduplica ICMS-ST e usa rodapé", () => {
+  const lines = normalizeAiTaxLines({
+    taxes: [
+      { name: "ICMS", amount: 159.75, confidence: "high" },
+      { name: "IPI", amount: 19.89, confidence: "high" },
+      { name: "ICMS Subst.", amount: 19.81, confidence: "medium" }
+    ],
+    icmsStAmount: 19.81
+  });
+  const names = lines.map((l) => l.name);
+  assert.ok(names.includes("ICMS"));
+  assert.ok(names.includes("IPI"));
+  assert.equal(lines.filter((l) => l.name === "ICMS-ST").length, 1);
+  assert.equal(lines.find((l) => l.name === "ICMS-ST").amount, 19.81);
+});
+
+test("normalizeAiExtraLines: frete e seguro vão para extras", () => {
+  const lines = normalizeAiExtraLines({
+    extras: [{ name: "Frete", amount: 12.5, confidence: "high" }],
+    freightAmount: 12.5,
+    insuranceAmount: 3,
+    otherExpensesAmount: 0,
+    discountAmount: 5
+  });
+  const byName = Object.fromEntries(lines.map((l) => [l.name, l.amount]));
+  assert.equal(byName.Frete, 12.5);
+  assert.equal(byName.Seguro, 3);
+  assert.equal(byName.Desconto, 5);
+  assert.ok(!lines.some((l) => l.name.toLowerCase().includes("icms")));
+});
+
+test("normalizeDocumentMetadata: normaliza datas e chave", () => {
+  const meta = normalizeDocumentMetadata({
+    accessKey: "3526 0612 3456 7890 1234 5678 9012 3456 7890 1234 5678 90",
+    series: "1",
+    issueDate: "26/05/2026",
+    orderNumber: "49473",
+    paymentDeadlineDays: "30"
+  });
+  assert.equal(meta.issueDate, "2026-05-26");
+  assert.equal(meta.orderNumber, "49473");
+  assert.equal(meta.paymentDeadlineDays, 30);
+  assert.ok(meta.accessKey.includes("3526"));
+  assert.ok(!meta.accessKey.includes(" "));
+});
+
+test("buildInvoiceNotesFromMetadata: compila OBS legível", () => {
+  const text = buildInvoiceNotesFromMetadata(
+    { orderNumber: "49473", salesRep: "João Silva" },
+    "FCP total R$ 4,19"
+  );
+  assert.ok(text.includes("Pedido: 49473"));
+  assert.ok(text.includes("Representante: João Silva"));
+  assert.ok(text.includes("FCP total"));
+});
+
+test("normalizeAiInstallments: valida parcelas e fallback", () => {
+  const rows = normalizeAiInstallments(
+    {
+      installments: [{ dueDate: "09/06/2026", amount: "1.611,78", notes: "Duplicata 1", confidence: "high" }],
+      documentTotal: 1611.78
+    },
+    1611.78
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].dueDate, "2026-06-09");
+  assert.equal(rows[0].amount, 1611.78);
+  assert.equal(rows[0].notes, "Duplicata 1");
+});
+
+test("normalizeFieldConfidenceMap: saneia enum", () => {
+  const map = normalizeFieldConfidenceMap({
+    invoiceNumber: "high",
+    purchaseDate: "MEDIUM",
+    supplierName: "invalid",
+    orderNumber: "low"
+  });
+  assert.equal(map.invoiceNumber, "high");
+  assert.equal(map.purchaseDate, "medium");
+  assert.equal(map.orderNumber, "low");
+  assert.equal(map.supplierName, undefined);
 });

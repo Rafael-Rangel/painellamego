@@ -4642,6 +4642,50 @@ tbody tr:last-child td {
   background: rgb(37 99 235 / 0.04);
 }
 
+.field-ai-review .purchase-ai-input,
+.field-ai-review textarea.purchase-ai-input {
+  border-color: rgb(180 83 9 / 0.55);
+  box-shadow: 0 0 0 3px rgb(180 83 9 / 0.1);
+  background: rgb(255 251 235 / 0.9);
+}
+
+.field-ai-review-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 4px;
+}
+
+.purchase-doc-metadata {
+  margin-bottom: var(--space-3);
+}
+
+.purchase-doc-metadata__title {
+  margin: 0 0 var(--space-2);
+  font-size: 1.05rem;
+}
+
+.purchase-doc-metadata__lead {
+  margin: 0 0 var(--space-3);
+}
+
+.purchase-doc-metadata__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.purchase-ai-item-grid .span-full {
+  grid-column: 1 / -1;
+}
+
 .purchase-ai-item-suggested {
   border-color: rgb(37 99 235 / 0.35);
   background: rgb(37 99 235 / 0.03);

@@ -4,7 +4,14 @@ import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 import { buildReceiptCatalogContext } from "../lib/receiptCatalogContext.js";
 import {
   buildDocumentTotalHints,
+  buildInvoiceNotesFromMetadata,
+  normalizeAiExtraLines,
+  normalizeAiInstallments,
+  normalizeAiTaxLines,
+  normalizeDocumentMetadata,
+  normalizeFieldConfidenceMap,
   normalizeRawAiItem,
+  parseBrDecimal,
   receiptUnitConflict
 } from "../lib/receiptParseUtils.js";
 import { supabaseAdmin } from "../lib/supabase.js";
@@ -451,6 +458,8 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
       unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : null,
       lineTotal: norm.lineTotal,
       lineType,
+      notes: norm.notes,
+      notesConfidence: norm.notesConfidence,
       missing,
       suggestedProductMatches: resolved.suggestedProductMatches,
       matchKindResolved: resolved.matchKind,
@@ -468,6 +477,29 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
   if (!parsed?.purchaseDate) missingGlobal.push("data da compra");
   if (!supplierMatch.best || supplierMatch.score < MIN_SUPPLIER_MATCH) missingGlobal.push("fornecedor");
 
+  const documentMetadata = normalizeDocumentMetadata(parsed?.documentMetadata);
+  const fieldConfidence = normalizeFieldConfidenceMap(parsed?.fieldConfidence);
+  const taxes = normalizeAiTaxLines(parsed).map(({ name, amount, confidence }) => ({
+    name,
+    amount,
+    confidence
+  }));
+  const extras = normalizeAiExtraLines(parsed).map(({ name, amount, confidence }) => ({
+    name,
+    amount,
+    confidence
+  }));
+  const documentTotal = parseBrDecimal(parsed?.documentTotal);
+  const suggestedInstallments = normalizeAiInstallments(parsed, documentTotal).map(
+    ({ dueDate, amount, notes, confidence }) => ({
+      dueDate,
+      amount,
+      notes: notes || "",
+      confidence
+    })
+  );
+  const notes = buildInvoiceNotesFromMetadata(documentMetadata, parsed?.invoiceNotes);
+
   return {
     documentType: parsed?.documentType || null,
     invoiceNumber: invoiceNormalized,
@@ -478,6 +510,12 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
       : null,
     items,
     missingGlobal,
+    taxes,
+    extras,
+    notes,
+    documentMetadata,
+    suggestedInstallments,
+    fieldConfidence,
     documentTotals:
       parsed?.documentTotal != null || parsed?.productsSubtotal != null
         ? {

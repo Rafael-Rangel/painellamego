@@ -4,7 +4,8 @@ import { buildUnitOptions, normalizeUnitUsed } from "../lib/catalogUnits";
 import {
   compressReceiptFilesForAi,
   compressReceiptFilesForSubmit,
-  formatFileSize
+  formatFileSize,
+  warmReceiptCompressCache
 } from "../lib/compressReceiptImages";
 import { catalogMessageFromApiError, catalogUserMessage, logCatalog } from "../lib/catalogFeedback";
 import { purchaseApiErrorMessage } from "../lib/purchaseErrors";
@@ -17,6 +18,15 @@ import {
   validateInstallmentsAgainstPayable
 } from "../lib/purchaseTotals";
 import { MAX_RECEIPT_FILES, mergeUniqueReceiptFiles, receiptFileKey } from "../lib/receiptFiles";
+import {
+  EMPTY_DOCUMENT_METADATA,
+  confidenceClass,
+  mapApiAdjustmentLines,
+  mapApiInstallments,
+  mapApiMetadataToForm,
+  needsReview,
+  serializeDocumentMetadata
+} from "../lib/aiFieldConfidence";
 
 export { MAX_RECEIPT_FILES };
 
@@ -72,7 +82,8 @@ const EMPTY_DRAFT_ITEM = {
   lineType: "insumo",
   isBonificationOnly: false,
   bonusQuantity: "",
-  bonusUnitValue: ""
+  bonusUnitValue: "",
+  notes: ""
 };
 
 export function serializeAdjustmentLines(lines = []) {
@@ -99,7 +110,9 @@ export function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
     unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
     unitPrice: String(priceNum),
     lineType: it.lineType === "venda" ? "venda" : "insumo",
-    aiLineTotal: Number.isFinite(Number(it.lineTotal)) ? Number(it.lineTotal) : undefined
+    aiLineTotal: Number.isFinite(Number(it.lineTotal)) ? Number(it.lineTotal) : undefined,
+    notes: it.notes ? String(it.notes) : "",
+    notesConfidence: it.notesConfidence || null
   };
 }
 
@@ -146,7 +159,9 @@ export function buildItemRowFromAiPartial(it, { singleLineInvoice, allowedUnits 
     unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
     unitPrice: Number.isFinite(priceNum) && priceNum > 0 ? String(priceNum) : "",
     lineType: it.lineType === "venda" ? "venda" : "insumo",
-    aiLineTotal: Number.isFinite(lineTotalNum) && lineTotalNum > 0 ? lineTotalNum : undefined
+    aiLineTotal: Number.isFinite(lineTotalNum) && lineTotalNum > 0 ? lineTotalNum : undefined,
+    notes: it.notes ? String(it.notes) : "",
+    notesConfidence: it.notesConfidence || null
   };
 }
 
@@ -186,6 +201,8 @@ export function usePurchaseForm(token, options = {}) {
   const [aiRetryCount, setAiRetryCount] = useState(0);
   const [aiMissing, setAiMissing] = useState([]);
   const [documentTotals, setDocumentTotals] = useState(null);
+  const [documentMetadata, setDocumentMetadata] = useState(() => ({ ...EMPTY_DOCUMENT_METADATA }));
+  const [aiFieldConfidence, setAiFieldConfidence] = useState({});
   const analyzeProgressTimerRef = useRef(null);
   const [aiHighlightKeys, setAiHighlightKeys] = useState(() => new Set());
   const [supplierCreating, setSupplierCreating] = useState(false);
@@ -238,6 +255,11 @@ export function usePurchaseForm(token, options = {}) {
   const total = useMemo(
     () => purchaseTotalsWithDraft(items, draftItem, editingItemIndex).totalPayable,
     [items, draftItem, editingItemIndex]
+  );
+
+  const invoiceSummary = useMemo(
+    () => purchaseInvoiceSummary(items, taxes, extras),
+    [items, taxes, extras]
   );
 
   const canConfirmPurchase = useMemo(() => {
@@ -309,7 +331,8 @@ export function usePurchaseForm(token, options = {}) {
       unitUsed: d.unitUsed || "kg",
       unitPrice: bonusOnly ? String(bonusVal || price) : String(price),
       bonusQuantity: String(bonusQty),
-      bonusUnitValue: String(bonusVal)
+      bonusUnitValue: String(bonusVal),
+      notes: String(d.notes || "")
     };
 
     const editIdx = editingItemIndex;
@@ -347,7 +370,8 @@ export function usePurchaseForm(token, options = {}) {
         lineType: row.lineType === "venda" ? "venda" : "insumo",
         isBonificationOnly: bonusOnly,
         bonusQuantity: String(row.bonusQuantity ?? ""),
-        bonusUnitValue: refUnitValue
+        bonusUnitValue: refUnitValue,
+        notes: String(row.notes || "")
       });
       setEditingItemIndex(index);
       const label = product?.name || row.aiRawProductName || "item";
@@ -454,6 +478,8 @@ export function usePurchaseForm(token, options = {}) {
         setToast(`Limite de ${MAX_RECEIPT_FILES} ficheiros. Alguns não foram adicionados.`);
         setTimeout(() => setToast(""), 4000);
       }
+      const newOnes = files.slice(prev.length);
+      if (newOnes.length) warmReceiptCompressCache(newOnes);
       return files;
     });
   }, []);
@@ -470,18 +496,21 @@ export function usePurchaseForm(token, options = {}) {
 
   const appendReceiptExtras = useCallback(
     (fileList) => {
-      const added = Array.from(fileList || []).filter(Boolean);
-      if (!added.length) return;
+      const incoming = Array.from(fileList || []).filter(Boolean);
+      if (!incoming.length) return;
       setReceiptExtras((prev) => {
         const keys = new Set([...receipts, ...prev].map(receiptFileKey));
         const next = [...prev];
-        for (const f of added) {
+        const newlyAdded = [];
+        for (const f of incoming) {
           const k = receiptFileKey(f);
           if (!keys.has(k)) {
             keys.add(k);
             next.push(f);
+            newlyAdded.push(f);
           }
         }
+        if (newlyAdded.length) warmReceiptCompressCache(newlyAdded);
         return next;
       });
     },
@@ -594,6 +623,9 @@ export function usePurchaseForm(token, options = {}) {
     setTaxes([]);
     setExtras([]);
     setNotes("");
+    setDocumentMetadata({ ...EMPTY_DOCUMENT_METADATA });
+    setAiFieldConfidence({});
+    setDocumentTotals(null);
     setInvoiceNumber("");
     setReceipts([]);
     setReceiptExtras([]);
@@ -882,7 +914,8 @@ export function usePurchaseForm(token, options = {}) {
         lineType: item.lineType === "venda" ? "venda" : "insumo",
         isBonificationOnly: isBonificationOnlyLine(item),
         bonusQuantity: parseBrNumber(item.bonusQuantity) || 0,
-        bonusUnitValue: parseBrNumber(item.bonusUnitValue) || 0
+        bonusUnitValue: parseBrNumber(item.bonusUnitValue) || 0,
+        notes: item.notes ? String(item.notes).trim().slice(0, 500) || null : null
       }));
 
       const instPayload = installments.map((row) => ({
@@ -925,6 +958,8 @@ export function usePurchaseForm(token, options = {}) {
       if (taxPayload.length) form.append("taxes", JSON.stringify(taxPayload));
       if (extraPayload.length) form.append("extras", JSON.stringify(extraPayload));
       if (notes?.trim()) form.append("notes", notes.trim());
+      const metaPayload = serializeDocumentMetadata(documentMetadata);
+      if (Object.keys(metaPayload).length) form.append("documentMetadata", JSON.stringify(metaPayload));
       if (draftId) form.append("draftId", draftId);
 
       setToast("A enviar nota e itens…");
@@ -957,7 +992,7 @@ export function usePurchaseForm(token, options = {}) {
       setConfirming(false);
     }
   },
-    [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, installments, taxes, extras, notes, resetAfterSubmit]
+    [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, installments, taxes, extras, notes, documentMetadata, resetAfterSubmit]
   );
 
   const clearAnalyzeProgressTimer = useCallback(() => {
@@ -973,6 +1008,160 @@ export function usePurchaseForm(token, options = {}) {
       setAiProgress((p) => (p < 88 ? p + 1 : p));
     }, 1800);
   }, [clearAnalyzeProgressTimer]);
+
+  const applyAiImportResult = useCallback(
+    (data, { onSuccess } = {}) => {
+      const inv = invoiceNumberFromAi(data?.invoiceNumber);
+      if (inv) setInvoiceNumber(inv);
+      if (data?.purchaseDate) setDate(String(data.purchaseDate).slice(0, 10));
+      if (data?.supplierSuggestion?.id) setSupplierId(String(data.supplierSuggestion.id));
+
+      const fromApi = data?.items || [];
+      const singleLineInvoice = fromApi.length === 1;
+      const mergedRows = fromApi
+        .map((row, idx, all) => {
+          const built =
+            buildItemRowFromAi(row, { singleLineInvoice, allowedUnits: unitOptions }) ||
+            buildItemRowFromAiPartial(row, { singleLineInvoice, allowedUnits: unitOptions });
+          if (!built) return null;
+          const apiRow = all[idx];
+          const category =
+            String(built.category || apiRow?.category || apiRow?.categoryHint || "").trim() ||
+            (built.productId
+              ? String(products.find((p) => p.id === built.productId)?.category || "").trim()
+              : "");
+          const lineType =
+            apiRow?.lineType === "venda" || built.lineType === "venda" ? "venda" : "insumo";
+          return {
+            ...built,
+            category,
+            lineType,
+            notes: apiRow?.notes ? String(apiRow.notes) : built.notes || "",
+            notesConfidence: apiRow?.notesConfidence || built.notesConfidence || null
+          };
+        })
+        .filter(Boolean);
+
+      const productStubs = fromApi
+        .filter((row) => row.productId && row.productName)
+        .map((row) => ({
+          id: row.productId,
+          name: row.productName,
+          category: row.category || null,
+          type: row.lineType === "venda" ? "venda" : "insumo"
+        }));
+      if (productStubs.length) {
+        setProducts((prev) => {
+          const byId = new Map((prev || []).map((p) => [p.id, p]));
+          for (const stub of productStubs) {
+            const cur = byId.get(stub.id) || {};
+            byId.set(stub.id, { ...cur, ...stub });
+          }
+          return [...byId.values()].sort((a, b) =>
+            String(a.name || "").localeCompare(String(b.name || ""), "pt-BR")
+          );
+        });
+      }
+
+      if (fromApi.length) {
+        setItems(mergedRows);
+        setDraftItem({ ...EMPTY_DRAFT_ITEM, unitUsed: "un" });
+      }
+
+      const missingRows = [];
+      for (const [idx, it] of fromApi.entries()) {
+        if (it.missing?.length)
+          missingRows.push(`Item ${idx + 1} (${it.rawProductName || "produto"}): ${it.missing.join(", ")}`);
+      }
+      for (const g of data?.missingGlobal || []) missingRows.push(`Nota: ${g}`);
+      setAiMissing(missingRows);
+      setDocumentTotals(data?.documentTotals ?? null);
+
+      if (Array.isArray(data?.taxes) && data.taxes.length) setTaxes(mapApiAdjustmentLines(data.taxes));
+      else setTaxes([]);
+
+      if (Array.isArray(data?.extras) && data.extras.length) setExtras(mapApiAdjustmentLines(data.extras));
+      else setExtras([]);
+
+      if (data?.notes) setNotes(String(data.notes));
+      else setNotes("");
+
+      setDocumentMetadata(mapApiMetadataToForm(data?.documentMetadata));
+
+      if (Array.isArray(data?.suggestedInstallments) && data.suggestedInstallments.length) {
+        setInstallments(mapApiInstallments(data.suggestedInstallments));
+      }
+
+      const conf = data?.fieldConfidence && typeof data.fieldConfidence === "object" ? data.fieldConfidence : {};
+      setAiFieldConfidence(conf);
+
+      if (recordAiHighlights) {
+        const keys = new Set();
+        if (inv) keys.add("invoiceNumber");
+        if (data?.purchaseDate) keys.add("date");
+        if (data?.supplierSuggestion?.id) keys.add("supplierId");
+        for (const [key, level] of Object.entries(conf)) {
+          if (needsReview(level)) {
+            keys.add(key);
+            if (
+              [
+                "accessKey",
+                "series",
+                "issueDate",
+                "exitDate",
+                "orderNumber",
+                "paymentTerms",
+                "paymentDeadlineDays",
+                "salesRep",
+                "carrierName",
+                "complementaryInfo"
+              ].includes(key)
+            ) {
+              keys.add(`metadata.${key}`);
+            }
+          }
+        }
+        mergedRows.forEach((row, idx) => {
+          keys.add(`item.${idx}`);
+          if (needsReview(row.notesConfidence)) keys.add(`itemNotes.${idx}`);
+        });
+        if (data?.taxes?.length) keys.add("taxes");
+        if (data?.extras?.length) keys.add("extras");
+        if (data?.suggestedInstallments?.length) keys.add("installments");
+        setAiHighlightKeys(keys);
+      }
+
+      if (onSuccess) {
+        onSuccess(data, {
+          autoItems: mergedRows,
+          fromApi,
+          suggestedSupplier: Boolean(data?.supplierSuggestion?.id)
+        });
+      }
+
+      setAiStage("finish");
+      setAiProgress(100);
+      setAiStatusMessage("Análise concluída.");
+
+      if (!missingRows.length) {
+        setToast("Leitura concluída. Revise impostos, produtos e parcelas antes de publicar.");
+        setTimeout(() => setToast(""), 3200);
+      } else {
+        setToast("IA sugeriu parte dos dados. Complete ou corrija os campos indicados abaixo.");
+        setTimeout(() => setToast(""), 3800);
+      }
+      return true;
+    },
+    [products, recordAiHighlights, unitOptions]
+  );
+
+  const getAiFieldClass = useCallback(
+    (key) => {
+      if (!recordAiHighlights) return "";
+      return confidenceClass(key, aiFieldConfidence, aiHighlightKeys);
+    },
+    [recordAiHighlights, aiFieldConfidence, aiHighlightKeys]
+  );
 
   const parseReceiptsByAI = useCallback(
     async (opts = {}) => {
@@ -1061,113 +1250,9 @@ export function usePurchaseForm(token, options = {}) {
 
         setAiStage("extract");
         setAiProgress(92);
-        setAiStatusMessage("A organizar produtos e valores…");
+        setAiStatusMessage("A organizar produtos, impostos e parcelas…");
 
-        const inv = invoiceNumberFromAi(data?.invoiceNumber);
-        if (inv) setInvoiceNumber(inv);
-
-        if (data?.purchaseDate) setDate(String(data.purchaseDate).slice(0, 10));
-
-        if (data?.supplierSuggestion?.id) setSupplierId(String(data.supplierSuggestion.id));
-
-        const fromApi = data?.items || [];
-        const singleLineInvoice = fromApi.length === 1;
-        const mergedRows = fromApi
-          .map((row, idx, all) => {
-            const built =
-              buildItemRowFromAi(row, { singleLineInvoice, allowedUnits: unitOptions }) ||
-              buildItemRowFromAiPartial(row, { singleLineInvoice, allowedUnits: unitOptions });
-            if (!built) return null;
-            const apiRow = all[idx];
-            const category =
-              String(built.category || apiRow?.category || apiRow?.categoryHint || "").trim() ||
-              (built.productId
-                ? String(products.find((p) => p.id === built.productId)?.category || "").trim()
-                : "");
-            const lineType =
-              apiRow?.lineType === "venda" || built.lineType === "venda" ? "venda" : "insumo";
-            return { ...built, category, lineType };
-          })
-          .filter(Boolean);
-
-        const productStubs = fromApi
-          .filter((row) => row.productId && row.productName)
-          .map((row) => ({
-            id: row.productId,
-            name: row.productName,
-            category: row.category || null,
-            type: row.lineType === "venda" ? "venda" : "insumo"
-          }));
-        if (productStubs.length) {
-          setProducts((prev) => {
-            const byId = new Map((prev || []).map((p) => [p.id, p]));
-            for (const stub of productStubs) {
-              const cur = byId.get(stub.id) || {};
-              byId.set(stub.id, { ...cur, ...stub });
-            }
-            return [...byId.values()].sort((a, b) =>
-              String(a.name || "").localeCompare(String(b.name || ""), "pt-BR")
-            );
-          });
-        }
-
-        if (fromApi.length) {
-          setItems(mergedRows);
-          setDraftItem({ ...EMPTY_DRAFT_ITEM, unitUsed: "un" });
-        }
-
-        const missingRows = [];
-        for (const [idx, it] of fromApi.entries()) {
-          if (it.missing?.length)
-            missingRows.push(`Item ${idx + 1} (${it.rawProductName || "produto"}): ${it.missing.join(", ")}`);
-        }
-        for (const g of data?.missingGlobal || []) missingRows.push(`Nota: ${g}`);
-        setAiMissing(missingRows);
-        setDocumentTotals(data?.documentTotals ?? null);
-
-        const dt = data?.documentTotals;
-        if (dt && typeof dt === "object") {
-          const suggestedTaxes = [];
-          const pushTax = (name, val) => {
-            const n = Number(val);
-            if (Number.isFinite(n) && n > 0) suggestedTaxes.push({ name, amount: String(n) });
-          };
-          pushTax("ICMS ST", dt.icmsStAmount);
-          pushTax("Frete", dt.freightAmount);
-          pushTax("Seguro", dt.insuranceAmount);
-          pushTax("Outras despesas", dt.otherExpensesAmount);
-          if (suggestedTaxes.length) setTaxes(suggestedTaxes);
-        }
-
-        if (recordAiHighlights) {
-          const keys = new Set();
-          if (inv) keys.add("invoiceNumber");
-          if (data?.purchaseDate) keys.add("date");
-          if (data?.supplierSuggestion?.id) keys.add("supplierId");
-          mergedRows.forEach((_, idx) => keys.add(`item.${idx}`));
-          setAiHighlightKeys(keys);
-        }
-
-        if (onSuccess) {
-          onSuccess(data, {
-            autoItems: mergedRows,
-            fromApi,
-            suggestedSupplier: Boolean(data?.supplierSuggestion?.id)
-          });
-        }
-
-        setAiStage("finish");
-        setAiProgress(100);
-        setAiStatusMessage("Análise concluída.");
-
-        if (!missingRows.length) {
-          setToast("Leitura concluída. Revise os dados nas etapas e confirme ou ajuste o que precisar.");
-          setTimeout(() => setToast(""), 3200);
-        } else {
-          setToast("IA sugeriu parte dos dados. Complete ou corrija os campos indicados abaixo.");
-          setTimeout(() => setToast(""), 3800);
-        }
-        return true;
+        return applyAiImportResult(data, { onSuccess });
       } catch (err) {
         clearAnalyzeProgressTimer();
         const st = err?.response?.status;
@@ -1204,7 +1289,7 @@ export function usePurchaseForm(token, options = {}) {
         }, 400);
       }
     },
-    [token, receipts, products, recordAiHighlights, supplierId, unitOptions, clearAnalyzeProgressTimer, startAnalyzeProgressTimer]
+    [token, receipts, applyAiImportResult, clearAnalyzeProgressTimer, startAnalyzeProgressTimer]
   );
 
   const retryAiParse = useCallback(() => {
@@ -1258,6 +1343,11 @@ export function usePurchaseForm(token, options = {}) {
     aiRetryCount,
     aiMissing,
     documentTotals,
+    documentMetadata,
+    setDocumentMetadata,
+    aiFieldConfidence,
+    getAiFieldClass,
+    invoiceSummary,
     total,
     addItem,
     updateItem,

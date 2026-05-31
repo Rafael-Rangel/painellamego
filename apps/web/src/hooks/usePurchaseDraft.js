@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, withAuth } from "../api";
+import { compressReceiptFilesForSubmit } from "../lib/compressReceiptImages";
 
 /**
  * Rascunho no servidor: continuar lançamento em notebook ou celular.
@@ -80,8 +81,9 @@ export function usePurchaseDraft(token, { payload, enabled = true }) {
       const id = idOverride || draftId;
       if (!id || !files?.length) return [];
       if (idOverride && idOverride !== draftId) setDraftId(idOverride);
+      const compressed = await compressReceiptFilesForSubmit(files);
       const form = new FormData();
-      for (const f of files) form.append("receipts", f);
+      for (const f of compressed) form.append("receipts", f);
       const { data } = await api.post(`/purchases/drafts/${id}/receipts`, form, {
         headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" }
       });
