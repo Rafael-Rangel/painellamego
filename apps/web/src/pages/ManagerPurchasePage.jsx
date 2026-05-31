@@ -14,6 +14,7 @@ import { formatStoreReadonly } from "../lib/displayText";
 import { formatCurrency } from "../lib/formatters";
 import { getDraftItemFieldErrors } from "../lib/draftItemValidation";
 import {
+  hasChargeablePurchaseContent,
   isBonificationOnlyLine,
   normalizePurchaseItemRow,
   purchaseTotalsFromItems,
@@ -180,6 +181,7 @@ export default function ManagerPurchasePage() {
   );
 
   const hasBonusOnlyItems = useMemo(() => items.some(isBonificationOnlyLine), [items]);
+  const hasValidPurchaseContent = useMemo(() => hasChargeablePurchaseContent(items), [items]);
 
   const invoiceTrimmed = useMemo(() => String(invoiceNumber || "").trim(), [invoiceNumber]);
   const hasInvoice = invoiceTrimmed.length > 0;
@@ -224,9 +226,11 @@ export default function ManagerPurchasePage() {
       setTimeout(() => setToast(""), 4200);
       return;
     }
-    if (step === 2 && total <= 0) {
+    if (step === 2 && !hasValidPurchaseContent) {
       markStepAttempted(2);
-      setToast("Informe quantidade e valor unitário — o total da nota não pode ficar zerado.");
+      setToast(
+        "Informe quantidade e valor nos itens — compra paga ou produto de bonificação com valor de referência."
+      );
       setTimeout(() => setToast(""), 4200);
       return;
     }
@@ -247,6 +251,7 @@ export default function ManagerPurchasePage() {
     draftId,
     ensureDraftId,
     items.length,
+    hasValidPurchaseContent,
     installments.length,
     installmentCheck.ok,
     total,
@@ -262,7 +267,7 @@ export default function ManagerPurchasePage() {
     step === 1
       ? Boolean(supplierId) && hasInvoice
       : step === 2
-        ? items.length > 0 && total > 0
+        ? items.length > 0 && hasValidPurchaseContent
         : step < 5
           ? true
           : false;
@@ -274,8 +279,8 @@ export default function ManagerPurchasePage() {
         ? "Informe o número da nota fiscal."
         : step === 2 && items.length === 0
         ? "Nenhum item cadastrado ainda. Adicione pelo menos 1 item para liberar o botão «Próximo»."
-        : step === 2 && total <= 0
-          ? "Informe quantidade e valor unitário — o total da nota não pode ficar zerado."
+        : step === 2 && !hasValidPurchaseContent
+          ? "Informe quantidade e valor nos itens — compra paga ou produto de bonificação com valor de referência."
         : null;
 
   const saveDraftBlockReason =
@@ -356,8 +361,10 @@ export default function ManagerPurchasePage() {
       setTimeout(() => setToast(""), 4200);
       return;
     }
-    if (total <= 0) {
-      setToast("Não é possível publicar nota com total zerado. Revise quantidade e preço dos itens.");
+    if (!hasValidPurchaseContent) {
+      setToast(
+        "Revise os itens — informe compra paga ou produto de bonificação com quantidade e valor de referência."
+      );
       setTimeout(() => setToast(""), 4200);
       return;
     }
@@ -400,7 +407,11 @@ export default function ManagerPurchasePage() {
     resetValidation,
     markStepAttempted,
     installmentCheck.ok,
-    hasInvoice
+    hasInvoice,
+    hasValidPurchaseContent,
+    items.length,
+    supplierId,
+    total
   ]);
 
   const handleSaveDraft = useCallback(() => {
@@ -422,8 +433,10 @@ export default function ManagerPurchasePage() {
       setTimeout(() => setToast(""), 4200);
       return;
     }
-    if (total <= 0) {
-      setToast("O total da nota está zerado. Revise quantidade e preço dos itens.");
+    if (!hasValidPurchaseContent) {
+      setToast(
+        "Revise os itens — informe compra paga ou produto de bonificação com quantidade e valor de referência."
+      );
       setTimeout(() => setToast(""), 4200);
       return;
     }
@@ -457,7 +470,8 @@ export default function ManagerPurchasePage() {
     items.length,
     touchField,
     setToast,
-    hasInvoice
+    hasInvoice,
+    hasValidPurchaseContent
   ]);
 
   const storeBadge =
