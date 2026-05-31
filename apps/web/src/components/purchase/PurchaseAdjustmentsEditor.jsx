@@ -18,6 +18,7 @@ export default function PurchaseAdjustmentsEditor({
       <PurchaseNamedAmountListEditor
         title="Impostos"
         addLabel="+ Adicionar Imposto"
+        removeLabel="Remover Imposto"
         emptyHint="Opcional. Use «+ Adicionar Imposto» para incluir ISS, ICMS, taxas etc."
         rows={taxes}
         onChange={onTaxesChange}
@@ -28,6 +29,7 @@ export default function PurchaseAdjustmentsEditor({
       <PurchaseNamedAmountListEditor
         title="Extras"
         addLabel="+ Adicionar Extra"
+        removeLabel="Remover Extra"
         emptyHint="Opcional. Use «+ Adicionar Extra» para frete, taxas emergenciais etc."
         rows={extras}
         onChange={onExtrasChange}

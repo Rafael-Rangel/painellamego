@@ -1,3 +1,4 @@
+import { FaTrash } from "react-icons/fa";
 import { formatCurrency } from "../../lib/formatters";
 import { parseBrNumber, sumAdjustmentLines } from "../../lib/purchaseTotals";
 
@@ -8,6 +9,7 @@ function rowHasContent(row) {
 export default function PurchaseNamedAmountListEditor({
   title,
   addLabel,
+  removeLabel = "Remover",
   emptyHint,
   rows,
   onChange,
@@ -67,11 +69,12 @@ export default function PurchaseNamedAmountListEditor({
                 </div>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm purchase-adjustment-row__remove"
+                  className="btn btn-ghost btn-sm purchase-adjustment-row__remove purchase-adjustment-row__remove--danger"
                   onClick={() => removeRow(idx)}
-                  aria-label={`Remover ${row.name || "linha"}`}
+                  aria-label={removeLabel}
                 >
-                  ×
+                  <FaTrash aria-hidden />
+                  {removeLabel}
                 </button>
               </li>
             ))}

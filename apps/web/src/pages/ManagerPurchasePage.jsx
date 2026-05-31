@@ -79,7 +79,6 @@ export default function ManagerPurchasePage() {
     total,
     addItem,
     updateItem,
-    markItemAsPaidPurchase,
     removeItemAt,
     editingItemIndex,
     loadItemForEdit,
@@ -200,7 +199,6 @@ export default function ManagerPurchasePage() {
     [items, draftItem, editingItemIndex]
   );
 
-  const hasBonusOnlyItems = useMemo(() => items.some(isBonificationOnlyLine), [items]);
   const hasValidPurchaseContent = useMemo(() => hasChargeablePurchaseContent(items), [items]);
 
   const invoiceTrimmed = useMemo(() => String(invoiceNumber || "").trim(), [invoiceNumber]);
@@ -664,7 +662,6 @@ export default function ManagerPurchasePage() {
                     updateItem={updateItem}
                     onEdit={loadItemForEdit}
                     onDelete={handleDeleteItem}
-                    onMarkAsPaidPurchase={markItemAsPaidPurchase}
                     onNotify={notifyCatalog}
                     emptyMessage="Nenhum item cadastrado ainda."
                   />
@@ -675,11 +672,9 @@ export default function ManagerPurchasePage() {
                         Inclui o item preenchido no formulário. Toque em «Adicionar item» para confirmar na lista.
                       </span>
                     ) : null}
-                    {total <= 0 && hasBonusOnlyItems && invoiceTotals.totalBonusValue > 0 ? (
-                      <span className="wizard-total__hint" role="status">
-                        Há produtos de bonificação (sem cobrança) — valor de referência{" "}
-                        {formatCurrency(invoiceTotals.totalBonusValue)}. Se for compra paga, toque em «Marcar como compra
-                        paga» no item ou edite e desmarque «Produto de bonificação».
+                    {invoiceTotals.totalBonusValue > 0 ? (
+                      <span className="wizard-total__bonus" role="status">
+                        Total Bonificados: <strong>{formatCurrency(invoiceTotals.totalBonusValue)}</strong>
                       </span>
                     ) : null}
                   </p>

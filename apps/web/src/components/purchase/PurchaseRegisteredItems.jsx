@@ -13,7 +13,6 @@ export default function PurchaseRegisteredItems({
   updateItem,
   onEdit,
   onDelete,
-  onMarkAsPaidPurchase,
   onNotify,
   emptyMessage
 }) {
@@ -75,21 +74,6 @@ export default function PurchaseRegisteredItems({
                   <span className="purchase-item-card__value">{formatCurrency(item.unitPrice)}</span>
                 </div>
               </div>
-
-              {bonusOnly ? (
-                <p className="purchase-item-card__bonus-hint">
-                  Produto de bonificação — não entra no total a pagar.{" "}
-                  {onMarkAsPaidPurchase ? (
-                    <button
-                      type="button"
-                      className="purchase-item-card__bonus-fix"
-                      onClick={() => onMarkAsPaidPurchase(idx)}
-                    >
-                      Marcar como compra paga
-                    </button>
-                  ) : null}
-                </p>
-              ) : null}
 
               <div className="purchase-item-card__field purchase-item-card__field--mobile-edit">
                 <span className="purchase-item-card__label">Categoria</span>
