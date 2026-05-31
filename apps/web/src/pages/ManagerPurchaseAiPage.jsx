@@ -319,6 +319,11 @@ export default function ManagerPurchaseAiPage() {
                             placeholder="Buscar ou adicionar produto…"
                             options={products.map((p) => ({ value: p.id, label: p.name }))}
                             value={row.productId}
+                            initialText={row.aiRawProductName || ""}
+                            onFreeTextChange={(text) => {
+                              clearItemRowAiHighlight(idx);
+                              updateItem(idx, { productId: "", aiRawProductName: text });
+                            }}
                             onChange={(id) => {
                               clearItemRowAiHighlight(idx);
                               const product = products.find((p) => p.id === id);

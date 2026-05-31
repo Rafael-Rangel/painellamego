@@ -55,6 +55,20 @@ export function purchaseTotalsFromItems(items = []) {
   };
 }
 
+export function sumAdjustmentLines(lines = []) {
+  const total = lines.reduce((s, row) => s + (parseBrNumber(row?.amount) || 0), 0);
+  return Math.round(total * 100) / 100;
+}
+
+/** Resumo discriminado da nota (produtos, bonificação, impostos, extras e total final). */
+export function purchaseInvoiceSummary(items = [], taxes = [], extras = []) {
+  const { totalPayable, totalBonusValue } = purchaseTotalsFromItems(items);
+  const totalTaxes = sumAdjustmentLines(taxes);
+  const totalExtras = sumAdjustmentLines(extras);
+  const grandTotal = Math.round((totalPayable + totalTaxes + totalExtras) * 100) / 100;
+  return { totalPayable, totalBonusValue, totalTaxes, totalExtras, grandTotal };
+}
+
 export function validateInstallmentsAgainstPayable(installments, totalPayable, tolerance = 0.02) {
   const sum = (installments || []).reduce((s, row) => s + (parseBrNumber(row.amount) || 0), 0);
   const diff = Math.abs(sum - totalPayable);

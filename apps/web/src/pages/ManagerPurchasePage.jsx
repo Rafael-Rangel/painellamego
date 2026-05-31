@@ -10,6 +10,8 @@ import { WizardAlert, WizardAlerts, toastKindFromMessage } from "../components/u
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import PurchaseDraftItemForm from "../components/purchase/PurchaseDraftItemForm";
 import PurchaseRegisteredItems from "../components/purchase/PurchaseRegisteredItems";
+import PurchaseAdjustmentsEditor from "../components/purchase/PurchaseAdjustmentsEditor";
+import PurchaseInvoiceSummary from "../components/purchase/PurchaseInvoiceSummary";
 import { formatStoreReadonly } from "../lib/displayText";
 import { formatCurrency } from "../lib/formatters";
 import { getDraftItemFieldErrors } from "../lib/draftItemValidation";
@@ -17,6 +19,7 @@ import {
   hasChargeablePurchaseContent,
   isBonificationOnlyLine,
   normalizePurchaseItemRow,
+  purchaseInvoiceSummary,
   purchaseTotalsFromItems,
   purchaseTotalsWithDraft,
   validateInstallmentsAgainstPayable
@@ -29,10 +32,11 @@ import PurchaseInstallmentsEditor from "../components/purchase/PurchaseInstallme
 
 const STEPS = [
   { n: 1, title: "Dados", hint: "Data, fornecedor e NF" },
-  { n: 2, title: "Itens", hint: "Compra e produto de bonificação" },
-  { n: 3, title: "Vencimentos", hint: "Parcelas do boleto" },
-  { n: 4, title: "Fotos da nota", hint: "Opcional, pode pular" },
-  { n: 5, title: "Conferir", hint: "Rascunho ou publicar" }
+  { n: 2, title: "Itens", hint: "Compra e bonificação" },
+  { n: 3, title: "Impostos e extras", hint: "Opcional + observações" },
+  { n: 4, title: "Vencimentos", hint: "Parcelas do boleto" },
+  { n: 5, title: "Fotos da nota", hint: "Opcional, pode pular" },
+  { n: 6, title: "Conferir", hint: "Rascunho ou publicar" }
 ];
 
 export default function ManagerPurchasePage() {
@@ -90,6 +94,12 @@ export default function ManagerPurchasePage() {
     setToast,
     installments,
     setInstallments,
+    taxes,
+    setTaxes,
+    extras,
+    setExtras,
+    notes,
+    setNotes,
     setItems
   } = usePurchaseForm(token, { recordAiHighlights: false, onAfterConfirm });
 
@@ -104,9 +114,12 @@ export default function ManagerPurchasePage() {
       invoiceNumber,
       wizardStep: step,
       items,
-      installments
+      installments,
+      taxes,
+      extras,
+      notes
     }),
-    [supplierId, date, invoiceNumber, step, items, installments]
+    [supplierId, date, invoiceNumber, step, items, installments, taxes, extras, notes]
   );
 
   const {
@@ -146,7 +159,10 @@ export default function ManagerPurchasePage() {
           if (d.invoiceNumber) setInvoiceNumber(d.invoiceNumber);
           setItems((d.items || []).map(normalizePurchaseItemRow));
           setInstallments(d.installments || []);
-          const parsed = stepFromUrl ? Math.min(5, Math.max(1, Number(stepFromUrl) || 1)) : null;
+          setTaxes(d.taxes || []);
+          setExtras(d.extras || []);
+          setNotes(d.notes || "");
+          const parsed = stepFromUrl ? Math.min(6, Math.max(1, Number(stepFromUrl) || 1)) : null;
           setStep(parsed ?? d.wizardStep ?? 1);
           if (stepFromUrl) {
             setSearchParams({ draft: draftQuery }, { replace: true });
@@ -166,14 +182,18 @@ export default function ManagerPurchasePage() {
     return () => {
       cancelled = true;
     };
-  }, [token, draftQuery, loadDraft, cancelItemEdit, resetValidation, setSupplierId, setDate, setInvoiceNumber, setItems, setInstallments, setSearchParams, setToast]);
+  }, [token, draftQuery, loadDraft, cancelItemEdit, resetValidation, setSupplierId, setDate, setInvoiceNumber, setItems, setInstallments, setTaxes, setExtras, setNotes, setSearchParams, setToast]);
 
   const hasReceipts = receipts.length > 0 || serverReceipts.length > 0;
 
+  const invoiceSummary = useMemo(
+    () => purchaseInvoiceSummary(items, taxes, extras),
+    [items, taxes, extras]
+  );
+
   const installmentCheck = useMemo(() => {
-    const { totalPayable } = purchaseTotalsFromItems(items);
-    return validateInstallmentsAgainstPayable(installments, totalPayable);
-  }, [items, installments]);
+    return validateInstallmentsAgainstPayable(installments, invoiceSummary.grandTotal);
+  }, [installments, invoiceSummary.grandTotal]);
 
   const invoiceTotals = useMemo(
     () => purchaseTotalsWithDraft(items, draftItem, editingItemIndex),
@@ -234,14 +254,14 @@ export default function ManagerPurchasePage() {
       setTimeout(() => setToast(""), 4200);
       return;
     }
-    if (step === 3 && installments.length > 0 && !installmentCheck.ok && total > 0) {
-      markStepAttempted(3);
+    if (step === 4 && installments.length > 0 && !installmentCheck.ok && invoiceSummary.grandTotal > 0) {
+      markStepAttempted(4);
       setToast("Ajuste as parcelas para igualar o total da nota.");
       setTimeout(() => setToast(""), 4200);
       return;
     }
-    if (step === 4 && !hasReceipts) {
-      markStepAttempted(4);
+    if (step === 5 && !hasReceipts) {
+      markStepAttempted(5);
     }
     setStep((s) => s + 1);
   }, [
@@ -254,7 +274,7 @@ export default function ManagerPurchasePage() {
     hasValidPurchaseContent,
     installments.length,
     installmentCheck.ok,
-    total,
+    invoiceSummary.grandTotal,
     hasReceipts,
     setToast,
     markStepAttempted,
@@ -268,7 +288,7 @@ export default function ManagerPurchasePage() {
       ? Boolean(supplierId) && hasInvoice
       : step === 2
         ? items.length > 0 && hasValidPurchaseContent
-        : step < 5
+        : step < 6
           ? true
           : false;
 
@@ -310,7 +330,7 @@ export default function ManagerPurchasePage() {
       try {
         const id = await ensureDraftId();
         await uploadReceipts(files, id);
-        setToast("Fotos enviadas. Toque em «Próximo» para conferir (passo 5) antes de publicar.", "success");
+        setToast("Fotos enviadas. Toque em «Próximo» para conferir (passo 6) antes de publicar.", "success");
         setTimeout(() => setToast(""), 4500);
       } catch {
         appendReceipts(files);
@@ -327,9 +347,9 @@ export default function ManagerPurchasePage() {
   const showInvoiceError = shouldShow(1, "invoice") && !hasInvoice;
   const showItemsStepError = wasStepAttempted(2) && items.length === 0;
   const showInstallmentsError =
-    shouldShow(3) && installments.length > 0 && !installmentCheck.ok && total > 0;
-  const showReceiptsHint = shouldShow(4) && !hasReceipts;
-  const showReviewValidation = shouldShow(5);
+    shouldShow(4) && installments.length > 0 && !installmentCheck.ok && invoiceSummary.grandTotal > 0;
+  const showReceiptsHint = shouldShow(5) && !hasReceipts;
+  const showReviewValidation = shouldShow(6);
 
   const draftItemErrors = useMemo(() => getDraftItemFieldErrors(draftItem, products), [draftItem, products]);
   const showItemFieldValidation = itemAddAttempted || shouldShow(2, "itemFields");
@@ -355,7 +375,7 @@ export default function ManagerPurchasePage() {
   );
 
   const handlePublish = useCallback(() => {
-    markStepAttempted(5);
+    markStepAttempted(6);
     if (!supplierId || !hasInvoice || items.length === 0) {
       setToast("Complete fornecedor, número da NF e itens antes de publicar.");
       setTimeout(() => setToast(""), 4200);
@@ -368,13 +388,13 @@ export default function ManagerPurchasePage() {
       setTimeout(() => setToast(""), 4200);
       return;
     }
-    if (installments.length > 0 && !installmentCheck.ok && total > 0) {
-      setToast("Corrija as parcelas no passo 3 antes de publicar.");
+    if (installments.length > 0 && !installmentCheck.ok && invoiceSummary.grandTotal > 0) {
+      setToast("Corrija as parcelas no passo 4 antes de publicar.");
       setTimeout(() => setToast(""), 4200);
       return;
     }
     if (!hasReceipts) {
-      setToast("Para publicar, anexe pelo menos uma foto ou PDF no passo 4 (ou use «Salvar rascunho»).");
+      setToast("Para publicar, anexe pelo menos uma foto ou PDF no passo 5 (ou use «Salvar rascunho»).");
       setTimeout(() => setToast(""), 5500);
       return;
     }
@@ -411,11 +431,11 @@ export default function ManagerPurchasePage() {
     hasValidPurchaseContent,
     items.length,
     supplierId,
-    total
+    invoiceSummary.grandTotal
   ]);
 
   const handleSaveDraft = useCallback(() => {
-    markStepAttempted(5);
+    markStepAttempted(6);
     if (!supplierId) {
       touchField("supplier");
       setToast("Selecione o fornecedor antes de guardar.");
@@ -505,11 +525,11 @@ export default function ManagerPurchasePage() {
         <header className="wizard-header">
           <h2 className="wizard-title">Novo lançamento</h2>
           <p className="wizard-lead">
-            Preencha as etapas normalmente. No passo 4 as fotos são opcionais. No fim, guarde como rascunho ou publique
+            Preencha as etapas normalmente. No passo 5 as fotos são opcionais. No fim, guarde como rascunho ou publique
             (publicar exige anexo).
           </p>
           {saveState === "saved" && lastSavedAt ? (
-            <p className="purchase-draft-status">Sincronizado {lastSavedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} (rascunho automático — continue até o passo 5)</p>
+            <p className="purchase-draft-status">Sincronizado {lastSavedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} (rascunho automático — continue até o passo 6)</p>
           ) : null}
         </header>
 
@@ -670,6 +690,24 @@ export default function ManagerPurchasePage() {
 
           {step === 3 ? (
             <div className="wizard-step-content">
+              <h3 className="wizard-panel-title">Impostos, extras e observações</h3>
+              <p className="wizard-panel-desc">
+                Opcional. Adicione impostos e lançamentos extras da nota, além de observações livres para conferência.
+              </p>
+              <PurchaseAdjustmentsEditor
+                items={items}
+                taxes={taxes}
+                extras={extras}
+                notes={notes}
+                onTaxesChange={setTaxes}
+                onExtrasChange={setExtras}
+                onNotesChange={setNotes}
+              />
+            </div>
+          ) : null}
+
+          {step === 4 ? (
+            <div className="wizard-step-content">
               <div className="wizard-section-icon">
                 <FaFileInvoice />
               </div>
@@ -677,6 +715,8 @@ export default function ManagerPurchasePage() {
               <p className="wizard-panel-desc">Cadastre uma ou várias datas de parcelas de pagamento.</p>
               <PurchaseInstallmentsEditor
                 items={items}
+                taxes={taxes}
+                extras={extras}
                 installments={installments}
                 onChange={setInstallments}
                 purchaseDate={date}
@@ -685,14 +725,14 @@ export default function ManagerPurchasePage() {
             </div>
           ) : null}
 
-          {step === 4 ? (
+          {step === 5 ? (
             <div className="wizard-step-content">
               <div className="wizard-section-icon">
                 <FaCloudUploadAlt />
               </div>
               <h3 className="wizard-panel-title">Fotos / PDF da nota</h3>
               <p className="wizard-panel-desc">
-                Envie a foto ou o PDF da nota fiscal. O envio não publica a compra — use «Próximo» para conferir no passo 5
+                Envie a foto ou o PDF da nota fiscal. O envio não publica a compra — use «Próximo» para conferir no passo 6
                 e só então «Publicar nota» ou «Salvar rascunho».
               </p>
               {serverReceipts.length ? (
@@ -736,13 +776,15 @@ export default function ManagerPurchasePage() {
             </div>
           ) : null}
 
-          {step === 5 ? (
+          {step === 6 ? (
             <div className="wizard-step-content wizard-review">
               <div className="wizard-section-icon wizard-section-icon-success">
                 <FaCheck />
               </div>
               <h3 className="wizard-panel-title">Conferência final</h3>
               <p className="wizard-panel-desc">Confira os dados antes de salvar no sistema.</p>
+
+              <PurchaseInvoiceSummary items={items} taxes={taxes} extras={extras} notes={notes} />
 
               <dl className="wizard-review-dl">
                 <div>
@@ -764,8 +806,8 @@ export default function ManagerPurchasePage() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Total</dt>
-                  <dd>{formatCurrency(total)}</dd>
+                  <dt>Total da nota</dt>
+                  <dd>{formatCurrency(invoiceSummary.grandTotal)}</dd>
                 </div>
                 <div>
                   <dt>Nota fiscal</dt>
@@ -815,7 +857,7 @@ export default function ManagerPurchasePage() {
               <FaArrowLeft style={{ marginRight: "0.35rem" }} />
               Voltar
             </HintButton>
-            {step < 5 ? (
+            {step < 6 ? (
               <HintButton
                 disabled={!canGoNext}
                 allowClickWhenDisabled
@@ -845,7 +887,7 @@ export default function ManagerPurchasePage() {
                   allowClickWhenDisabled
                   disabledReason={
                     showReviewValidation && !saveDraftBlockReason && !hasReceipts
-                      ? "Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 4 ou pelo lápis no Histórico)."
+                      ? "Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 5 ou pelo lápis no Histórico)."
                       : showReviewValidation && saveDraftBlockReason
                         ? saveDraftBlockReason
                         : undefined
@@ -853,7 +895,7 @@ export default function ManagerPurchasePage() {
                   title={
                     showReviewValidation && (saveDraftBlockReason || !hasReceipts)
                       ? saveDraftBlockReason ||
-                        "Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 4 ou pelo lápis no Histórico)."
+                        "Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 5 ou pelo lápis no Histórico)."
                       : undefined
                   }
                   onClick={handlePublish}

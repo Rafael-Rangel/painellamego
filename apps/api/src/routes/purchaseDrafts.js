@@ -7,7 +7,7 @@ import { requireAuth, resolveStoreScope } from "../middleware/auth.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
 import { finalizePurchase } from "../services/purchaseFinalizeService.js";
 import { logAudit } from "../services/auditService.js";
-import { purchaseItemSchema, purchaseInstallmentSchema } from "@lamego/shared";
+import { purchaseItemSchema, purchaseInstallmentSchema, purchaseAdjustmentLineSchema } from "@lamego/shared";
 import { gatherReceiptFiles, normalizePurchaseDate } from "./purchaseRouteUtils.js";
 
 const upload = multer({
@@ -24,6 +24,26 @@ async function resolveManagerStoreId(req) {
   return storeIds[0] || req.user.storeId || null;
 }
 
+function parseAdjustmentLines(raw, fallback = []) {
+  if (raw == null) return fallback;
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  }
+  if (!Array.isArray(parsed)) return fallback;
+  const validated = z.array(purchaseAdjustmentLineSchema).safeParse(
+    parsed.map((row) => ({
+      name: String(row?.name || "").trim(),
+      amount: Number(row?.amount) || 0
+    }))
+  );
+  return validated.success ? validated.data : fallback;
+}
+
 /** Lista rascunhos abertos da loja do gerente. */
 router.get("/drafts", requireAuth, async (req, res) => {
   const storeId = await resolveManagerStoreId(req);
@@ -32,7 +52,7 @@ router.get("/drafts", requireAuth, async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from("purchase_drafts")
     .select(
-      "id, supplier_id, purchase_date, invoice_number, wizard_step, updated_at, items_json, installments_json, suppliers(name)"
+      "id, supplier_id, purchase_date, invoice_number, wizard_step, updated_at, items_json, installments_json, taxes_json, extras_json, suppliers(name)"
     )
     .eq("store_id", storeId)
     .eq("status", "open")
@@ -117,6 +137,8 @@ router.get("/drafts/:draftId", requireAuth, async (req, res) => {
     wizardStep: data.wizard_step,
     items: data.items_json || [],
     installments: data.installments_json || [],
+    taxes: data.taxes_json || [],
+    extras: data.extras_json || [],
     receipts: (data.purchase_draft_receipts || []).map((r) => ({
       id: r.id,
       originalName: r.original_name,
@@ -131,9 +153,11 @@ const saveDraftSchema = z.object({
   supplierId: z.string().uuid().nullable().optional(),
   purchaseDate: z.string().optional(),
   invoiceNumber: z.string().optional(),
-  wizardStep: z.number().int().min(1).max(5).optional(),
+  wizardStep: z.number().int().min(1).max(6).optional(),
   items: z.array(z.record(z.string(), z.unknown())).optional(),
   installments: z.array(z.record(z.string(), z.unknown())).optional(),
+  taxes: z.array(z.record(z.string(), z.unknown())).optional(),
+  extras: z.array(z.record(z.string(), z.unknown())).optional(),
   notes: z.string().max(2000).optional()
 });
 
@@ -153,6 +177,8 @@ router.put("/drafts/:draftId", requireAuth, async (req, res) => {
   if (parsed.data.wizardStep !== undefined) patch.wizard_step = parsed.data.wizardStep;
   if (parsed.data.items !== undefined) patch.items_json = parsed.data.items;
   if (parsed.data.installments !== undefined) patch.installments_json = parsed.data.installments;
+  if (parsed.data.taxes !== undefined) patch.taxes_json = parsed.data.taxes;
+  if (parsed.data.extras !== undefined) patch.extras_json = parsed.data.extras;
   if (parsed.data.notes !== undefined) patch.notes = parsed.data.notes;
 
   const { data, error } = await supabaseAdmin
@@ -317,6 +343,10 @@ router.post(
     );
     if (instParsed.success) installments = instParsed.data;
 
+    const taxes = parseAdjustmentLines(req.body?.taxes, draft.taxes_json || []);
+    const extras = parseAdjustmentLines(req.body?.extras, draft.extras_json || []);
+    const notes = req.body?.notes != null ? String(req.body.notes) : draft.notes || null;
+
     const newFiles = gatherReceiptFiles(req.files || {});
     const draftReceiptCount = (draft.purchase_draft_receipts || []).length;
     if (!draftReceiptCount && !newFiles.length) {
@@ -347,7 +377,10 @@ router.post(
         items,
         installments,
         receiptFiles: receiptBuffers,
-        draftId: draft.id
+        draftId: draft.id,
+        taxes,
+        extras,
+        notes
       });
 
       await logAudit({

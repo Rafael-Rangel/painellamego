@@ -22,7 +22,7 @@ export function getDraftItemFieldErrors(draftItem, products) {
 
   return {
     category: !category,
-    product: !draftItem?.productId,
+    product: !draftItem?.productId && String(draftItem?.aiRawProductName || "").trim().length < 2,
     quantity: bonusOnly ? bonusQty <= 0 && (!Number.isFinite(qty) || qty <= 0) : !Number.isFinite(qty) || qty <= 0,
     unitPrice: bonusOnly
       ? !Number.isFinite(bonusVal) || bonusVal <= 0

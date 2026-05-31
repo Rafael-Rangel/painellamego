@@ -45,12 +45,19 @@ export const purchaseInstallmentSchema = z.object({
   notes: z.string().max(500).optional()
 });
 
+export const purchaseAdjustmentLineSchema = z.object({
+  name: z.string().min(1).max(120),
+  amount: z.number().nonnegative()
+});
+
 export {
   parseBrNumber,
   isBonificationOnlyLine,
   lineChargeAmount,
   lineBonusValue,
   purchaseTotalsFromItems,
+  sumAdjustmentLines,
+  purchaseInvoiceSummary,
   validateInstallmentsAgainstPayable,
   draftItemToPreviewRow,
   purchaseTotalsWithDraft,
@@ -58,6 +65,8 @@ export {
   normalizePurchaseItemRow,
   lineDisplayAmount
 } from "./purchaseTotals";
+
+export type { PurchaseAdjustmentLine } from "./purchaseTotals";
 
 export const createPurchaseSchema = z.object({
   storeId: z.string().uuid(),

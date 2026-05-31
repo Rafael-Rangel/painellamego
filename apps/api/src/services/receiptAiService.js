@@ -406,6 +406,9 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
       matchKey
     });
 
+    const displayName = norm.productName || normalizedLabel || "";
+    const catalogMatched = Boolean(best && matchScore >= MIN_PRODUCT_FUZZY);
+
     let qty = norm.quantity;
     const unitPrice = norm.unitPrice;
     if ((!Number.isFinite(qty) || qty <= 0) && singleLine && Number.isFinite(unitPrice) && unitPrice > 0) {
@@ -431,14 +434,16 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
     const lineType = best?.type === "venda" ? "venda" : norm.lineTypeHint === "venda" ? "venda" : "insumo";
 
     const missing = [];
-    if (!best || matchScore < MIN_PRODUCT_FUZZY) missing.push("produto");
+    if (!catalogMatched && (!displayName || displayName.length < 2)) missing.push("produto");
     if (!category) missing.push("categoria");
     if (!Number.isFinite(qty) || qty <= 0) missing.push("quantidade");
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) missing.push("valor unitário");
     return {
-      rawProductName: norm.productName,
-      productId: best?.id || null,
-      productName: best?.name || null,
+      rawProductName: displayName,
+      extractedProductName: displayName,
+      productId: catalogMatched ? best.id : null,
+      productName: catalogMatched ? best.name : displayName || null,
+      catalogMatched,
       category,
       categoryHint: norm.categoryHint || null,
       quantity: Number.isFinite(qty) && qty > 0 ? qty : null,

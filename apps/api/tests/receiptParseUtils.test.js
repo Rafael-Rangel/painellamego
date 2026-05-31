@@ -5,7 +5,8 @@ import {
   normalizeReceiptUnit,
   reconcileLineItem,
   normalizeRawAiItem,
-  buildDocumentTotalHints
+  buildDocumentTotalHints,
+  cleanReceiptProductDescription
 } from "../src/lib/receiptParseUtils.js";
 
 test("parseBrDecimal: formato brasileiro", () => {
@@ -90,6 +91,32 @@ test("buildDocumentTotalHints: ICMS ST no rodapé (BRF)", () => {
     [509.97, 736.36, 487.74]
   );
   assert.ok(hints.some((h) => h.includes("ICMS ST")));
+});
+
+test("cleanReceiptProductDescription: remove bloco FCP da descrição DANFE", () => {
+  const raw =
+    "ATUM PORT.MINERVA SOLIDO AZEITE CX 25X120 Valor base calculo FCP R$ 209,40; Valor FCP R$ 4,19(2,00%)";
+  assert.equal(cleanReceiptProductDescription(raw), "ATUM PORT.MINERVA SOLIDO AZEITE CX 25X120");
+});
+
+test("normalizeRawAiItem: limpa descrição longa de DANFE", () => {
+  const row = normalizeRawAiItem(
+    {
+      productName:
+        "GRAO DE BICO DUOLIVAL-VIDRO CX 12X400 Valor base calculo FCP R$ 65,07; Val Aprox Tributos: 51,14 (42,87%)",
+      quantity: 1,
+      unitUsed: "CX",
+      unitPrice: 119.3,
+      lineTotal: 119.3
+    },
+    ["cx", "un"]
+  );
+  assert.equal(row.productName, "GRAO DE BICO DUOLIVAL-VIDRO CX 12X400");
+  assert.equal(row.unitUsed, "cx");
+});
+
+test("normalizeReceiptUnit: BAL balde", () => {
+  assert.equal(normalizeReceiptUnit("BAL", ["bal", "cx"]), "bal");
 });
 
 test("normalizeReceiptUnit: LT e CAIXA", () => {

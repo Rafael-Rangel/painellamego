@@ -11,6 +11,7 @@ import { purchaseApiErrorMessage } from "../lib/purchaseErrors";
 import {
   isBonificationOnlyLine,
   parseBrNumber,
+  purchaseInvoiceSummary,
   purchaseTotalsFromItems,
   purchaseTotalsWithDraft,
   validateInstallmentsAgainstPayable
@@ -74,7 +75,16 @@ const EMPTY_DRAFT_ITEM = {
   bonusUnitValue: ""
 };
 
-function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
+export function serializeAdjustmentLines(lines = []) {
+  return (lines || [])
+    .map((row) => ({
+      name: String(row?.name || "").trim(),
+      amount: parseBrNumber(row?.amount) || 0
+    }))
+    .filter((row) => row.name.length > 0);
+}
+
+export function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
   const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
   if (!it.productId || !Number.isFinite(priceNum) || priceNum <= 0) return null;
   let qty = it.quantity != null ? Number(it.quantity) : NaN;
@@ -93,24 +103,50 @@ function buildItemRowFromAi(it, { singleLineInvoice, allowedUnits }) {
   };
 }
 
-/** Linha para a lista mesmo sem produto no catálogo (preço obrigatório; qtd default 1 se inválida). */
-function buildItemRowFromAiPartial(it, { singleLineInvoice, allowedUnits }) {
-  const priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
-  if (!Number.isFinite(priceNum) || priceNum <= 0) return null;
+/** Linha na lista mesmo sem produto no catálogo — pré-preenche nome lido na NF. */
+export function buildItemRowFromAiPartial(it, { singleLineInvoice, allowedUnits }) {
+  const raw = String(it.rawProductName || it.extractedProductName || it.productName || "").trim();
+  if (!it.productId && raw.length < 2) return null;
+
   let qty = it.quantity != null ? Number(it.quantity) : NaN;
-  if (!Number.isFinite(qty) || qty <= 0) {
-    qty = singleLineInvoice ? 1 : 1;
+  let priceNum = it.unitPrice != null ? Number(it.unitPrice) : NaN;
+  const lineTotalNum = it.lineTotal != null ? Number(it.lineTotal) : NaN;
+
+  if ((!Number.isFinite(priceNum) || priceNum <= 0) && Number.isFinite(lineTotalNum) && lineTotalNum > 0) {
+    if (Number.isFinite(qty) && qty > 0) priceNum = lineTotalNum / qty;
+    else if (singleLineInvoice) {
+      qty = 1;
+      priceNum = lineTotalNum;
+    }
   }
-  const raw = String(it.rawProductName || it.productName || "").trim();
+  if ((!Number.isFinite(qty) || qty <= 0) && Number.isFinite(priceNum) && priceNum > 0) {
+    qty = 1;
+  }
+  if (
+    (!Number.isFinite(priceNum) || priceNum <= 0) &&
+    Number.isFinite(qty) &&
+    qty > 0 &&
+    Number.isFinite(lineTotalNum) &&
+    lineTotalNum > 0
+  ) {
+    priceNum = lineTotalNum / qty;
+  }
+
+  const hasAnyValue =
+    (Number.isFinite(qty) && qty > 0) ||
+    (Number.isFinite(priceNum) && priceNum > 0) ||
+    (Number.isFinite(lineTotalNum) && lineTotalNum > 0);
+  if (!it.productId && !hasAnyValue && raw.length < 2) return null;
+
   return {
     productId: it.productId || "",
     category: String(it.category || it.categoryHint || "").trim(),
-    aiRawProductName: raw || undefined,
-    quantity: String(qty),
+    aiRawProductName: it.productId ? undefined : raw || undefined,
+    quantity: Number.isFinite(qty) && qty > 0 ? String(qty) : "",
     unitUsed: normalizeUnitUsed(it.unitUsed, allowedUnits),
-    unitPrice: String(priceNum),
+    unitPrice: Number.isFinite(priceNum) && priceNum > 0 ? String(priceNum) : "",
     lineType: it.lineType === "venda" ? "venda" : "insumo",
-    aiLineTotal: Number.isFinite(Number(it.lineTotal)) ? Number(it.lineTotal) : undefined
+    aiLineTotal: Number.isFinite(lineTotalNum) && lineTotalNum > 0 ? lineTotalNum : undefined
   };
 }
 
@@ -137,6 +173,9 @@ export function usePurchaseForm(token, options = {}) {
   const [draftItem, setDraftItem] = useState({ ...EMPTY_DRAFT_ITEM });
   const [editingItemIndex, setEditingItemIndex] = useState(null);
   const [installments, setInstallments] = useState([]);
+  const [taxes, setTaxes] = useState([]);
+  const [extras, setExtras] = useState([]);
+  const [notes, setNotes] = useState("");
   const [toast, setToastState] = useState("");
   const [toastType, setToastType] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -190,7 +229,7 @@ export function usePurchaseForm(token, options = {}) {
         const lineType = product?.type === "venda" ? "venda" : "insumo";
         const unitUsed = product?.standard_unit ? normalizeUnitUsed(product.standard_unit, unitOptions) : d.unitUsed;
         const category = product?.category ? String(product.category) : d.category;
-        return { ...d, productId, lineType, unitUsed, category };
+        return { ...d, productId, lineType, unitUsed, category, aiRawProductName: undefined };
       });
     },
     [products, unitOptions]
@@ -229,8 +268,9 @@ export function usePurchaseForm(token, options = {}) {
     const bonusQty = parseBrNumber(d.bonusQuantity) || 0;
     const bonusVal = parseBrNumber(d.bonusUnitValue) || 0;
 
-    if (!d.productId) {
-      setToast("Selecione o produto na lista (toque no nome após buscar).");
+    const rawName = String(d.aiRawProductName || "").trim();
+    if (!d.productId && rawName.length < 2) {
+      setToast("Selecione o produto na lista ou mantenha o nome lido da nota.");
       setTimeout(() => setToast(""), 4200);
       return;
     }
@@ -260,7 +300,8 @@ export function usePurchaseForm(token, options = {}) {
 
     const bonusOnly = d.isBonificationOnly === true;
     const newRow = {
-      productId: d.productId,
+      productId: d.productId || "",
+      aiRawProductName: d.productId ? undefined : rawName || undefined,
       category,
       lineType: d.lineType === "venda" ? "venda" : "insumo",
       isBonificationOnly: bonusOnly,
@@ -298,6 +339,7 @@ export function usePurchaseForm(token, options = {}) {
       const refUnitValue = String(row.bonusUnitValue || (bonusOnly ? row.unitPrice : "") || "");
       setDraftItem({
         productId: row.productId || "",
+        aiRawProductName: row.aiRawProductName,
         category: row.category || product?.category || "",
         quantity: String(row.quantity ?? ""),
         unitUsed: row.unitUsed || "kg",
@@ -549,6 +591,9 @@ export function usePurchaseForm(token, options = {}) {
   const resetAfterSubmit = useCallback(() => {
     setItems([]);
     setInstallments([]);
+    setTaxes([]);
+    setExtras([]);
+    setNotes("");
     setInvoiceNumber("");
     setReceipts([]);
     setReceiptExtras([]);
@@ -671,9 +716,12 @@ export function usePurchaseForm(token, options = {}) {
             supplierId: supplierId || null,
             purchaseDate: date,
             invoiceNumber,
-            wizardStep: 5,
+            wizardStep: 6,
             items: workItems,
-            installments
+            installments,
+            taxes: serializeAdjustmentLines(taxes),
+            extras: serializeAdjustmentLines(extras),
+            notes: notes || ""
           },
           activeDraftId
         );
@@ -699,6 +747,9 @@ export function usePurchaseForm(token, options = {}) {
       invoiceNumber,
       receipts,
       installments,
+      taxes,
+      extras,
+      notes,
       resetAfterSubmit
     ]
   );
@@ -707,7 +758,7 @@ export function usePurchaseForm(token, options = {}) {
     async ({ draftId = null, serverReceiptCount = 0, uploadDraftReceipts, createDraft, persistDraft } = {}) => {
     const hasReceipts = receipts.length > 0 || serverReceiptCount > 0;
     if (!hasReceipts) {
-      setToast("Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 4 ou ao editar o rascunho).");
+      setToast("Para publicar, anexe pelo menos uma foto ou PDF da nota (passo 5 ou ao editar o rascunho).");
       setTimeout(() => setToast(""), 4500);
       return;
     }
@@ -778,12 +829,12 @@ export function usePurchaseForm(token, options = {}) {
       return;
     }
 
-    const { totalPayable } = purchaseTotalsFromItems(workItems);
+    const { grandTotal } = purchaseInvoiceSummary(workItems, taxes, extras);
     if (installments.length > 0) {
-      const instCheck = validateInstallmentsAgainstPayable(installments, totalPayable);
-      if (!instCheck.ok && totalPayable > 0) {
+      const instCheck = validateInstallmentsAgainstPayable(installments, grandTotal);
+      if (!instCheck.ok && grandTotal > 0) {
         setToast(
-          `A soma das parcelas (${instCheck.sum}) deve igualar o total da nota (${totalPayable}).`
+          `A soma das parcelas (${instCheck.sum}) deve igualar o total da nota (${grandTotal}).`
         );
         setTimeout(() => setToast(""), 5500);
         setConfirming(false);
@@ -840,6 +891,9 @@ export function usePurchaseForm(token, options = {}) {
         notes: row.notes || ""
       }));
 
+      const taxPayload = serializeAdjustmentLines(taxes);
+      const extraPayload = serializeAdjustmentLines(extras);
+
       let activeDraftId = draftId;
       if (!activeDraftId && createDraft) {
         activeDraftId = await createDraft();
@@ -849,9 +903,12 @@ export function usePurchaseForm(token, options = {}) {
               supplierId: supplierId || null,
               purchaseDate: date,
               invoiceNumber,
-              wizardStep: 5,
+              wizardStep: 6,
               items: workItems,
-              installments
+              installments,
+              taxes: taxPayload,
+              extras: extraPayload,
+              notes: notes || ""
             },
             activeDraftId
           );
@@ -865,6 +922,9 @@ export function usePurchaseForm(token, options = {}) {
       form.append("invoiceNumber", invoiceNumber || `NF-${Date.now()}`);
       form.append("items", JSON.stringify(payload));
       if (instPayload.length) form.append("installments", JSON.stringify(instPayload));
+      if (taxPayload.length) form.append("taxes", JSON.stringify(taxPayload));
+      if (extraPayload.length) form.append("extras", JSON.stringify(extraPayload));
+      if (notes?.trim()) form.append("notes", notes.trim());
       if (draftId) form.append("draftId", draftId);
 
       setToast("A enviar nota e itens…");
@@ -897,7 +957,7 @@ export function usePurchaseForm(token, options = {}) {
       setConfirming(false);
     }
   },
-    [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, installments, resetAfterSubmit]
+    [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, installments, taxes, extras, notes, resetAfterSubmit]
   );
 
   const clearAnalyzeProgressTimer = useCallback(() => {
@@ -1065,6 +1125,20 @@ export function usePurchaseForm(token, options = {}) {
         setAiMissing(missingRows);
         setDocumentTotals(data?.documentTotals ?? null);
 
+        const dt = data?.documentTotals;
+        if (dt && typeof dt === "object") {
+          const suggestedTaxes = [];
+          const pushTax = (name, val) => {
+            const n = Number(val);
+            if (Number.isFinite(n) && n > 0) suggestedTaxes.push({ name, amount: String(n) });
+          };
+          pushTax("ICMS ST", dt.icmsStAmount);
+          pushTax("Frete", dt.freightAmount);
+          pushTax("Seguro", dt.insuranceAmount);
+          pushTax("Outras despesas", dt.otherExpensesAmount);
+          if (suggestedTaxes.length) setTaxes(suggestedTaxes);
+        }
+
         if (recordAiHighlights) {
           const keys = new Set();
           if (inv) keys.add("invoiceNumber");
@@ -1165,6 +1239,12 @@ export function usePurchaseForm(token, options = {}) {
     setItems,
     installments,
     setInstallments,
+    taxes,
+    setTaxes,
+    extras,
+    setExtras,
+    notes,
+    setNotes,
     draftItem,
     setDraftItem,
     toast,

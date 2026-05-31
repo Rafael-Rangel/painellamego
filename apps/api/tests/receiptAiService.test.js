@@ -268,3 +268,62 @@ test("parseReceiptWithAI: esgota OpenAI e usa fallback OpenRouter fixo", async (
 
   delete global.fetch;
 });
+
+test("parseReceiptWithAI: sem match no catálogo devolve nome extraído da NF", async () => {
+  global.fetch = async (url) => {
+    if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  documentType: "danfe",
+                  invoiceNumber: "46328",
+                  purchaseDate: "2026-05-26",
+                  supplierName: "BEIRAO DA SERRA",
+                  productsSubtotal: 1570.1,
+                  documentTotal: 1611.78,
+                  icmsStAmount: 19.81,
+                  items: [
+                    {
+                      productName:
+                        "ATUM PORT.MINERVA SOLIDO AZEITE CX 25X120 Valor base calculo FCP R$ 209,40",
+                      quantity: 1,
+                      unitUsed: "CX",
+                      unitPrice: 383.9,
+                      lineTotal: 383.9
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        };
+      }
+    };
+  };
+
+  process.env.OPENAI_API_KEY = "test-openai";
+  process.env.OPENROUTER_API_KEY = "test-or";
+
+  const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
+  const jpegBuf = Buffer.from("ff", "hex");
+  const out = await parseReceiptWithAI({
+    imageBuffer: jpegBuf,
+    mimeType: "image/jpeg",
+    products: [],
+    suppliers: [{ id: "s1", name: "BEIRAO DA SERRA" }]
+  });
+
+  assert.equal(out.items.length, 1);
+  assert.equal(out.items[0].productId, null);
+  assert.equal(out.items[0].productName, "ATUM PORT.MINERVA SOLIDO AZEITE CX 25X120");
+  assert.equal(out.items[0].rawProductName, "ATUM PORT.MINERVA SOLIDO AZEITE CX 25X120");
+  assert.equal(out.items[0].catalogMatched, false);
+  assert.ok(!out.items[0].missing.includes("produto"));
+
+  delete global.fetch;
+});

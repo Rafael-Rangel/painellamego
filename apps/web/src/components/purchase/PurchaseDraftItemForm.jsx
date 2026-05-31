@@ -71,6 +71,10 @@ export default function PurchaseDraftItemForm({
           placeholder="Buscar ou adicionar…"
           options={products.map((product) => ({ value: product.id, label: product.name }))}
           value={draftItem.productId}
+          initialText={draftItem.aiRawProductName || ""}
+          onFreeTextChange={(text) =>
+            setDraftItem((d) => ({ ...d, productId: "", aiRawProductName: text }))
+          }
           onChange={(id) => pickDraftProduct(id)}
           allowCreate
           createEntityLabel="produto"

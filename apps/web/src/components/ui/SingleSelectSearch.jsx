@@ -26,7 +26,11 @@ export default function SingleSelectSearch({
   required = false,
   showValidationError = false,
   validationMessage = "",
-  onFieldBlur
+  onFieldBlur,
+  /** Texto livre quando value está vazio (ex.: nome lido na NF pela IA). */
+  initialText = "",
+  /** Chamado ao sair do campo sem produto selecionado (texto digitado/lido). */
+  onFreeTextChange
 }) {
   const rootRef = useRef(null);
   const inputRef = useRef(null);
@@ -67,16 +71,16 @@ export default function SingleSelectSearch({
 
   useEffect(() => {
     if (isLocked) return;
-    if (value === lastValueRef.current) return;
+    if (value === lastValueRef.current && !initialText) return;
     lastValueRef.current = value;
     const opt = (options || []).find((o) => o.value === value);
     if (opt) {
       setInputText(opt.label);
       setPendingCreateLabel(null);
     } else if (!value && !open) {
-      setInputText("");
+      setInputText(initialText || "");
     }
-  }, [value, options, isLocked, open]);
+  }, [value, options, isLocked, open, initialText]);
 
   useEffect(() => {
     function onDocClick(e) {
@@ -132,7 +136,8 @@ export default function SingleSelectSearch({
     return t ? `“${t}”` : "";
   }
 
-  const showRequiredError = showValidationError && validationMessage && !value;
+  const hasProduct = value || String(initialText || inputText || "").trim().length >= minCreateLength;
+  const showRequiredError = showValidationError && validationMessage && !hasProduct;
   const inputInvalid = inlineError || showRequiredError;
 
   return (
@@ -174,6 +179,11 @@ export default function SingleSelectSearch({
             if (exact) {
               onChange(exact.value);
               setInputText(exact.label);
+              setInlineError("");
+              return;
+            }
+            if (trimmedQ.length >= minCreateLength && typeof onFreeTextChange === "function") {
+              onFreeTextChange(trimmedQ);
               setInlineError("");
               return;
             }

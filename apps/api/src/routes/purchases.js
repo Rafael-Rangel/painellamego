@@ -1,11 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
-import { purchaseItemSchema, purchaseInstallmentSchema } from "@lamego/shared";
+import { purchaseItemSchema, purchaseInstallmentSchema, purchaseAdjustmentLineSchema } from "@lamego/shared";
 import { supabaseAdmin } from "../lib/supabase.js";
-import { checkStoreScope, requireAuth, resolveStoreScope } from "../middleware/auth.js";
+import { checkStoreScope, requireAdmin, requireAuth, resolveStoreScope } from "../middleware/auth.js";
 import { logAudit } from "../services/auditService.js";
 import { finalizePurchase, deletePurchaseCascade } from "../services/purchaseFinalizeService.js";
+import { getPurchaseDetail } from "../services/purchaseDetailService.js";
 import { getManagerStoreIds } from "../services/scopeService.js";
 import purchaseDraftRoutes from "./purchaseDrafts.js";
 import { gatherReceiptFiles, normalizePurchaseDate } from "./purchaseRouteUtils.js";
@@ -18,6 +19,26 @@ const upload = multer({
 });
 const router = Router();
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "application/pdf"]);
+
+function parseAdjustmentLines(raw) {
+  if (raw == null || raw === "") return [];
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  const validated = z.array(purchaseAdjustmentLineSchema).safeParse(
+    parsed.map((row) => ({
+      name: String(row?.name || "").trim(),
+      amount: Number(row?.amount) || 0
+    }))
+  );
+  return validated.success ? validated.data : [];
+}
 const missingStoreIdColumn = (msg = "") =>
   String(msg).toLowerCase().includes("store_id") && String(msg).toLowerCase().includes("suppliers");
 
@@ -177,6 +198,9 @@ router.post(
       invoiceNumber: z.string().min(1),
       items: z.string().min(2),
       installments: z.string().optional(),
+      taxes: z.string().optional(),
+      extras: z.string().optional(),
+      notes: z.string().max(2000).optional(),
       draftId: z.string().uuid().optional()
     });
     const parsed = schema.safeParse(req.body);
@@ -246,6 +270,10 @@ router.post(
       installments = instParsed.data;
     }
 
+    const taxes = parseAdjustmentLines(parsed.data.taxes);
+    const extras = parseAdjustmentLines(parsed.data.extras);
+    const notes = parsed.data.notes ? String(parsed.data.notes).trim() : null;
+
     const receiptFiles = gatherReceiptFiles(req.files || {});
     if (!receiptFiles.length) {
       return res.status(400).json({ message: "Arquivo da nota fiscal é obrigatório." });
@@ -270,7 +298,10 @@ router.post(
       items,
       installments,
       receiptFiles,
-      draftId: parsed.data.draftId || null
+      draftId: parsed.data.draftId || null,
+      taxes,
+      extras,
+      notes
     });
     purchaseId = result.purchaseId;
 
@@ -294,6 +325,17 @@ router.post(
     const status = err.statusCode || 500;
     const message = err?.message || "Não foi possível registar a compra.";
     return res.status(status).json({ message });
+  }
+});
+
+/** Detalhe completo de uma compra (admin). */
+router.get("/:purchaseId/detail", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const detail = await getPurchaseDetail(req.params.purchaseId);
+    if (!detail) return res.status(404).json({ message: "Compra não encontrada." });
+    return res.json(detail);
+  } catch (err) {
+    return res.status(400).json({ message: err.message || "Não foi possível carregar a compra." });
   }
 });
 
@@ -343,7 +385,7 @@ router.get("/me/ledger", requireAuth, async (req, res) => {
     supabaseAdmin
       .from("purchase_drafts")
       .select(
-        "id, supplier_id, purchase_date, invoice_number, wizard_step, updated_at, items_json, installments_json, suppliers(name)"
+        "id, supplier_id, purchase_date, invoice_number, wizard_step, updated_at, items_json, installments_json, taxes_json, extras_json, notes, suppliers(name)"
       )
       .in("store_id", storeIds)
       .eq("status", "open")
@@ -399,7 +441,10 @@ router.get("/me/ledger", requireAuth, async (req, res) => {
         invoiceNumber: d.invoice_number,
         wizardStep: d.wizard_step,
         items: d.items_json || [],
-        installments: d.installments_json || []
+        installments: d.installments_json || [],
+        taxes: d.taxes_json || [],
+        extras: d.extras_json || [],
+        notes: d.notes || ""
       }
     };
   });

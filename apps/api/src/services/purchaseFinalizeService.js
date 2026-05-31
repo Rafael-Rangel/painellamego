@@ -1,6 +1,7 @@
 import {
   isBonificationOnlyLine,
   parseBrNumber,
+  purchaseInvoiceSummary,
   purchaseTotalsFromItems,
   validateInstallmentsAgainstPayable
 } from "@lamego/shared";
@@ -54,19 +55,23 @@ export async function finalizePurchase({
   items,
   installments,
   receiptFiles,
-  draftId = null
+  draftId = null,
+  taxes = [],
+  extras = [],
+  notes = null
 }) {
-  const { totalPayable, totalBonusValue } = purchaseTotalsFromItems(items);
+  const summary = purchaseInvoiceSummary(items, taxes, extras);
+  const { totalPayable, totalBonusValue, totalTaxes, totalExtras, grandTotal } = summary;
 
   let inst = installments || [];
-  if (!inst.length) {
-    inst = [{ dueDate: items[0]?.purchaseDate, amount: totalPayable, notes: "Único vencimento" }];
+  if (!inst.length && grandTotal > 0) {
+    inst = [{ dueDate: items[0]?.purchaseDate, amount: grandTotal, notes: "Único vencimento" }];
   }
 
-  const instCheck = validateInstallmentsAgainstPayable(inst, totalPayable);
-  if (!instCheck.ok && totalPayable > 0) {
+  const instCheck = validateInstallmentsAgainstPayable(inst, grandTotal);
+  if (!instCheck.ok && grandTotal > 0) {
     const err = new Error(
-      `A soma das parcelas (R$ ${instCheck.sum}) não confere com o total da nota (R$ ${totalPayable}). Ajuste os vencimentos.`
+      `A soma das parcelas (R$ ${instCheck.sum}) não confere com o total da nota (R$ ${grandTotal}). Ajuste os vencimentos.`
     );
     err.statusCode = 400;
     throw err;
@@ -80,7 +85,13 @@ export async function finalizePurchase({
       created_by: userId,
       draft_id: draftId,
       total_payable: totalPayable,
-      total_bonus_value: totalBonusValue
+      total_bonus_value: totalBonusValue,
+      total_taxes: totalTaxes,
+      total_extras: totalExtras,
+      grand_total: grandTotal,
+      taxes_json: taxes,
+      extras_json: extras,
+      notes: notes ? String(notes).trim() || null : null
     })
     .select("id")
     .single();
@@ -176,5 +187,5 @@ export async function finalizePurchase({
     await supabaseAdmin.from("purchase_drafts").update({ status: "finalized" }).eq("id", draftId);
   }
 
-  return { purchaseId, totalPayable, totalBonusValue };
+  return { purchaseId, totalPayable, totalBonusValue, totalTaxes, totalExtras, grandTotal };
 }

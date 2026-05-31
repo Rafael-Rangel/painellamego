@@ -14,8 +14,29 @@ const UNIT_ALIASES = {
   fardo: ["fardo", "fd", "far"],
   saco: ["saco", "sc", "sac"],
   maco: ["maco", "maço", "mç", "ml"],
-  bdj: ["bdj", "bandeja", "bandejas"]
+  bdj: ["bdj", "bandeja", "bandejas"],
+  bal: ["bal", "balde", "baldes"]
 };
+
+/**
+ * Extrai só o nome comercial da linha DANFE (1ª linha, sem bloco de impostos embutido).
+ */
+export function cleanReceiptProductDescription(raw) {
+  let s = String(raw || "").trim();
+  if (!s) return "";
+  s = s.split(/\r?\n/)[0].trim();
+  const cutPatterns = [
+    /;\s*Valor base calculo/i,
+    /\.\s*Val Aprox Tributos/i,
+    /Val Aprox Tributos/i,
+    /Valor base calculo FCP/i
+  ];
+  for (const re of cutPatterns) {
+    const idx = s.search(re);
+    if (idx > 0) s = s.slice(0, idx).trim();
+  }
+  return s.replace(/\s{2,}/g, " ").trim();
+}
 
 /**
  * Converte número em formato BR (1.930,28 ou 10,52) ou US para float.
@@ -215,12 +236,17 @@ export function normalizeRawAiItem(it, allowedUnits = []) {
   });
 
   const catalogProductName = String(it?.catalogProductName || "").trim() || null;
-  const productName = String(it?.productName || "").trim() || null;
+  const rawProductName = String(it?.productName || "").trim() || null;
+  const productName = cleanReceiptProductDescription(rawProductName) || rawProductName;
 
   return {
     productName,
     productNameNormalized:
-      String(it?.productNameNormalized || catalogProductName || productName || "").trim() || null,
+      cleanReceiptProductDescription(
+        String(it?.productNameNormalized || catalogProductName || productName || "").trim()
+      ) ||
+      String(it?.productNameNormalized || catalogProductName || productName || "").trim() ||
+      null,
     catalogProductName,
     categoryHint: String(it?.categoryHint || "").trim() || null,
     lineTypeHint: normalizeLineTypeHint(it?.lineTypeHint),

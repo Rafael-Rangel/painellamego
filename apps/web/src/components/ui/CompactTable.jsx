@@ -12,7 +12,9 @@ export default function CompactTable({
   footerText,
   mobileCompact = true,
   /** Tabela mais larga com scroll horizontal (ideal para histórico no celular). */
-  scrollHorizontal = false
+  scrollHorizontal = false,
+  onRowClick,
+  rowAriaLabel
 }) {
   if (loading) return <LoadingSkeleton rows={6} />;
   if (!rows?.length) return <EmptyState message={emptyMessage} compact />;
@@ -39,7 +41,24 @@ export default function CompactTable({
           </thead>
           <tbody>
             {rows.map((row, idx) => (
-              <tr key={keyField ? row[keyField] : idx}>
+              <tr
+                key={keyField ? row[keyField] : idx}
+                className={onRowClick ? "table-row-clickable" : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? "button" : undefined}
+                onClick={onRowClick ? () => onRowClick(row, idx) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onRowClick(row, idx);
+                        }
+                      }
+                    : undefined
+                }
+                aria-label={onRowClick ? rowAriaLabel?.(row, idx) : undefined}
+              >
                 {columns.map((col) => {
                   const content = col.render ? col.render(row, idx) : row[col.id];
                   const clamp = shouldClampColumn(col);

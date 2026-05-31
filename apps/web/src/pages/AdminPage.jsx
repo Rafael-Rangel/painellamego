@@ -30,6 +30,7 @@ import TableToolbar from "../components/ui/TableToolbar";
 import { formatCurrency } from "../lib/formatters";
 import { supabase } from "../supabase";
 import CatalogReviewTab from "../components/admin/CatalogReviewTab";
+import AdminPurchaseDetailModal from "../components/admin/AdminPurchaseDetailModal";
 import SupplierCrudPanel from "../components/catalog/SupplierCrudPanel";
 import RankingComparisonTab from "../components/admin/RankingComparisonTab";
 
@@ -65,6 +66,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [stores, setStores] = useState([]);
   const [managers, setManagers] = useState([]);
@@ -819,7 +821,7 @@ export default function AdminPage() {
               <DataCard
                 title="Visão do produto no período"
                 subtitle="Quantidade, gastos e últimas compras  ·  respeita todos os filtros acima"
-                footer={`Últimas ${Math.min(8, dashboardSummary?.recentPurchases?.length || 0)} compras neste recorte.`}
+                footer={`Últimas ${Math.min(8, dashboardSummary?.recentPurchases?.length || 0)} compras neste recorte. Clique numa linha para ver todos os detalhes.`}
               >
                 <div className="stats" style={{ marginBottom: "0.8rem" }}>
                   <div className="stat">
@@ -864,7 +866,9 @@ export default function AdminPage() {
                   rows={(dashboardSummary?.recentPurchases || []).slice(0, 8)}
                   keyField="purchase_id"
                   loading={loading}
-                scrollHorizontal
+                  scrollHorizontal
+                  onRowClick={(row) => row?.purchase_id && setSelectedPurchaseId(row.purchase_id)}
+                  rowAriaLabel={(row) => `Ver detalhes da nota ${row.invoice_number || row.purchase_id}`}
                   emptyMessage="Sem compras para este produto no recorte selecionado."
                 />
               </DataCard>
@@ -1562,6 +1566,14 @@ export default function AdminPage() {
             </DataCard>
           </section>
         </div>
+      ) : null}
+
+      {selectedPurchaseId ? (
+        <AdminPurchaseDetailModal
+          purchaseId={selectedPurchaseId}
+          token={token}
+          onClose={() => setSelectedPurchaseId(null)}
+        />
       ) : null}
 
       {showInviteModal ? (

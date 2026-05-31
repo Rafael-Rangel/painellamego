@@ -1,18 +1,26 @@
 import { WizardAlert } from "../ui/WizardAlert";
 import { formatCurrency } from "../../lib/formatters";
-import { purchaseTotalsFromItems, validateInstallmentsAgainstPayable } from "../../lib/purchaseTotals";
+import { purchaseInvoiceSummary, validateInstallmentsAgainstPayable } from "../../lib/purchaseTotals";
 
-export default function PurchaseInstallmentsEditor({ items, installments, onChange, purchaseDate, showValidation = false }) {
-  const { totalPayable } = purchaseTotalsFromItems(items);
-  const check = validateInstallmentsAgainstPayable(installments, totalPayable);
+export default function PurchaseInstallmentsEditor({
+  items,
+  taxes = [],
+  extras = [],
+  installments,
+  onChange,
+  purchaseDate,
+  showValidation = false
+}) {
+  const { grandTotal } = purchaseInvoiceSummary(items, taxes, extras);
+  const check = validateInstallmentsAgainstPayable(installments, grandTotal);
 
   const splitEqual = (parts) => {
     if (!parts || parts < 2) return;
-    const each = Math.round((totalPayable / parts) * 100) / 100;
+    const each = Math.round((grandTotal / parts) * 100) / 100;
     const rows = [];
     let sum = 0;
     for (let i = 0; i < parts; i += 1) {
-      const amt = i === parts - 1 ? Math.round((totalPayable - sum) * 100) / 100 : each;
+      const amt = i === parts - 1 ? Math.round((grandTotal - sum) * 100) / 100 : each;
       sum += amt;
       rows.push({
         dueDate: purchaseDate || "",
@@ -25,7 +33,7 @@ export default function PurchaseInstallmentsEditor({ items, installments, onChan
 
   const addRow = () => {
     const nextCount = installments.length + 1;
-    if (nextCount === 2 && totalPayable > 0) {
+    if (nextCount === 2 && grandTotal > 0) {
       splitEqual(2);
       return;
     }
@@ -33,7 +41,7 @@ export default function PurchaseInstallmentsEditor({ items, installments, onChan
       ...installments,
       {
         dueDate: purchaseDate || "",
-        amount: nextCount === 1 && totalPayable > 0 ? totalPayable : "",
+        amount: nextCount === 1 && grandTotal > 0 ? grandTotal : "",
         notes: `Parcela ${nextCount}`
       }
     ]);
@@ -51,13 +59,13 @@ export default function PurchaseInstallmentsEditor({ items, installments, onChan
     <div className="purchase-installments">
       <div className="purchase-installments__head">
         <p className="wizard-panel-desc" style={{ margin: 0 }}>
-          Total a pagar da nota: <strong>{formatCurrency(totalPayable)}</strong>
+          Total da nota (produtos + impostos + extras): <strong>{formatCurrency(grandTotal)}</strong>
         </p>
         <div className="purchase-installments__actions">
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => splitEqual(2)}>
             Dividir em 2
           </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange([{ dueDate: purchaseDate || "", amount: totalPayable, notes: "Único vencimento" }])}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange([{ dueDate: purchaseDate || "", amount: grandTotal, notes: "Único vencimento" }])}>
             Vencimento único
           </button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={addRow}>
@@ -94,9 +102,9 @@ export default function PurchaseInstallmentsEditor({ items, installments, onChan
         ))}
       </ul>
 
-      {showValidation && installments.length > 0 && !check.ok && totalPayable > 0 ? (
+      {showValidation && installments.length > 0 && !check.ok && grandTotal > 0 ? (
         <WizardAlert type="error">
-          Soma das parcelas ({formatCurrency(check.sum)}) difere do total ({formatCurrency(totalPayable)}). Ajuste os
+          Soma das parcelas ({formatCurrency(check.sum)}) difere do total ({formatCurrency(grandTotal)}). Ajuste os
           valores ou use «Dividir em 2» antes de continuar.
         </WizardAlert>
       ) : null}
