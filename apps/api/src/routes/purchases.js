@@ -11,7 +11,7 @@ import { getManagerStoreIds } from "../services/scopeService.js";
 import purchaseDraftRoutes from "./purchaseDrafts.js";
 import { gatherReceiptFiles, normalizePurchaseDate } from "./purchaseRouteUtils.js";
 import { buildReceiptParseContext } from "../services/receiptParseContext.js";
-import { parseReceiptWithAI } from "../services/receiptAiService.js";
+import { parseReceiptWithAI, formatReceiptAiErrorMessage } from "../services/receiptAiService.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -136,7 +136,8 @@ router.post(
       products: products || [],
       suppliers: suppliers || [],
       categories,
-      supplierIdHint: supplierIdForParse
+      supplierIdHint: supplierIdForParse,
+      documentPageCount: receiptFiles.length
     });
     const ctxMs = Date.now() - ctxStarted;
 
@@ -176,7 +177,7 @@ router.post(
       ms: Date.now() - reqStarted,
       message: err?.message
     });
-    return res.status(400).json({ message: err.message || "Falha ao analisar nota com IA." });
+    return res.status(400).json({ message: formatReceiptAiErrorMessage(err) || "Falha ao analisar nota com IA." });
   }
 });
 

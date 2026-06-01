@@ -1146,6 +1146,9 @@ export function usePurchaseForm(token, options = {}) {
       if (!missingRows.length) {
         setToast("Leitura concluída. Revise impostos, produtos e parcelas antes de publicar.");
         setTimeout(() => setToast(""), 3200);
+      } else if (fromApi.length === 0 && !inv && !data?.supplierSuggestion?.id) {
+        setToast("A IA não extraiu dados desta nota. Toque em «Analisar com IA» para tentar de novo.");
+        setTimeout(() => setToast(""), 4500);
       } else {
         setToast("IA sugeriu parte dos dados. Complete ou corrija os campos indicados abaixo.");
         setTimeout(() => setToast(""), 3800);
@@ -1267,6 +1270,13 @@ export function usePurchaseForm(token, options = {}) {
         }
         if (!msg && err?.code === "ECONNABORTED") {
           msg = `Tempo esgotado (${AI_REQUEST_TIMEOUT_MS / 1000}s). Verifique a rede e use «Tentar novamente».`;
+        }
+        if (msg && /quota|billing|insufficient/i.test(msg)) {
+          msg =
+            "Serviço de IA temporariamente indisponível (limite da API). Toque em «Analisar com IA» de novo em alguns minutos.";
+        }
+        if (msg && /formato inválido|resposta vazia/i.test(msg)) {
+          msg = "A IA não devolveu dados legíveis. Tente analisar de novo ou use fotos mais nítidas.";
         }
         const finalMsg = msg || "Não foi possível ler a nota com IA.";
         setAiError(finalMsg);

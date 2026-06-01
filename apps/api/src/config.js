@@ -57,7 +57,7 @@ export const config = {
   ),
   openRouterMaxTokens: Math.min(
     8192,
-    Math.max(2048, Number(process.env.OPENROUTER_MAX_TOKENS ?? 4096) || 4096)
+    Math.max(4096, Number(process.env.OPENROUTER_MAX_TOKENS ?? 8192) || 8192)
   ),
   /** Máximo de ficheiros analisados em paralelo por pedido receipt-ai-parse. */
   receiptAiParseConcurrency: Math.min(

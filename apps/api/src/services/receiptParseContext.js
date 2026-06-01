@@ -21,7 +21,8 @@ export async function buildReceiptParseContext({
   products = [],
   suppliers = [],
   categories = [],
-  supplierIdHint = null
+  supplierIdHint = null,
+  documentPageCount = 1
 }) {
   const started = Date.now();
   const supplierId =
@@ -40,11 +41,11 @@ export async function buildReceiptParseContext({
       ? new Set(supplierCtx.candidateProducts.map((p) => p.id))
       : null;
 
-  const catalogOpts = { maxProducts: 150 };
+  const catalogOpts = { maxProducts: documentPageCount >= 2 ? 80 : 150 };
   if (supplierCtx?.candidateProducts?.length) {
     catalogOpts.supplierProductIds = new Set(supplierCtx.candidateProducts.map((p) => p.id));
-    catalogOpts.maxProducts = 100;
-    catalogOpts.maxSupplierProducts = 65;
+    catalogOpts.maxProducts = documentPageCount >= 2 ? 60 : 100;
+    catalogOpts.maxSupplierProducts = documentPageCount >= 2 ? 45 : 65;
   }
 
   const { catalogProducts, categoryNames } = buildReceiptCatalogContext(products, categories, catalogOpts);

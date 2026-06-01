@@ -122,14 +122,13 @@ export default function ManagerPurchaseAiPage() {
 
   const handleAnalyzeReceipts = useCallback(() => {
     if (!receipts.length || aiLoading || parseInFlightRef.current) return;
-    const sig = receipts.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join("|");
-    if (sig === lastAnalyzedSigRef.current) return;
-    lastAnalyzedSigRef.current = sig;
     parseInFlightRef.current = true;
     void (async () => {
       const ok = await parseReceiptsByAI({ onSuccess: () => {} });
       parseInFlightRef.current = false;
-      if (!ok) lastAnalyzedSigRef.current = "";
+      if (ok) {
+        lastAnalyzedSigRef.current = receipts.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join("|");
+      }
     })();
   }, [receipts, aiLoading, parseReceiptsByAI]);
 

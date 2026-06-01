@@ -80,7 +80,7 @@ test("parseReceiptWithAI: PDF no OpenAI falha e OpenRouter usa file + plugin", a
     suppliers: [{ id: "s1", name: "Fornecedor X" }]
   });
 
-  assert.ok(calls.some((c) => isOpenAiUrl(c.url)));
+  assert.ok(calls.some((c) => isOpenRouterUrl(c.url)));
   const orCall = calls.find((c) => isOpenRouterUrl(c.url));
   assert.ok(orCall);
   const content = orCall.body.messages[0].content;
@@ -91,11 +91,20 @@ test("parseReceiptWithAI: PDF no OpenAI falha e OpenRouter usa file + plugin", a
   delete global.fetch;
 });
 
-test("parseReceiptWithAI: JPEG usa OpenAI com image_url detail auto", async () => {
+test("parseReceiptWithAI: JPEG usa OpenRouter primeiro (fallback OpenAI se OR falhar)", async () => {
   const calls = [];
   global.fetch = async (url, init) => {
     if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
     calls.push({ url, body: JSON.parse(init.body) });
+    if (isOpenRouterUrl(url)) {
+      return {
+        ok: false,
+        status: 502,
+        async json() {
+          return { error: { message: "OpenRouter down" } };
+        }
+      };
+    }
     return {
       ok: true,
       async json() {
@@ -129,14 +138,15 @@ test("parseReceiptWithAI: JPEG usa OpenAI com image_url detail auto", async () =
     suppliers: []
   });
 
-  assert.equal(calls.length, 1);
-  assert.ok(isOpenAiUrl(calls[0].url));
-  assert.equal(calls[0].body.model, RECEIPT_AI_OPENAI_MODEL);
-  const content = calls[0].body.messages[0].content;
+  assert.ok(calls.some((c) => isOpenRouterUrl(c.url)));
+  const oaCall = calls.find((c) => isOpenAiUrl(c.url));
+  assert.ok(oaCall);
+  assert.equal(oaCall.body.model, RECEIPT_AI_OPENAI_MODEL);
+  const content = oaCall.body.messages[0].content;
   const img = content.find((c) => c.type === "image_url");
   assert.ok(img);
   assert.equal(img.image_url.detail, "auto");
-  assert.ok(!calls[0].body.plugins);
+  assert.ok(!oaCall.body.plugins);
 
   delete global.fetch;
 });
@@ -207,22 +217,22 @@ test("parseReceiptWithAI: falha OpenAI na 1ª chamada faz retry sem response_for
   delete global.fetch;
 });
 
-test("parseReceiptWithAI: esgota OpenAI e usa fallback OpenRouter fixo", async () => {
+test("parseReceiptWithAI: esgota OpenRouter e usa fallback OpenAI", async () => {
   let n = 0;
   global.fetch = async (url, init) => {
     if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
     n += 1;
     const body = JSON.parse(init.body);
-    if (isOpenAiUrl(url)) {
+    if (isOpenRouterUrl(url)) {
       return {
         ok: false,
         status: 502,
         async json() {
-          return { error: { message: "OpenAI down" } };
+          return { error: { message: "OpenRouter down" } };
         }
       };
     }
-    assert.equal(body.model, RECEIPT_AI_OPENROUTER_FALLBACK_MODEL);
+    assert.equal(body.model, RECEIPT_AI_OPENAI_MODEL);
     return {
       ok: true,
       async json() {
@@ -263,7 +273,7 @@ test("parseReceiptWithAI: esgota OpenAI e usa fallback OpenRouter fixo", async (
     suppliers: [{ id: "s1", name: "Fornecedor X" }]
   });
 
-  assert.ok(n >= 3, "2+ tentativas OpenAI + 1 OpenRouter");
+  assert.ok(n >= 2, "OpenRouter + OpenAI");
   assert.equal(out.invoiceNumber, "77");
 
   delete global.fetch;
@@ -410,4 +420,13 @@ test("parseReceiptWithAI: devolve taxes, extras, metadados, parcelas e notes por
   assert.equal(out.items[0].notesConfidence, "medium");
 
   delete global.fetch;
+});
+
+test("formatReceiptAiErrorMessage: quota e JSON inválido", async () => {
+  const { formatReceiptAiErrorMessage } = await import("../src/services/receiptAiService.js");
+  assert.match(
+    formatReceiptAiErrorMessage("You exceeded your current quota, please check billing"),
+    /indisponível/i
+  );
+  assert.match(formatReceiptAiErrorMessage("A IA retornou resposta em formato inválido."), /legíveis/i);
 });

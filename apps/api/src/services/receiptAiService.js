@@ -28,30 +28,47 @@ import {
 } from "./productMatchService.js";
 
 function stripCodeFences(text = "") {
-  return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const raw = String(text ?? "").trim();
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) return fenced[1].trim();
+  return raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 }
 
 /** Tenta obter um objeto JSON da resposta em texto livre (markdown, texto extra, etc.). */
 function parseJsonFromModelContent(content) {
   const raw = String(content ?? "").trim();
   if (!raw) throw new Error("A IA retornou resposta vazia.");
-  const stripped = stripCodeFences(raw);
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    /* ignore */
-  }
-  const start = stripped.indexOf("{");
-  const end = stripped.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    const slice = stripped.slice(start, end + 1);
+  const candidates = [stripCodeFences(raw), raw];
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) candidates.push(raw.slice(start, end + 1));
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
     try {
-      return JSON.parse(slice);
+      return JSON.parse(candidate);
     } catch {
-      /* ignore */
+      /* tenta próximo */
     }
   }
   throw new Error("A IA retornou resposta em formato inválido.");
+}
+
+/** Mensagem amigável para erros de billing/quota das APIs de IA. */
+export function formatReceiptAiErrorMessage(err) {
+  const raw = String(err?.message || err || "").trim();
+  if (!raw) return "Falha ao analisar nota com IA.";
+  const lower = raw.toLowerCase();
+  if (lower.includes("quota") || lower.includes("billing") || lower.includes("insufficient")) {
+    return "Serviço de IA temporariamente indisponível (limite/crédito da API). Tente novamente em alguns minutos ou contacte o suporte.";
+  }
+  if (lower.includes("formato inválido") || lower.includes("resposta vazia")) {
+    return "A IA não devolveu dados legíveis desta nota. Tente «Analisar com IA» de novo ou envie fotos com mais nitidez.";
+  }
+  if (raw.startsWith("IA (OpenAI/OpenRouter):")) {
+    return formatReceiptAiErrorMessage(raw.replace(/^IA \(OpenAI\/OpenRouter\):\s*/, ""));
+  }
+  return raw.length > 280 ? `${raw.slice(0, 277)}…` : raw;
 }
 
 function normalizeText(s) {
@@ -256,7 +273,7 @@ async function callChatCompletions({
     body.max_tokens = maxTokens;
   }
 
-  if (useJsonObject) {
+  if (useJsonObject && isOpenAi) {
     body.response_format = { type: "json_object" };
   }
 
@@ -294,6 +311,7 @@ async function callChatCompletions({
 
 async function fetchChatPayloadWithRetries({ provider, prompt, dataUrl, mimeType, documents, model }) {
   const label = model || (provider === "openai" ? config.openaiModel : config.openRouterFallbackModel);
+  const preferJsonObject = provider === "openai";
   let payload;
   try {
     payload = await callChatCompletions({
@@ -302,7 +320,7 @@ async function fetchChatPayloadWithRetries({ provider, prompt, dataUrl, mimeType
       dataUrl,
       mimeType,
       documents,
-      useJsonObject: true,
+      useJsonObject: preferJsonObject,
       model
     });
   } catch (firstErr) {
@@ -608,8 +626,8 @@ export async function parseReceiptWithAI({
   sharedParseCtx = null,
   deferAliasLearning = false
 }) {
-  if (!config.openaiApiKey) {
-    throw new Error("OPENAI_API_KEY não configurada.");
+  if (!config.openaiApiKey && !config.openRouterApiKey) {
+    throw new Error("Configure OPENAI_API_KEY ou OPENROUTER_API_KEY para leitura de notas.");
   }
 
   const parseStarted = Date.now();
@@ -684,10 +702,13 @@ export async function parseReceiptWithAI({
     dbPrepMs = Date.now() - prepStarted;
   }
 
-  const attempts = [{ provider: "openai", model: config.openaiModel }];
+  const attempts = [];
   const fb = openRouterFallbackModel();
   if (fb && config.openRouterApiKey) {
     attempts.push({ provider: "openrouter", model: fb });
+  }
+  if (config.openaiApiKey) {
+    attempts.push({ provider: "openai", model: config.openaiModel });
   }
 
   const errors = [];
