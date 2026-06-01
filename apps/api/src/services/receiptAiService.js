@@ -14,6 +14,7 @@ import {
   parseBrDecimal,
   receiptUnitConflict
 } from "../lib/receiptParseUtils.js";
+import { receiptAiUserFacingMessage } from "../lib/receiptAiUserMessages.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { buildReceiptAiPrompt } from "./receiptAiPrompt.js";
 import {
@@ -54,22 +55,7 @@ function parseJsonFromModelContent(content) {
   throw new Error("A IA retornou resposta em formato inválido.");
 }
 
-/** Mensagem amigável para erros de billing/quota das APIs de IA. */
-export function formatReceiptAiErrorMessage(err) {
-  const raw = String(err?.message || err || "").trim();
-  if (!raw) return "Falha ao analisar nota com IA.";
-  const lower = raw.toLowerCase();
-  if (lower.includes("quota") || lower.includes("billing") || lower.includes("insufficient")) {
-    return "Serviço de IA temporariamente indisponível (limite/crédito da API). Tente novamente em alguns minutos ou contacte o suporte.";
-  }
-  if (lower.includes("formato inválido") || lower.includes("resposta vazia")) {
-    return "A IA não devolveu dados legíveis desta nota. Tente «Analisar com IA» de novo ou envie fotos com mais nitidez.";
-  }
-  if (raw.startsWith("IA (OpenAI/OpenRouter):")) {
-    return formatReceiptAiErrorMessage(raw.replace(/^IA \(OpenAI\/OpenRouter\):\s*/, ""));
-  }
-  return raw.length > 280 ? `${raw.slice(0, 277)}…` : raw;
-}
+export { receiptAiUserFacingMessage, formatReceiptAiErrorMessage } from "../lib/receiptAiUserMessages.js";
 
 function normalizeText(s) {
   return String(s || "")
@@ -627,7 +613,7 @@ export async function parseReceiptWithAI({
   deferAliasLearning = false
 }) {
   if (!config.openaiApiKey && !config.openRouterApiKey) {
-    throw new Error("Configure OPENAI_API_KEY ou OPENROUTER_API_KEY para leitura de notas.");
+    throw new Error("RECEIPT_AI_KEYS_MISSING");
   }
 
   const parseStarted = Date.now();

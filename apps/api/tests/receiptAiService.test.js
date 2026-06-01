@@ -422,11 +422,11 @@ test("parseReceiptWithAI: devolve taxes, extras, metadados, parcelas e notes por
   delete global.fetch;
 });
 
-test("formatReceiptAiErrorMessage: quota e JSON inválido", async () => {
-  const { formatReceiptAiErrorMessage } = await import("../src/services/receiptAiService.js");
-  assert.match(
-    formatReceiptAiErrorMessage("You exceeded your current quota, please check billing"),
-    /indisponível/i
+test("formatReceiptAiErrorMessage: alias de receiptAiUserFacingMessage", async () => {
+  const { formatReceiptAiErrorMessage, receiptAiUserFacingMessage } = await import(
+    "../src/services/receiptAiService.js"
   );
-  assert.match(formatReceiptAiErrorMessage("A IA retornou resposta em formato inválido."), /legíveis/i);
+  const technical = "You exceeded your current quota, please check billing";
+  assert.equal(formatReceiptAiErrorMessage(technical), receiptAiUserFacingMessage(technical));
+  assert.doesNotMatch(formatReceiptAiErrorMessage(technical), /quota|billing/i);
 });

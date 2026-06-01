@@ -11,7 +11,7 @@ import { getManagerStoreIds } from "../services/scopeService.js";
 import purchaseDraftRoutes from "./purchaseDrafts.js";
 import { gatherReceiptFiles, normalizePurchaseDate } from "./purchaseRouteUtils.js";
 import { buildReceiptParseContext } from "../services/receiptParseContext.js";
-import { parseReceiptWithAI, formatReceiptAiErrorMessage } from "../services/receiptAiService.js";
+import { parseReceiptWithAI, receiptAiUserFacingMessage } from "../services/receiptAiService.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -175,9 +175,10 @@ router.post(
     console.error("[receipt-ai-parse] erro", {
       userId: req.user?.id,
       ms: Date.now() - reqStarted,
-      message: err?.message
+      technical: err?.message,
+      stack: err?.stack
     });
-    return res.status(400).json({ message: formatReceiptAiErrorMessage(err) || "Falha ao analisar nota com IA." });
+    return res.status(400).json({ message: receiptAiUserFacingMessage(err) });
   }
 });
 

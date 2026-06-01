@@ -27,6 +27,7 @@ import {
   needsReview,
   serializeDocumentMetadata
 } from "../lib/aiFieldConfidence";
+import { receiptAiUserFacingMessage } from "../lib/receiptAiUserMessages.js";
 
 export { MAX_RECEIPT_FILES };
 
@@ -1259,35 +1260,15 @@ export function usePurchaseForm(token, options = {}) {
       } catch (err) {
         clearAnalyzeProgressTimer();
         const st = err?.response?.status;
-        let msg = typeof err?.response?.data?.message === "string" ? err.response.data.message : "";
-        if (err?.message && !msg) msg = err.message;
-        if (st === 413) {
-          msg =
-            "O servidor recusou o tamanho do ficheiro (413). Tire outra foto com menos zoom ou tente de novo; fotos são otimizadas automaticamente.";
-        }
-        if (!msg && st === 504) {
-          msg = "O servidor demorou demais (504). Toque em «Tentar novamente» ou use uma foto mais leve.";
-        }
-        if (!msg && err?.code === "ECONNABORTED") {
-          msg = `Tempo esgotado (${AI_REQUEST_TIMEOUT_MS / 1000}s). Verifique a rede e use «Tentar novamente».`;
-        }
-        if (msg && /quota|billing|insufficient/i.test(msg)) {
-          msg =
-            "Serviço de IA temporariamente indisponível (limite da API). Toque em «Analisar com IA» de novo em alguns minutos.";
-        }
-        if (msg && /formato inválido|resposta vazia/i.test(msg)) {
-          msg = "A IA não devolveu dados legíveis. Tente analisar de novo ou use fotos mais nítidas.";
-        }
-        const finalMsg = msg || "Não foi possível ler a nota com IA.";
-        setAiError(finalMsg);
-        setAiMissing([finalMsg]);
-        if (recordAiHighlights) setAiHighlightKeys(new Set());
         console.warn("[receipt-ai] cliente falhou", {
           status: st,
           code: err?.code,
-          message: finalMsg,
           ms: Math.round(performance.now() - t0)
         });
+        const finalMsg = receiptAiUserFacingMessage(err);
+        setAiError(finalMsg);
+        setAiMissing([finalMsg]);
+        if (recordAiHighlights) setAiHighlightKeys(new Set());
         return false;
       } finally {
         clearAnalyzeProgressTimer();
