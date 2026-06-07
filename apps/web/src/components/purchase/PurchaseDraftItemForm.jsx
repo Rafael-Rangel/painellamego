@@ -91,7 +91,7 @@ export default function PurchaseDraftItemForm({
               onNotify?.(msg, "warning");
               return { ok: false, message: msg };
             }
-            const data = await createProduct(q, draftItem.lineType, cat);
+            const data = await createProduct(q, draftItem.lineType, cat, draftItem.unitUsed);
             if (!data || data.ok === false) return data || { ok: false, message: catalogUserMessage("product", { reason: "create_failed", value: q }) };
             pickDraftProduct(data.id);
             return data;

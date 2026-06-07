@@ -128,8 +128,8 @@ export default function ManagerFinancePage() {
           <section className="card finance-section">
             <h2>Próximos vencimentos</h2>
             <p className="finance-section-lead">
-              Ao publicar a nota, a <strong>1ª parcela</strong> é considerada já paga. Aqui aparecem só as parcelas
-              seguintes (2ª, 3ª…), agrupadas por mês de vencimento.
+              Parcelas pendentes agrupadas por mês de <strong>vencimento</strong>. Compras registradas no fim do mês com
+              boleto no mês seguinte aparecem aqui — confira também «Boletos a vencer» no dashboard.
             </p>
             {payables?.summary ? (
               <p className="finance-summary">

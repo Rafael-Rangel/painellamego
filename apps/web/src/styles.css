@@ -5204,6 +5204,17 @@ tbody tr:last-child td {
   gap: var(--space-4);
 }
 
+.cash-flow-explainer {
+  margin-top: 0.85rem;
+  margin-bottom: 0;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.cash-flow-explainer a {
+  white-space: nowrap;
+}
+
 .analytics-subnav {
   display: flex;
   flex-wrap: wrap;

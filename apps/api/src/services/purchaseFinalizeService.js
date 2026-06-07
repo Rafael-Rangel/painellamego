@@ -140,18 +140,22 @@ export async function finalizePurchase({
     throw err;
   }
 
-  /** Ao publicar a NF, a 1ª parcela costuma já estar paga; não entra no Financeiro. */
+  /** 1ª parcela: só marca paga se o vencimento já passou (pagamento à vista / entrega). */
   if (instRows.length > 0) {
-    const { error: paidFirstError } = await supabaseAdmin
-      .from("purchase_payment_installments")
-      .update({ status: "paid", paid_at: new Date().toISOString() })
-      .eq("purchase_id", purchaseId)
-      .eq("installment_number", 1);
-    if (paidFirstError) {
-      await deletePurchaseCascade(purchaseId);
-      const err = new Error(paidFirstError.message);
-      err.statusCode = 400;
-      throw err;
+    const firstDue = String(instRows[0].due_date || "").slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    if (firstDue && firstDue <= today) {
+      const { error: paidFirstError } = await supabaseAdmin
+        .from("purchase_payment_installments")
+        .update({ status: "paid", paid_at: new Date().toISOString() })
+        .eq("purchase_id", purchaseId)
+        .eq("installment_number", 1);
+      if (paidFirstError) {
+        await deletePurchaseCascade(purchaseId);
+        const err = new Error(paidFirstError.message);
+        err.statusCode = 400;
+        throw err;
+      }
     }
   }
 

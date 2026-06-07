@@ -15,6 +15,7 @@ import SingleSelectInput from "../components/ui/SingleSelectInput";
 import SingleSelectSearch from "../components/ui/SingleSelectSearch";
 import UnitSelect from "../components/ui/UnitSelect";
 import { buildReceiptTotalDifferenceRows, formatStoreReadonly } from "../lib/displayText";
+import { resolvePurchaseUnitUsed } from "../lib/catalogUnits";
 import { formatCurrency } from "../lib/formatters";
 import { usePurchaseForm } from "../hooks/usePurchaseForm";
 
@@ -362,6 +363,11 @@ export default function ManagerPurchaseAiPage() {
                                 productId: id,
                                 lineType: suggestion,
                                 category: product?.category ? String(product.category) : row.category,
+                                unitUsed: resolvePurchaseUnitUsed({
+                                  draftUnit: row.unitUsed,
+                                  catalogUnit: product?.standard_unit,
+                                  allowedUnits: unitOptions
+                                }),
                                 aiRawProductName: undefined
                               });
                             }}
@@ -371,13 +377,18 @@ export default function ManagerPurchaseAiPage() {
                             createBusy={productCreating}
                             onNotify={notifyCatalog}
                             onCreateOption={async (q) => {
-                              const data = await createProduct(q, row.lineType, row.category);
+                              const data = await createProduct(q, row.lineType, row.category, row.unitUsed);
                               if (!data || data.ok === false) return data;
                               const suggestion = data.type === "venda" ? "venda" : "insumo";
                               updateItem(idx, {
                                 productId: data.id,
                                 lineType: suggestion,
                                 category: data.category ? String(data.category) : row.category,
+                                unitUsed: resolvePurchaseUnitUsed({
+                                  draftUnit: row.unitUsed,
+                                  catalogUnit: data.standard_unit,
+                                  allowedUnits: unitOptions
+                                }),
                                 aiRawProductName: undefined
                               });
                             }}
@@ -510,7 +521,7 @@ export default function ManagerPurchaseAiPage() {
                       createBusy={productCreating}
                       onNotify={notifyCatalog}
                       onCreateOption={async (q) => {
-                        const data = await createProduct(q, draftItem.lineType, draftItem.category);
+                        const data = await createProduct(q, draftItem.lineType, draftItem.category, draftItem.unitUsed);
                         if (!data || data.ok === false) return data;
                         pickDraftProduct(data.id);
                         return data;

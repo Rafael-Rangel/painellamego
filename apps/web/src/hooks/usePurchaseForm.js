@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, withAuth } from "../api";
-import { buildUnitOptions, normalizeUnitUsed } from "../lib/catalogUnits";
+import { buildUnitOptions, normalizeUnitUsed, resolvePurchaseUnitUsed } from "../lib/catalogUnits";
 import {
   compressReceiptFilesForAi,
   compressReceiptFilesForSubmit,
@@ -245,7 +245,11 @@ export function usePurchaseForm(token, options = {}) {
       const product = products.find((p) => p.id === productId);
       setDraftItem((d) => {
         const lineType = product?.type === "venda" ? "venda" : "insumo";
-        const unitUsed = product?.standard_unit ? normalizeUnitUsed(product.standard_unit, unitOptions) : d.unitUsed;
+        const unitUsed = resolvePurchaseUnitUsed({
+          draftUnit: d.unitUsed,
+          catalogUnit: product?.standard_unit,
+          allowedUnits: unitOptions
+        });
         const category = product?.category ? String(product.category) : d.category;
         return { ...d, productId, lineType, unitUsed, category, aiRawProductName: undefined };
       });
@@ -329,7 +333,11 @@ export function usePurchaseForm(token, options = {}) {
       lineType: d.lineType === "venda" ? "venda" : "insumo",
       isBonificationOnly: bonusOnly,
       quantity: bonusOnly ? String(bonusQty || qty) : String(qty),
-      unitUsed: d.unitUsed || "kg",
+      unitUsed: resolvePurchaseUnitUsed({
+        draftUnit: d.unitUsed,
+        catalogUnit: products.find((p) => p.id === d.productId)?.standard_unit,
+        allowedUnits: unitOptions
+      }),
       unitPrice: bonusOnly ? String(bonusVal || price) : String(price),
       bonusQuantity: String(bonusQty),
       bonusUnitValue: String(bonusVal),
@@ -352,7 +360,7 @@ export function usePurchaseForm(token, options = {}) {
     }
     setTimeout(() => setToast(""), 2800);
     setDraftItem({ ...EMPTY_DRAFT_ITEM, unitUsed: d.unitUsed || EMPTY_DRAFT_ITEM.unitUsed });
-  }, [draftItem, products, editingItemIndex]);
+  }, [draftItem, products, editingItemIndex, unitOptions]);
 
   const loadItemForEdit = useCallback(
     (index) => {
@@ -523,7 +531,7 @@ export function usePurchaseForm(token, options = {}) {
   }, []);
 
   const createProduct = useCallback(
-    async (name, lineTypeOpt, categoryOpt) => {
+    async (name, lineTypeOpt, categoryOpt, standardUnitOpt) => {
       const trimmed = String(name || "").trim();
       if (trimmed.length < 2) {
         const msg = catalogUserMessage("product", { reason: "too_short", value: trimmed });
@@ -535,6 +543,12 @@ export function usePurchaseForm(token, options = {}) {
       const usedDefaultCategory = categoryRaw.length < 2;
       const category = usedDefaultCategory ? "Outros" : categoryRaw;
       const lineType = lineTypeOpt === "venda" ? "venda" : "insumo";
+      const standardUnit =
+        resolvePurchaseUnitUsed({
+          draftUnit: standardUnitOpt || draftItem.unitUsed,
+          catalogUnit: "",
+          allowedUnits: unitOptions
+        }) || "kg";
       setProductCreating(true);
       try {
         const { data } = await api.post(
@@ -543,6 +557,7 @@ export function usePurchaseForm(token, options = {}) {
             name: trimmed,
             type: lineType,
             category,
+            standardUnit,
             exactNameOnly: true,
             ...(supplierId ? { supplierId } : {})
           },
@@ -571,7 +586,7 @@ export function usePurchaseForm(token, options = {}) {
         setProductCreating(false);
       }
     },
-    [token, supplierId]
+    [token, supplierId, draftItem.unitUsed, unitOptions]
   );
 
   const createSupplier = useCallback(
@@ -908,7 +923,11 @@ export function usePurchaseForm(token, options = {}) {
         productId: item.productId,
         supplierId: item.supplierId || supplierId,
         unitPrice: parseBrNumber(item.unitPrice) || 0,
-        unitUsed: String(item.unitUsed || "").trim() || "un",
+        unitUsed: resolvePurchaseUnitUsed({
+          draftUnit: item.unitUsed,
+          catalogUnit: products.find((p) => p.id === item.productId)?.standard_unit,
+          allowedUnits: unitOptions
+        }),
         quantity: parseBrNumber(item.quantity) || 0,
         purchaseDate,
         weekOfMonth: toWeekOfMonth(date),
@@ -993,7 +1012,7 @@ export function usePurchaseForm(token, options = {}) {
       setConfirming(false);
     }
   },
-    [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, installments, taxes, extras, notes, documentMetadata, resetAfterSubmit]
+    [token, items, products, supplierId, date, invoiceNumber, receipts, receiptExtras, installments, taxes, extras, notes, documentMetadata, resetAfterSubmit, unitOptions]
   );
 
   const clearAnalyzeProgressTimer = useCallback(() => {

@@ -122,6 +122,7 @@ const productQuickSchema = z.object({
   type: z.enum(["insumo", "venda"]).optional(),
   category: z.string().min(2).max(120).optional(),
   supplierId: z.string().uuid().optional(),
+  standardUnit: z.string().min(1).max(24).optional(),
   /** Botão + Adicionar: grava o nome digitado; só reutiliza se já existir com o mesmo nome. */
   exactNameOnly: z.boolean().optional()
 });
@@ -138,6 +139,7 @@ router.post("/products/quick", requireAuth, async (req, res) => {
       lineType: parsed.data.type ?? "insumo",
       category: parsed.data.category,
       supplierId: parsed.data.supplierId || null,
+      standardUnit: parsed.data.standardUnit,
       createdBy,
       userIdForAudit: req.user.id,
       needsCatalogReview: createdBy === "manager",

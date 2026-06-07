@@ -422,6 +422,67 @@ test("parseReceiptWithAI: devolve taxes, extras, metadados, parcelas e notes por
   delete global.fetch;
 });
 
+test("parseReceiptWithAI: mussarela em KG na NF prevalece sobre catálogo un", async () => {
+  global.fetch = async (url) => {
+    if (!isAiChatUrl(url)) return fakePostgrestEmptyArray();
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  invoiceNumber: "1001",
+                  purchaseDate: "2026-05-20",
+                  supplierName: "Laticínios X",
+                  items: [
+                    {
+                      productName: "Queijo Mussarela",
+                      quantity: 5.5,
+                      unitUsed: "KG",
+                      unitPrice: 34.5,
+                      lineTotal: 189.75
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        };
+      }
+    };
+  };
+
+  process.env.OPENAI_API_KEY = "test-openai";
+  process.env.OPENROUTER_API_KEY = "test-or";
+
+  const { parseReceiptWithAI } = await import("../src/services/receiptAiService.js");
+  const jpegBuf = Buffer.from("ff", "hex");
+  const out = await parseReceiptWithAI({
+    imageBuffer: jpegBuf,
+    mimeType: "image/jpeg",
+    products: [
+      {
+        id: "muss1",
+        name: "Queijo Mussarela",
+        category: "Laticínios",
+        standard_unit: "un",
+        type: "insumo",
+        is_active: true
+      }
+    ],
+    suppliers: [{ id: "s1", name: "Laticínios X" }]
+  });
+
+  assert.equal(out.items.length, 1);
+  assert.equal(out.items[0].productId, "muss1");
+  assert.equal(out.items[0].unitUsed, "kg");
+  assert.equal(out.items[0].quantity, 5.5);
+
+  delete global.fetch;
+});
+
 test("formatReceiptAiErrorMessage: alias de receiptAiUserFacingMessage", async () => {
   const { formatReceiptAiErrorMessage, receiptAiUserFacingMessage } = await import(
     "../src/services/receiptAiService.js"

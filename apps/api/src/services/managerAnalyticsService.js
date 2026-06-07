@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../lib/supabase.js";
+import { buildCashFlowMetrics } from "../lib/cashFlowMetrics.js";
 import { parseAnalyticsDateRange, parseIdList } from "./analyticsDateRange.js";
 
 function lineAmount(row) {
@@ -70,6 +71,33 @@ export async function loadManagerPurchaseItems(storeIds, query) {
 
   const rows = (data || []).filter((r) => !r.is_bonification_only);
   return { rows, range, productIds, supplierIds };
+}
+
+async function loadPendingInstallmentsInRange(storeIds, range) {
+  const { data, error } = await supabaseAdmin
+    .from("purchase_payment_installments")
+    .select(
+      `
+      id,
+      purchase_id,
+      installment_number,
+      due_date,
+      amount,
+      status,
+      purchases (
+        invoice_number,
+        purchase_items ( purchase_date )
+      )
+    `
+    )
+    .in("store_id", storeIds)
+    .eq("status", "pending")
+    .gte("due_date", range.fromStr)
+    .lte("due_date", range.toStr)
+    .order("due_date", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return data || [];
 }
 
 function splitPeriodRows(rows, range) {
@@ -180,6 +208,9 @@ export async function buildManagerOverview(storeIds, query) {
 
   const myRank = (rankingRows || []).find((r) => storeIds.includes(r.store_id));
 
+  const installmentRows = await loadPendingInstallmentsInRange(storeIds, range);
+  const cashFlowCore = buildCashFlowMetrics(installmentRows, range, spendByBucket);
+
   return {
     filters: {
       dateFrom: range.fromStr,
@@ -197,6 +228,10 @@ export async function buildManagerOverview(storeIds, query) {
     priceChangeDirection: periodPriceChange.direction,
     spendByBucket,
     qtyByBucket,
+    cashFlow: {
+      purchasedInPeriod: totalSpent,
+      ...cashFlowCore
+    },
     spendByCategory: [...categorySpend.entries()].map(([category, amount]) => ({ category, amount })),
     spendByWeek: weekSpend.map((amount, i) => ({ week: i + 1, amount })),
     topProductsBySpend: productList.slice(0, 8).map((p) => ({

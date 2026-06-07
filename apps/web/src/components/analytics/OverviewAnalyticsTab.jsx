@@ -55,7 +55,44 @@ export default function OverviewAnalyticsTab({ token, filters, onChange, onClear
   }, [token, qs]);
 
   const o = data || {};
+  const cf = o.cashFlow || {};
   const gran = filters.granularity || "month";
+
+  const periodHint =
+    o.filters?.dateFrom && o.filters?.dateTo
+      ? `${new Date(o.filters.dateFrom + "T12:00:00").toLocaleDateString("pt-BR")} – ${new Date(o.filters.dateTo + "T12:00:00").toLocaleDateString("pt-BR")}`
+      : undefined;
+
+  const cashFlowLineData = useMemo(
+    () => ({
+      labels: (cf.monthly || []).map((b) => bucketLabel(b.month, "month")),
+      datasets: [
+        {
+          label: "Comprado (data da nota)",
+          data: (cf.monthly || []).map((b) => Number(b.purchasedAmount || 0)),
+          borderColor: CHART_COLORS[0],
+          backgroundColor: "rgba(75, 12, 12, 0.08)",
+          tension: 0.25
+        },
+        {
+          label: "Boletos a vencer",
+          data: (cf.monthly || []).map((b) => Number(b.dueAmount || 0)),
+          borderColor: CHART_COLORS[2],
+          backgroundColor: "rgba(236, 160, 47, 0.15)",
+          tension: 0.25
+        },
+        {
+          label: "Boletos de compras anteriores",
+          data: (cf.monthly || []).map((b) => Number(b.dueFromEarlierPurchases || 0)),
+          borderColor: CHART_COLORS[1],
+          borderDash: [6, 4],
+          tension: 0.25,
+          fill: false
+        }
+      ]
+    }),
+    [cf.monthly]
+  );
 
   const lineSpendData = useMemo(
     () => ({
@@ -158,9 +195,27 @@ export default function OverviewAnalyticsTab({ token, filters, onChange, onClear
 
       <section className="card span-12">
         <div className="kpi-grid-5 kpi-grid-extended">
-          <KpiCardCompact label="Total gasto" value={formatCurrency(o.totalSpent || 0)} />
+          <KpiCardCompact
+            label="Comprado no período"
+            value={formatCurrency(cf.purchasedInPeriod ?? o.totalSpent ?? 0)}
+            hint={periodHint ? `Data da nota · ${periodHint}` : "Data da nota fiscal"}
+          />
+          <KpiCardCompact
+            label="Boletos a vencer no período"
+            value={formatCurrency(cf.dueInPeriod || 0)}
+            hint={
+              cf.dueInstallmentsCount
+                ? `${cf.dueInstallmentsCount} parcela(s) pendente(s) · por vencimento`
+                : "Por data de vencimento do boleto"
+            }
+          />
+          <KpiCardCompact
+            label="Boletos de compras anteriores"
+            value={formatCurrency(cf.dueFromEarlierPurchases || 0)}
+            hint="Compras de meses passados que vencem neste período"
+          />
           <KpiCardCompact label="Quantidade comprada (linhas)" value={Number(o.totalQty || 0).toLocaleString("pt-BR")} />
-          <KpiCardCompact label="Compras" value={o.purchasesCount || 0} />
+          <KpiCardCompact label="Compras (notas)" value={o.purchasesCount || 0} />
           <KpiCardCompact label="Ticket médio" value={formatCurrency(o.avgTicket || 0)} />
           <KpiCardCompact label="Fornecedores" value={o.suppliersCount || 0} />
           <KpiCardCompact
@@ -179,11 +234,27 @@ export default function OverviewAnalyticsTab({ token, filters, onChange, onClear
             hint={o.storeName || undefined}
           />
         </div>
-        <p className="subtitle" style={{ marginTop: "0.8rem" }}>
-          Inteligência de compras com base nas notas registradas.{" "}
+        <p className="subtitle cash-flow-explainer">
+          <strong>Comprado no período</strong> usa a data da nota (ex.: compra de maio).{" "}
+          <strong>Boletos a vencer</strong> usa a data de vencimento (ex.: boleto de maio que vence em junho entra em
+          junho). Assim você vê o compromisso de compra e a saída de caixa prevista.{" "}
+          <Link to="/manager/finance">Ver detalhes no Financeiro</Link>
+          {" · "}
           <Link to="/onboarding">Completar onboarding da loja</Link>
         </p>
       </section>
+
+      {(cf.monthly || []).length > 1 ? (
+        <section className="span-12">
+          <ChartCard
+            title="Comprado vs boletos a vencer"
+            subtitle="Comparação mês a mês: data da nota x data de vencimento"
+            height={300}
+          >
+            <Line data={cashFlowLineData} options={lineOptions} />
+          </ChartCard>
+        </section>
+      ) : null}
 
       <section className="span-6">
         <ChartCard title="Gasto no período" height={300}>

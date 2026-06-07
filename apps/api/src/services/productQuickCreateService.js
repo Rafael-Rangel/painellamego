@@ -1,4 +1,5 @@
 import { normalizeProductNameKey, QUICK_PRODUCT_CATEGORY } from "../lib/productNameNormalize.js";
+import { ensureMeasurementUnitExists, normalizeUnitUsed } from "../lib/measurementUnits.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { logAudit } from "./auditService.js";
 import {
@@ -175,11 +176,14 @@ export async function quickResolveOrCreateProduct(opts) {
     normalized_name: keyStrong,
     category: categoryName,
     type: lineType,
-    standard_unit: "un",
+    standard_unit: normalizeUnitUsed(opts.standardUnit || "un"),
     is_active: true,
     created_by: createdBy,
     needs_catalog_review: needsCatalogReview
   };
+  if (insertPayload.standard_unit !== "un") {
+    await ensureMeasurementUnitExists(supabaseAdmin, insertPayload.standard_unit);
+  }
   if (catRow?.id) insertPayload.category_id = catRow.id;
 
   const { data: created, error: insErr } = await supabaseAdmin.from("products").insert(insertPayload).select("*").single();

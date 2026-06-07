@@ -29,3 +29,13 @@ export function normalizeUnitUsed(value, allowedUnits = []) {
   if (raw.length <= 24) return raw;
   return allowed.includes("un") ? "un" : allowed[0] || "un";
 }
+
+/** Unidade ao escolher produto no wizard: não troca kg escolhido pelo "un" genérico do catálogo. */
+export function resolvePurchaseUnitUsed({ draftUnit, catalogUnit, allowedUnits = [] }) {
+  const draft = draftUnit ? normalizeUnitUsed(draftUnit, allowedUnits) : "";
+  const catalog = catalogUnit ? normalizeUnitUsed(catalogUnit, allowedUnits) : "";
+  if (catalog && catalog !== "un") return catalog;
+  if (draft) return draft;
+  if (catalog) return catalog;
+  return "kg";
+}

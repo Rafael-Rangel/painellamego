@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { getActiveMeasurementUnits, normalizeUnitUsed } from "../lib/measurementUnits.js";
+import { getActiveMeasurementUnits, normalizeUnitUsed, resolveReceiptItemUnitUsed } from "../lib/measurementUnits.js";
 import { normalizeProductNameKey } from "../lib/productNameNormalize.js";
 import { buildReceiptCatalogContext } from "../lib/receiptCatalogContext.js";
 import {
@@ -426,12 +426,11 @@ function mapAiParsedToReceiptOutput(parsed, products, suppliers, matchCtx, allow
       qty = 1;
     }
     const noteUnit = norm.unitUsed;
-    let unitUsed = "un";
-    if (best?.standard_unit) {
-      unitUsed = normalizeUnitUsed(best.standard_unit, allowedUnits);
-    } else if (noteUnit) {
-      unitUsed = noteUnit;
-    }
+    const unitUsed = resolveReceiptItemUnitUsed({
+      noteUnit,
+      catalogUnit: best?.standard_unit,
+      allowedUnits
+    });
 
     const unitClash = best?.standard_unit ? receiptUnitConflict(noteUnit, best.standard_unit, allowedUnits) : null;
     if (unitClash) {
